@@ -79,7 +79,7 @@
       payload = await res.text();
     }
     if (!res.ok) {
-      const msg = (payload && payload.detail) || (payload && payload.error) || res.statusText;
+      const msg = (payload && payload.detail) || (payload && payload.error) || res.statusText || `请求失败 (HTTP ${res.status})`;
 
       // 401 — session expired; redirect once, then still throw so caller knows.
       if (res.status === 401) {
@@ -516,8 +516,9 @@
       myGet: (id) => GET(`${API_PREFIX}/me/character-cards/` + id),
       myUpsert: (body) => POST(`${API_PREFIX}/me/character-cards`, body),
       myDelete: (id) => POST(`${API_PREFIX}/me/character-cards/` + id + "/delete", {}),
-      importTavern: (file) => {
+      importTavern: (file, opts = {}) => {
         const fd = new FormData(); fd.append("file", file);
+        if (opts.aiSplit) fd.append("ai_split", "true");
         return _send(`${API_PREFIX}/me/character-cards/import-tavern`, { method: "POST", body: fd });
       },
       // task 50：BE 有 import-json 但 FE 没 wrapper
