@@ -54,7 +54,7 @@ services:
     command:
       - "/bin/sh"
       - "-c"
-      - "while true; do python -m rpg.scripts.run_cron all; sleep 86400; done"
+      - "while true; do python -m scripts.run_cron all; sleep 86400; done"
     depends_on:
       postgres:
         condition: service_healthy

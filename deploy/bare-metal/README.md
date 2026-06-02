@@ -326,10 +326,9 @@ Description=RPG Cron (hard_delete / prune_audit / policy / feedback cleanup)
 Type=oneshot
 User=rpg
 Group=rpg
-WorkingDirectory=/opt/rpg-roleplay
+WorkingDirectory=/opt/rpg-roleplay/rpg
 EnvironmentFile=/opt/rpg-roleplay/rpg/.env
-Environment="PYTHONPATH=/opt/rpg-roleplay:/opt/rpg-roleplay/rpg"
-ExecStart=/opt/rpg-roleplay/rpg/.venv/bin/python -m rpg.scripts.run_cron all
+ExecStart=/opt/rpg-roleplay/rpg/.venv/bin/python -m scripts.run_cron all
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=rpg-cron

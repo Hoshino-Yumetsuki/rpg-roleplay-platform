@@ -202,7 +202,7 @@ cd deploy/test-server/
 docker compose up -d --build backend cron
 
 # 手动跑 cron(测试)
-docker compose exec backend python -m rpg.scripts.run_cron all
+docker compose exec backend python -m scripts.run_cron all
 
 # 进 backend shell
 docker compose exec backend /bin/sh

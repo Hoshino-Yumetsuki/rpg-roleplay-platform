@@ -1,9 +1,9 @@
 """CLI 入口 — 手动触发 cron 任务（供 dev 测试 + docker cron service）.
 
-用法:
-    python -m rpg.scripts.run_cron hard_delete
-    python -m rpg.scripts.run_cron prune_audit
-    python -m rpg.scripts.run_cron all
+用法（cwd 必须在 rpg/，与后端 uvicorn app:app 一致的裸模块约定）:
+    python -m scripts.run_cron hard_delete
+    python -m scripts.run_cron prune_audit
+    python -m scripts.run_cron all
 
 每次运行后写一行到 admin_audit_log，记录执行结果。
 """
@@ -38,7 +38,7 @@ def _write_audit(db, action: str, details: dict) -> None:
 
 
 def cmd_hard_delete(db) -> dict:
-    from rpg.cron.hard_delete import run_hard_delete
+    from cron.hard_delete import run_hard_delete
     result = run_hard_delete(db)
     logger.info("hard_delete: %s", result)
     _write_audit(db, "cron.hard_delete", result)
@@ -46,7 +46,7 @@ def cmd_hard_delete(db) -> dict:
 
 
 def cmd_prune_audit(db) -> dict:
-    from rpg.cron.prune_audit import run_prune_login_audit, run_prune_admin_audit
+    from cron.prune_audit import run_prune_login_audit, run_prune_admin_audit
     r1 = run_prune_login_audit(db)
     r2 = run_prune_admin_audit(db)
     result = {"login_audit_pruned": r1["pruned"], "admin_audit_pruned": r2["pruned"]}
@@ -57,7 +57,7 @@ def cmd_prune_audit(db) -> dict:
 
 def cmd_policy_dispatch(db) -> dict:
     """扫描并发送待发政策变更通知邮件 (DOC-02/AUP-03)."""
-    from rpg.cron.policy_notice import run_dispatch_due
+    from cron.policy_notice import run_dispatch_due
     result = run_dispatch_due(db)
     logger.info("policy_dispatch: %s", result)
     _write_audit(db, "cron.policy_dispatch", result)
@@ -66,7 +66,7 @@ def cmd_policy_dispatch(db) -> dict:
 
 def cmd_policy_activate(db) -> dict:
     """激活 effective_at 已到的政策版本 (DOC-02/AUP-03)."""
-    from rpg.cron.policy_notice import run_activate_due
+    from cron.policy_notice import run_activate_due
     result = run_activate_due(db)
     logger.info("policy_activate: %s", result)
     _write_audit(db, "cron.policy_activate", result)
@@ -75,7 +75,7 @@ def cmd_policy_activate(db) -> dict:
 
 def cmd_prune_feedback(db) -> dict:
     """删 24 月前的反馈行,保留 nsfw_terminate 证据 (FB-09)."""
-    from rpg.cron.prune_feedback import run_prune_feedback
+    from cron.prune_feedback import run_prune_feedback
     result = run_prune_feedback(db)
     logger.info("prune_feedback: %s", result)
     _write_audit(db, "cron.prune_feedback", result)
@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> None:
     args = (argv or sys.argv)[1:]
     if not args:
         print(
-            f"Usage: python -m rpg.scripts.run_cron <{_ALL_COMMAND_NAMES}|all>",
+            f"Usage: python -m scripts.run_cron <{_ALL_COMMAND_NAMES}|all>",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Unknown command: {cmd!r}", file=sys.stderr)
         sys.exit(1)
 
-    from rpg.platform_app.db import connect, init_db
+    from platform_app.db import connect, init_db
     init_db()
 
     with connect() as db:
