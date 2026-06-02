@@ -1,12 +1,3 @@
-# RPG Roleplay — clean self-host / cloud-native compose
-#
-# One app container (backend = FastAPI + bundled frontend/dist, listens 0.0.0.0:7860),
-# plus its two stateful deps. Services talk over the compose default network by
-# hostname (postgres / redis). No nginx, no pgbouncer.
-#
-# Migrations auto-apply on boot against postgres:5432 directly (advisory lock works
-# on a direct connection — that's why pgbouncer is gone).
-
 services:
   postgres:
     image: pgvector/pgvector:0.8.2-pg17-trixie
