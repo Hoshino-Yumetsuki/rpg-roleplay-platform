@@ -56,11 +56,6 @@ services:
       RPG_DEPLOYMENT_MODE: ${RPG_DEPLOYMENT_MODE:-multiuser}
       RPG_REQUIRE_AUTH: ${RPG_REQUIRE_AUTH:-1}
 
-      # Direct postgres has no pooler in front, so keep pool_max * workers under
-      # postgres max_connections (default 100). 10 * 4 = 40, room for cron + admin.
-      RPG_DB_POOL_MAX: ${RPG_DB_POOL_MAX:-10}
-      RPG_WORKERS: ${RPG_WORKERS:-4}
-
       RPG_PORT: "7860"
       RPG_HOST: "0.0.0.0"
 

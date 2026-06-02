@@ -59,9 +59,10 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=3 \
 # Docker stop → SIGTERM → uvicorn 优雅 drain
 STOPSIGNAL SIGTERM
 
-# 多 worker(吃满多核;6核默认 4 worker)。SSE 停止跨 worker 安全:platform_app.cluster
-# 用 DB stop_signals 表做共享停止信号(in-process Event 是快路径)。
-# 池预算:DATABASE_URL 直连 postgres(无 pgbouncer),RPG_DB_POOL_MAX × RPG_WORKERS 是
-#   真实 postgres 连接数,必须 < postgres max_connections(默认 100);10×4=40 留足余量。
-# exec 让 uvicorn 直接收 SIGTERM(优雅 drain),env 可调 worker 数。
-CMD ["/bin/sh", "-c", "exec python -m uvicorn app:app --host 0.0.0.0 --port 7860 --no-access-log --workers ${RPG_WORKERS:-4}"]
+# 单 worker(单进程 asyncio)。本应用持有进程内状态——SSE 事件总线
+# (state_event_bus.py)与登录限流(auth.py)都是进程内 dict,多 worker 下
+# 跨进程不共享:事件会丢、限流会被绕过。并发靠 asyncio 而非多进程
+# (单 worker ~80 并发对话已足够)。需要横向扩展时用多副本 + 共享后端,不要加 worker。
+# DB 连接:psycopg 池直连 postgres,大小取代码默认(RPG_DB_POOL_MAX,默认 10),
+#   单进程下即真实 postgres 连接数,远低于 max_connections(默认 100)。
+CMD ["/bin/sh", "-c", "exec python -m uvicorn app:app --host 0.0.0.0 --port 7860 --no-access-log"]
