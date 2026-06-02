@@ -193,19 +193,15 @@ def admin_unlock(ip: str, username: str) -> None:
 def _bootstrap_admin_allowed(setup_token: str | None) -> bool:
     """首用户(空 users 表)能否被授予 admin。
 
-    - 本地/非鉴权模式:允许(单用户桌面场景,无引导风险)。
-    - server/强制鉴权模式:必须配置 RPG_SETUP_TOKEN 且请求携带匹配令牌,
-      否则首用户仅为普通 user —— 杜绝公网首注册抢 admin(CWE-269)。
+    自用模式:首个注册的用户无条件成为 admin。实际的"仅首个用户"约束由
+    建表 SQL 的 CASE WHEN NOT EXISTS(...role='admin') 保证 —— 第二个之后
+    一律普通 user。
+
+    ⚠️ 安全提示:这意味着公网暴露的实例,第一个访问注册页的人即可拿到 admin。
+    自托管请在注册完自己的账号前不要公开实例,并随后用「关闭注册」开关封闭注册。
+    setup_token 参数保留仅为向后兼容(旧 pending 记录),不再参与判断。
     """
-    from core.config import effective_auth_required
-    from core.config import setup_token as _cfg_setup_token
-    if not effective_auth_required():
-        return True
-    configured = (_cfg_setup_token() or "").strip()
-    provided = (setup_token or "").strip()
-    if not configured or not provided:
-        return False
-    return secrets.compare_digest(provided, configured)
+    return True
 
 
 def register(
@@ -308,6 +304,14 @@ def register(
             mode = (cfg.get("mode") or "").lower()
         except Exception:
             mode = ""
+        # ── 关闭注册(closed 模式)─────────────────────────────────────────────
+        # admin 在「注册与邀请」里把模式设为 closed 即禁止任何新用户注册。
+        # 例外:users 表为空时放行,保证首个用户始终能注册并 bootstrap 成 admin
+        # (否则一旦误设 closed 且无 admin,实例将永久无法注册 = 自锁)。
+        if mode == "closed":
+            any_user = db.execute("select 1 from users limit 1").fetchone()
+            if any_user:
+                raise ValueError("该平台已关闭新用户注册")
         # task: mode='invite' 是 admin UI「仅邀请」按钮的语义,
         # mode='allowlist' 是 SQL 手动设置的别名 — 两者都走白名单 gate。
         if mode in ("allowlist", "invite"):

@@ -13,7 +13,8 @@ services:
 
       # API-key encryption master key (multiuser refuses to start without it).
       # openssl rand -hex 32 — leaking it = all stored user API keys decryptable.
-      RPG_MASTER_KEY: ${RPG_MASTER_KEY:?set RPG_MASTER_KEY=$(openssl rand -hex 32)}
+      # you mast set this in production.
+      RPG_MASTER_KEY: your_master_key_here
 
       RPG_DEPLOYMENT_MODE: ${RPG_DEPLOYMENT_MODE:-multiuser}
       RPG_REQUIRE_AUTH: ${RPG_REQUIRE_AUTH:-1}
@@ -46,7 +47,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    restart: unless-stopped
+    restart: always
     command:
       - "/bin/sh"
       - "-c"
@@ -56,7 +57,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://rpg:rpg@postgres:5432/rpg
-      RPG_MASTER_KEY: ${RPG_MASTER_KEY:?set RPG_MASTER_KEY}
+      RPG_MASTER_KEY: your_master_key_here
       RPG_DEPLOYMENT_MODE: ${RPG_DEPLOYMENT_MODE:-multiuser}
 
   postgres:

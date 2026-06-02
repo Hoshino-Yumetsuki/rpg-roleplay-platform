@@ -1552,6 +1552,7 @@
     "invite_only_tip": "This deployment is invite-only; registration is closed",
     "invite_only_note": "This deployment is invite-only. Contact an admin to get an account.",
     "first_admin": "The first registered user will become the admin.",
+    "registration_closed_note": "New user registration is currently closed. Please sign in with an existing account.",
     "min_password": "Password must be at least {{min}} characters.",
     "field_required": "Please fill in {{label}}",
     "field_min_length": "{{label}} must be at least {{min}} characters",

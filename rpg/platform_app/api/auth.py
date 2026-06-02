@@ -328,24 +328,33 @@ async def api_auth_schema():
     后端是字段的唯一权威源 — 加减字段只改这里,前端零改动。
     """
     pw_min = _auth.MIN_PASSWORD_LENGTH
-    from core.config import effective_auth_required
-    from core.config import setup_token as configured_setup_token
 
     from ..db import connect, init_db
 
     init_db()
     with connect() as db:
         user_count = db.execute("select count(*) as n from users").fetchone()["n"]
+        # 注册模式(admin 在「注册与邀请」设置;app_config 行不存在视为 open)
+        try:
+            cfg_row = db.execute(
+                "select value from app_config where key = 'admin.registration_config' limit 1"
+            ).fetchone()
+            reg_cfg = (cfg_row.get("value") if cfg_row else None) or {}
+            reg_mode = (reg_cfg.get("mode") or "open").lower()
+        except Exception:
+            reg_mode = "open"
     first_user_is_admin = int(user_count) == 0
+    # 关闭注册:closed 模式且已存在用户。首用户(空表)永远放行以便 bootstrap admin。
+    registration_disabled = reg_mode == "closed" and not first_user_is_admin
     notes: dict = {
         "min_password_length": pw_min,
         "max_password_length": 1024,
         "invite_only": False,
+        # 自用模式:首个注册用户即 admin。这是公开的产品行为,前端据此提示。
+        "first_user_is_admin": first_user_is_admin,
+        # 前端据此完全隐藏注册入口(只能登录)。
+        "registration_disabled": registration_disabled,
     }
-    # P2-3: 仅本地/非鉴权模式（effective_auth_required=False）才透出 first_user_is_admin
-    # server 模式下隐藏该字段，防止泄露首注册可抢 admin 的信息（CWE-200）
-    if not effective_auth_required():
-        notes["first_user_is_admin"] = first_user_is_admin
     # 邀请码字段：invite 模式时必填
     invite_field = {
         "key": "invite_code",
@@ -388,23 +397,6 @@ async def api_auth_schema():
     ]
     if notes["invite_only"]:
         register_fields.insert(0, invite_field)
-    setup_required = (
-        effective_auth_required()
-        and first_user_is_admin
-        and bool((configured_setup_token() or "").strip())
-    )
-    if setup_required:
-        register_fields.insert(
-            0,
-            {
-                "key": "setup_token",
-                "label": "Setup Token",
-                "type": "password",
-                "required": True,
-                "autocomplete": "one-time-code",
-            },
-        )
-        notes["setup_token_required"] = True
 
     return json_response(
         {
