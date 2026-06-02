@@ -55,13 +55,6 @@ def trusted_proxies() -> str | None:
 def trusted_proxies_raw() -> str:
     return os.getenv("RPG_TRUSTED_PROXIES", "")
 
-# ── Cookie ───────────────────────────────────────────────────────────────
-def cookie_secure() -> str | None:
-    return os.getenv("RPG_COOKIE_SECURE")
-
-def cookie_samesite() -> str:
-    return os.getenv("RPG_COOKIE_SAMESITE", "lax")
-
 # ── 安全 / 密钥 ──────────────────────────────────────────────────────────
 def master_key() -> str | None:
     return os.getenv("RPG_MASTER_KEY")

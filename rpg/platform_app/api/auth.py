@@ -1,4 +1,5 @@
 """platform_app.api.auth — /api/auth/* 路由。"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -28,6 +29,7 @@ async def api_register(request: Request):
     ip = _client_ip(request)
     ua = request.headers.get("user-agent", "")
     from ..security import normalize_username
+
     normalized_username = normalize_username(body.get("username", ""))
     # IP 速率限制：复用登录的速率限制，防止枚举/暴力注册
     try:
@@ -42,9 +44,17 @@ async def api_register(request: Request):
     terms_accepted = bool(body.get("terms_accepted"))
     age_confirmed = bool(body.get("age_confirmed"))
     if not terms_accepted:
-        raise HTTPException(400, detail={"error_key": "auth.terms_not_accepted", "message": "请阅读并同意《服务条款》和《隐私政策》"})
+        raise HTTPException(
+            400,
+            detail={
+                "error_key": "auth.terms_not_accepted",
+                "message": "请阅读并同意《服务条款》和《隐私政策》",
+            },
+        )
     if not age_confirmed:
-        raise HTTPException(400, detail={"error_key": "auth.age_not_confirmed", "message": "请确认你已年满 18 周岁"})
+        raise HTTPException(
+            400, detail={"error_key": "auth.age_not_confirmed", "message": "请确认你已年满 18 周岁"}
+        )
     # 首管理员引导令牌:body.setup_token 优先,其次 X-Setup-Token 头(server 模式才生效)
     setup_token = body.get("setup_token") or request.headers.get("X-Setup-Token")
     try:
@@ -78,7 +88,9 @@ async def api_verify_email(request: Request):
     try:
         user, token = _auth.confirm_email_verification(email, code)
         workspace.ensure_default(user["id"])
-        response = json_response({"ok": True, "user": public_user(user), "platform": platform_for(user)})
+        response = json_response(
+            {"ok": True, "user": public_user(user), "platform": platform_for(user)}
+        )
         _set_session_cookie(response, request, token)
         return response
     except ValueError as exc:
@@ -108,7 +120,9 @@ async def api_login(request: Request):
     try:
         user, token = _auth.login(body.get("username", ""), body.get("password", ""), ip=ip)
         workspace.ensure_default(user["id"])
-        response = json_response({"ok": True, "user": public_user(user), "platform": platform_for(user)})
+        response = json_response(
+            {"ok": True, "user": public_user(user), "platform": platform_for(user)}
+        )
         _set_session_cookie(response, request, token)
         return response
     except _auth.RateLimited as rl:
@@ -148,7 +162,9 @@ async def api_login_code_verify(request: Request):
     try:
         user, token = _auth.confirm_login_code(body.get("email", ""), body.get("code", ""), ip=ip)
         workspace.ensure_default(user["id"])
-        response = json_response({"ok": True, "user": public_user(user), "platform": platform_for(user)})
+        response = json_response(
+            {"ok": True, "user": public_user(user), "platform": platform_for(user)}
+        )
         _set_session_cookie(response, request, token)
         return response
     except _auth.RateLimited as rl:
@@ -166,8 +182,8 @@ async def api_login_code_verify(request: Request):
 async def api_logout(request: Request):
     _auth.logout(request.cookies.get(SESSION_COOKIE))
     response = json_response({"ok": True})
-    # 必须用跟 set 一致的 samesite/secure,否则跨域场景下浏览器会把 delete 当
-    # "另一个 cookie" 残留,导致 SameSite=None 的 session cookie 还在(或反之)。
+    # 必须用跟 set 一致的 samesite/secure,否则浏览器会把 delete 当成
+    # "另一个 cookie",导致 session cookie 残留删不掉。
     _delete_session_cookie(response, request)
     return response
 
@@ -177,11 +193,14 @@ async def api_me(user=Depends(current_user)):
     # 安全：未登录不返回 DB 细节，仅返回 driver/ok 健康标识
     is_admin = bool(user and user.get("role") == "admin")
     from ..db import status as db_status
-    return json_response({
-        "ok": True,
-        "user": public_user(user) if user else None,
-        "database": db_status(reveal_details=is_admin),
-    })
+
+    return json_response(
+        {
+            "ok": True,
+            "user": public_user(user) if user else None,
+            "database": db_status(reveal_details=is_admin),
+        }
+    )
 
 
 @router.post("/api/auth/magic-consume")
@@ -276,19 +295,27 @@ async def api_reset_password(request: Request):
     new_password = body.get("password") or ""
     ip = _client_ip(request)
     if not token or not new_password:
-        raise HTTPException(400, detail={"error_key": "auth.invalid_payload", "message": "参数不完整"})
+        raise HTTPException(
+            400, detail={"error_key": "auth.invalid_payload", "message": "参数不完整"}
+        )
     try:
         result = _auth.confirm_password_reset(token, new_password, ip=ip)
         return json_response(result)
     except ValueError as exc:
         msg = str(exc)
         if "invalid_token" in msg or "无效或已过期" in msg:
-            raise HTTPException(400, detail={"error_key": "auth.reset_token_invalid_or_expired",
-                                             "message": "重置链接无效或已过期，请重新申请"})
+            raise HTTPException(
+                400,
+                detail={
+                    "error_key": "auth.reset_token_invalid_or_expired",
+                    "message": "重置链接无效或已过期，请重新申请",
+                },
+            ) from exc
         if "已使用" in msg:
-            raise HTTPException(400, detail={"error_key": "auth.reset_token_used",
-                                             "message": "该重置链接已使用过"})
-        raise HTTPException(400, detail={"error_key": "auth.reset_fail", "message": msg})
+            raise HTTPException(
+                400, detail={"error_key": "auth.reset_token_used", "message": "该重置链接已使用过"}
+            ) from exc
+        raise HTTPException(400, detail={"error_key": "auth.reset_fail", "message": msg}) from exc
 
 
 @router.get("/api/auth/schema")
@@ -301,8 +328,11 @@ async def api_auth_schema():
     后端是字段的唯一权威源 — 加减字段只改这里,前端零改动。
     """
     pw_min = _auth.MIN_PASSWORD_LENGTH
+    from core.config import effective_auth_required
+    from core.config import setup_token as configured_setup_token
+
     from ..db import connect, init_db
-    from core.config import effective_auth_required, setup_token as configured_setup_token
+
     init_db()
     with connect() as db:
         user_count = db.execute("select count(*) as n from users").fetchone()["n"]
@@ -317,35 +347,78 @@ async def api_auth_schema():
     if not effective_auth_required():
         notes["first_user_is_admin"] = first_user_is_admin
     # 邀请码字段：invite 模式时必填
-    invite_field = {"key": "invite_code", "label": "邀请码", "type": "text", "required": notes["invite_only"]}
+    invite_field = {
+        "key": "invite_code",
+        "label": "邀请码",
+        "type": "text",
+        "required": notes["invite_only"],
+    }
     register_fields = [
         {"key": "username", "label": "用户名", "type": "text", "required": True},
         {"key": "display_name", "label": "昵称(可选)", "type": "text", "required": False},
-        {"key": "email", "label": "邮箱", "type": "email", "required": True, "autocomplete": "email"},
-        {"key": "birthday", "label": "出生日期", "type": "date", "required": True,
-         "placeholder": "YYYY-MM-DD", "note": "必须年满 18 周岁"},
-        {"key": "password", "label": "密码", "type": "password", "required": True, "min_length": pw_min},
-        {"key": "terms_accepted", "type": "boolean", "required": True, "label": "我已阅读并同意《服务条款》和《隐私政策》"},
+        {
+            "key": "email",
+            "label": "邮箱",
+            "type": "email",
+            "required": True,
+            "autocomplete": "email",
+        },
+        {
+            "key": "birthday",
+            "label": "出生日期",
+            "type": "date",
+            "required": True,
+            "placeholder": "YYYY-MM-DD",
+            "note": "必须年满 18 周岁",
+        },
+        {
+            "key": "password",
+            "label": "密码",
+            "type": "password",
+            "required": True,
+            "min_length": pw_min,
+        },
+        {
+            "key": "terms_accepted",
+            "type": "boolean",
+            "required": True,
+            "label": "我已阅读并同意《服务条款》和《隐私政策》",
+        },
         {"key": "age_confirmed", "type": "boolean", "required": True, "label": "我已年满 18 周岁"},
     ]
     if notes["invite_only"]:
         register_fields.insert(0, invite_field)
-    setup_required = effective_auth_required() and first_user_is_admin and bool((configured_setup_token() or "").strip())
+    setup_required = (
+        effective_auth_required()
+        and first_user_is_admin
+        and bool((configured_setup_token() or "").strip())
+    )
     if setup_required:
-        register_fields.insert(0, {
-            "key": "setup_token",
-            "label": "Setup Token",
-            "type": "password",
-            "required": True,
-            "autocomplete": "one-time-code",
-        })
+        register_fields.insert(
+            0,
+            {
+                "key": "setup_token",
+                "label": "Setup Token",
+                "type": "password",
+                "required": True,
+                "autocomplete": "one-time-code",
+            },
+        )
         notes["setup_token_required"] = True
 
-    return json_response({
-        "login": [
-            {"key": "username", "label": "用户名或邮箱", "type": "text", "required": True},
-            {"key": "password", "label": "密码", "type": "password", "required": True, "min_length": pw_min},
-        ],
-        "register": register_fields,
-        "notes": notes,
-    })
+    return json_response(
+        {
+            "login": [
+                {"key": "username", "label": "用户名或邮箱", "type": "text", "required": True},
+                {
+                    "key": "password",
+                    "label": "密码",
+                    "type": "password",
+                    "required": True,
+                    "min_length": pw_min,
+                },
+            ],
+            "register": register_fields,
+            "notes": notes,
+        }
+    )

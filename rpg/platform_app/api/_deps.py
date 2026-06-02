@@ -1,7 +1,6 @@
 """platform_app.api._deps — 跨 router 共享的 dependency / helper。"""
-from __future__ import annotations
 
-import os
+from __future__ import annotations
 
 from fastapi import HTTPException, Request
 from fastapi.encoders import jsonable_encoder
@@ -46,9 +45,17 @@ COMMANDS = [
     ("GET", "/api/scripts", "剧本列表"),
     ("POST", "/api/scripts/import", "导入 TXT/MD 剧本并自动识别章节"),
     ("GET", "/api/scripts/{script_id}/chapters", "读取剧本章节目录与预览"),
-    ("POST", "/api/scripts/{script_id}/knowledge/sync", "重建剧本 ChapterFact、世界书、人设卡和检索块"),
+    (
+        "POST",
+        "/api/scripts/{script_id}/knowledge/sync",
+        "重建剧本 ChapterFact、世界书、人设卡和检索块",
+    ),
     ("GET", "/api/scripts/{script_id}/chapter-facts", "读取剧本 ChapterFact 时间线"),
-    ("GET", "/api/scripts/{script_id}/birthpoints", "入场选出生点：按 phase 聚合 + 每 phase 均匀采样 anchor"),
+    (
+        "GET",
+        "/api/scripts/{script_id}/birthpoints",
+        "入场选出生点：按 phase 聚合 + 每 phase 均匀采样 anchor",
+    ),
     ("GET", "/api/scripts/{script_id}/character-cards", "读取剧本人设卡"),
     ("GET", "/api/scripts/{script_id}/worldbook", "读取剧本世界书条目"),
     ("GET", "/api/saves", "游戏存档目录"),
@@ -84,29 +91,17 @@ def json_response(content, status_code: int = 200, **kwargs):
 
 
 def _cookie_security_kwargs(request: Request) -> dict:
-    """统一的 cookie 安全参数,set 和 delete 必须用同一组,
-    否则跨域 reload 不发 cookie(SameSite=None 的 cookie 被 SameSite=Lax 的 delete 覆盖)。
+    """统一的 cookie 安全参数,set 和 delete 必须用同一组,否则浏览器会把
+    delete 当成"另一个 cookie",导致原 cookie 残留。
 
-    samesite=none 时,浏览器规范要求必须配 Secure(包括 localhost / 127.0.0.1 也要)。
-    Chrome 100+ 会直接拒绝 `SameSite=None; !Secure` 的 cookie,所以即使 env 写
-    `RPG_COOKIE_SECURE=0`,这里也强制 secure=True,否则浏览器拒收 → 登录失败。
-    127.0.0.1 在 Chrome 是 secure context,HTTP 也能发送 Secure-flag cookie。
+    samesite 固定 lax(同源部署,前端与后端同 origin);secure 跟随请求协议:
+    HTTPS 自动带 Secure flag,本地 HTTP / 明文回源自动不带(否则浏览器拒收 →
+    登录失败)。127.0.0.1 在 Chrome 是 secure context,HTTP 下也能发 Secure cookie。
     """
-    from core.config import cookie_samesite as _cookie_samesite
-    from core.config import cookie_secure as _cookie_secure
-    secure_env = _cookie_secure()
-    samesite = _cookie_samesite()
-    if secure_env is None:
-        secure = request.url.scheme == "https"
-    else:
-        secure = secure_env == "1"
-    if samesite == "none":
-        # 浏览器规范硬要求,不能让 env 错配把 cookie 配废
-        secure = True
     return {
         "httponly": True,
-        "secure": secure,
-        "samesite": samesite,
+        "secure": request.url.scheme == "https",
+        "samesite": "lax",
         "path": "/",
     }
 
@@ -130,6 +125,7 @@ def _auth_required() -> bool:
     """与 ui.py:_api_auth_required 同义，避免循环导入；服务器模式禁止匿名访问。"""
     from core.config import deployment_mode as _deployment_mode
     from core.config import require_auth_raw as _require_auth_raw
+
     explicit = _require_auth_raw().strip()
     if explicit == "1":
         return True
@@ -202,18 +198,22 @@ def _redact_mcp_in_tools(tools: dict, is_admin: bool) -> dict:
     if is_admin:
         return tools
     import copy
+
     out = copy.deepcopy(tools)
-    for srv in ((out.get("mcp") or {}).get("servers") or []):
+    for srv in (out.get("mcp") or {}).get("servers") or []:
         for field in _MCP_SECRET_FIELDS:
             srv.pop(field, None)
-    for srv in (out.get("mcp_servers") or []):
+    for srv in out.get("mcp_servers") or []:
         for field in _MCP_SECRET_FIELDS:
             srv.pop(field, None)
     return out
 
 
 def command_payload() -> list[dict]:
-    return [{"method": method, "path": path, "name": path.rsplit("/", 1)[-1] or path, "desc": desc} for method, path, desc in COMMANDS]
+    return [
+        {"method": method, "path": path, "name": path.rsplit("/", 1)[-1] or path, "desc": desc}
+        for method, path, desc in COMMANDS
+    ]
 
 
 def _client_ip(request: Request) -> str:
@@ -226,9 +226,8 @@ def _client_ip(request: Request) -> str:
     """
     tcp_ip = request.client.host if request.client else ""
     from core.config import trusted_proxies_raw as _trusted_proxies_raw
-    trusted = {
-        ip.strip() for ip in _trusted_proxies_raw().split(",") if ip.strip()
-    }
+
+    trusted = {ip.strip() for ip in _trusted_proxies_raw().split(",") if ip.strip()}
     if tcp_ip and tcp_ip in trusted:
         xff = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
         if xff:
