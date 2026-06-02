@@ -137,3 +137,4 @@ rpg/config/*.private.json
 
 # 本项目不用 uv
 uv.lock
+.ruff_cache

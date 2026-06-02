@@ -1,0 +1,83 @@
+# Docker build context excludes.
+# The build (deploy/Dockerfile) only needs: frontend/ (npm ci + vite build) and
+# rpg/ (pip install + backend). Everything below is heavy, regenerable, secret,
+# or build-irrelevant. Keep this in sync with .gitignore where it overlaps.
+
+# ── VCS / editor / tooling ──────────────────────────────────────────────────
+.git
+.gitignore
+.github
+.idea
+.vscode
+.omo
+*.swp
+*.swo
+
+# ── Docs / meta (not needed at runtime) ─────────────────────────────────────
+docs
+deploy
+*.md
+!rpg/**/*.md
+LICENSE
+NOTICE
+CHANGELOG.md
+CONTRIBUTING.md
+
+# ── Python caches / local venvs ─────────────────────────────────────────────
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.venv
+rpg/.venv
+.venv
+rpg_env
+
+# ── Frontend: rebuilt inside the image, never copy host artifacts ───────────
+frontend/node_modules
+frontend/dist
+frontend/.next
+frontend/uploads
+frontend/screenshots
+
+# ── Backend runtime data (player-private / regenerable / large) ─────────────
+rpg/platform_data
+rpg/saves
+rpg/indexes
+rpg/db
+rpg/claude_design_upload
+.webnovel
+.dev-logs
+
+# ── Secrets — must NEVER enter the image ────────────────────────────────────
+.env
+.env.*
+!.env.example
+**/master.key
+**/*.pem
+**/*.key
+!rpg/tests/**/*.pem
+**/vertex_sa*.json
+**/service_account*.json
+**/*_sa.json
+**/google_credentials*.json
+**/gcp_credentials*.json
+**/credentials.json
+**/secrets.json
+rpg/config/novel_glossary.json
+rpg/config/*.private.json
+
+# ── Databases / dumps / novel content fixtures ──────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+!rpg/tests/**/*.db
+!rpg/tests/**/*.sqlite
+.test-fixtures
+*.txt
+!rpg/**/*.txt
+
+# ── Test / audit / e2e output ───────────────────────────────────────────────
+output
+.playwright-cli
+.claude
