@@ -7,6 +7,7 @@ import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL,
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
 import { ConfirmModal, SettingsToggle, useAutoSave, usePlatformData, useReactiveUser, publishUser, fmtN, ResizableSplit } from '../platform-app.jsx';
+import AgentModelPicker from '../components/AgentModelPicker.jsx';
 import { getCaps as _getCapsImported } from '../components/catalog-helpers.js';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSContainer from '@cloudscape-design/components/container';
@@ -268,35 +269,16 @@ function ExtractorSection() {
           {enabled ? t('settings.extractor.enable_on') : t('settings.extractor.enable_off')}
         </CSToggle>
       </SetRow>
-      <SetRow label={t('settings.extractor.api')} description={t('settings.extractor.api_desc')}>
-        <SetSelect
-          disabled={!enabled}
-          value={apiId}
-          options={apiOptions.map(o => ({ value: o.id, label: o.name }))}
-          onChange={(val) => { setApiId(val); save("api_id", val); }}
+      {/* 统一共享组件:与「按模块分配模型」的提取器、scripts 导入流、cards 的 card_import
+          同一实现(Provider+Model + 未配 key 警告 + 写 extractor.* prefs)。 */}
+      <SetRow label={t('settings.extractor.api')} description={t('settings.extractor.model_desc')}>
+        <AgentModelPicker
+          prefPrefix="extractor"
+          preferProvider="deepseek"
+          defaultModel="gemini-3.5-flash"
+          variant="bare"
+          configHash="settings-models"
         />
-      </SetRow>
-      <SetRow label={t('settings.extractor.model')} description={t('settings.extractor.model_desc')}>
-        {modelList.length === 0 ? (
-          <CSInput
-            disabled={!enabled}
-            value={modelRealName}
-            placeholder="gemini-3.5-flash"
-            onChange={({ detail }) => { setModelRealName(detail.value); save("model_real_name", detail.value); }}
-          />
-        ) : (
-          <SetSelect
-            disabled={!enabled}
-            value={modelRealName}
-            options={[
-              ...(!modelList.some(m => (m.real_name || m.id) === modelRealName)
-                ? [{ value: modelRealName, label: `${modelRealName}${t('settings.extractor.model_not_in_list')}` }]
-                : []),
-              ...modelList.map(m => ({ value: m.real_name || m.id, label: m.display_name || m.real_name || m.id })),
-            ]}
-            onChange={(val) => { setModelRealName(val); save("model_real_name", val); }}
-          />
-        )}
       </SetRow>
     </SetGroup>
   );

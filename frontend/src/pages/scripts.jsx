@@ -14,6 +14,7 @@ import { ScriptReview } from './script-review.jsx';
 import { WorldbookEditorView } from './script-edit-worldbook.jsx';
 // phase_rebuild_panel: 模块矩阵重做面板
 import { useScriptRebuild, ModuleRebuildPanel } from './script-modules-panel.jsx';
+import AgentModelPicker from '../components/AgentModelPicker.jsx';
 import { ModuleStatusCard } from '../components/ModuleStatusCard.jsx';
 import { ModuleMatrixOverview } from '../components/ModuleMatrixOverview.jsx';
 import { RebuildJobBanner } from '../components/RebuildJobBanner.jsx';
@@ -2519,73 +2520,17 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
 
           {/* 拆书流水线 LLM 选择 — 写入 user prefs.extractor.*,可在「设置 → 模块模型」覆盖 */}
           <CSContainer header={<CSHeader variant="h2" description="提取章节摘要 / NPC 角色卡 / 世界书所用的 LLM。仅在导入这一步生效;玩游戏时的主 GM 在另一处配置。这里改完会保存到你的「设置 → 模型管理 → 提取器」偏好(import-pipeline 后端读 prefs,不是当场传参)。">提取模型</CSHeader>}>
-            {credApiIds.size === 0 && (
-              <CSAlert type="warning" header="尚未配置任何 API key" action={
-                <CSButton iconName="settings" onClick={() => { window.location.hash = 'settings-models'; }}>去配 key</CSButton>
-              }>
-                请先去 设置 → 模型管理 给至少一家 provider 配 key,否则导入开始时会卡 412 凭证缺失。
-              </CSAlert>
-            )}
-            <CSColumnLayout columns={2}>
-              <CSFormField label="Provider" description="只列出你已配 key 的 provider(走 settings → 模型管理 添加)。建议 deepseek 跑提取(便宜)。">
-                <CSSelect
-                  selectedOption={(() => {
-                    const a = extractApis.find(x => (x.api_id || x.id) === extractApiId);
-                    return a ? { value: extractApiId, label: a.display_name || a.name || extractApiId } : (extractApiId ? { value: extractApiId, label: extractApiId + ' (未配 key)' } : null);
-                  })()}
-                  options={extractApis
-                    .filter(a => credApiIds.has(a.api_id || a.id))
-                    .map(a => ({ value: a.api_id || a.id, label: a.display_name || a.name || (a.api_id || a.id) }))}
-                  placeholder={credApiIds.size === 0 ? "请先配 API key" : "选择 provider"}
-                  onChange={({ detail }) => {
-                    const aid = detail.selectedOption.value;
-                    setExtractApiId(aid);
-                    const a = extractApis.find(x => (x.api_id || x.id) === aid);
-                    const m0 = (a?.models || a?.entries || []).find(m => {
-                      const caps = m.capabilities || m.caps || [];
-                      return m.enabled !== false && !(caps.length === 1 && caps[0] === 'embedding');
-                    });
-                    const mid = m0 ? (m0.real_name || m0.id) : '';
-                    if (mid) setExtractModel(mid);
-                    persistExtractor(aid, mid || extractModel);
-                  }}
-                  disabled={extractSaving || credApiIds.size === 0}
-                  empty="还没配 API key"
-                />
-              </CSFormField>
-              <CSFormField label="Model" description="建议 deepseek-v4-flash(便宜)或 gemini-3.5-flash(质量稍好)。提取走 JSON 模式所以挑支持 json_mode 的模型。">
-                <CSSelect
-                  selectedOption={(() => {
-                    const a = extractApis.find(x => (x.api_id || x.id) === extractApiId);
-                    const list = (a && (a.models || a.entries)) || [];
-                    const m = list.find(x => (x.real_name || x.id) === extractModel);
-                    return m ? { value: extractModel, label: m.display_name || m.real_name || m.id } : (extractModel ? { value: extractModel, label: extractModel } : null);
-                  })()}
-                  options={(() => {
-                    const a = extractApis.find(x => (x.api_id || x.id) === extractApiId);
-                    const list = (a && (a.models || a.entries)) || [];
-                    return list
-                      .filter(m => {
-                        const caps = m.capabilities || m.caps || [];
-                        // 隐藏 embedding-only 的(那是给 RAG 用,不是给提取用)
-                        return !(caps.length === 1 && caps[0] === 'embedding');
-                      })
-                      .map(m => ({
-                        value: m.real_name || m.id,
-                        label: `${m.display_name || m.real_name || m.id}${m.enabled === false ? ' (禁用)' : ''}`,
-                        disabled: m.enabled === false,
-                      }));
-                  })()}
-                  placeholder="选择模型"
-                  onChange={({ detail }) => {
-                    const mid = detail.selectedOption.value;
-                    setExtractModel(mid);
-                    persistExtractor(extractApiId, mid);
-                  }}
-                  disabled={extractSaving || !extractApiId}
-                />
-              </CSFormField>
-            </CSColumnLayout>
+            {/* 统一共享组件:Provider+Model 选择 + 「未配 key」警告 + 写 user prefs.extractor.*,
+                与「设置 → 按模块分配模型」的提取器、cards 的 card_import 同一实现。
+                后端 import-pipeline 读 extractor.* prefs(不当场传参),所以这里只需持久化偏好。 */}
+            <AgentModelPicker
+              prefPrefix="extractor"
+              preferProvider="deepseek"
+              defaultModel="deepseek-v4-flash"
+              variant="bare"
+              persistOnMount
+              configHash="settings-models"
+            />
           </CSContainer>
 
           {/* 完整流水线开关 — 之前两个 toggle 在代码里硬编码 true,UI 不暴露,
