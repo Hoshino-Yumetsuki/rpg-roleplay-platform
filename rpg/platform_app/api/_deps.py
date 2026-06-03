@@ -90,17 +90,30 @@ def json_response(content, status_code: int = 200, **kwargs):
     return BaseJSONResponse(jsonable_encoder(content), status_code=status_code, **kwargs)
 
 
+def _request_is_https(request: Request) -> bool:
+    """浏览器面向的连接是否 HTTPS。
+    容器内 uvicorn 不带 --proxy-headers 时 request.url.scheme 恒为 http(哪怕前面挂了
+    TLS 反代),所以必须读 X-Forwarded-Proto 才能识别 nginx/CF 终止的 HTTPS。
+    XFP 只用于决定 cookie 的 Secure 标志,伪造它顶多废掉伪造者自己的 cookie。
+    """
+    if request.url.scheme == "https":
+        return True
+    xfp = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    return xfp == "https"
+
+
 def _cookie_security_kwargs(request: Request) -> dict:
     """统一的 cookie 安全参数,set 和 delete 必须用同一组,否则浏览器会把
     delete 当成"另一个 cookie",导致原 cookie 残留。
 
-    samesite 固定 lax(同源部署,前端与后端同 origin);secure 跟随请求协议:
-    HTTPS 自动带 Secure flag,本地 HTTP / 明文回源自动不带(否则浏览器拒收 →
-    登录失败)。127.0.0.1 在 Chrome 是 secure context,HTTP 下也能发 Secure cookie。
+    samesite 固定 lax(同源部署)。secure 跟随【有效协议】:HTTPS(含反代 X-Forwarded-Proto)
+    才带 Secure;明文 HTTP 自托管不带(浏览器会【静默丢弃】明文 HTTP 上的 Secure cookie →
+    会话存不下 → 登录后弹回登录页)。反代 HTTPS 终止时容器内 scheme 恒 http,必须靠 XFP
+    才能正确带上 Secure。
     """
     return {
         "httponly": True,
-        "secure": request.url.scheme == "https",
+        "secure": _request_is_https(request),
         "samesite": "lax",
         "path": "/",
     }

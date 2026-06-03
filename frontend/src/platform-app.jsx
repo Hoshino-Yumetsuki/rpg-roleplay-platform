@@ -111,6 +111,7 @@ const getPLTitles = (t) => ({
   mcp:      ["MCP",   t('platform.nav.mcp_sub')],
   skills:   ["Skill", t('platform.nav.skills_sub')],
   apis:     ["API",   t('platform.nav.apis_sub')],
+  feedback: ["支持与反馈", "提交问题/建议,查看处理进度与官方回复"],
 });
 // Static fallback for exports
 const PL_TITLES = getPLTitles((k) => k);
@@ -3987,9 +3988,10 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
   void chrome;
   useEffectPL(() => { setChromeState({}); }, [page]);
 
-  // 暴露全局 window.__openFeedback，供控制台或其他模块快捷打开反馈抽屉
+  // 反馈已改为独立页 /feedback(参考 AWS 支持中心)。__openFeedback 改为导航到该页,
+  // 不再开抽屉(平台内)。游戏台(独立文档)的 FeedbackDrawerRoot 仍用抽屉,不受影响。
   useEffectPL(() => {
-    window.__openFeedback = () => setFeedbackOpen(true);
+    window.__openFeedback = () => plNavigate('feedback');
     return () => { delete window.__openFeedback; };
   }, []);
 
