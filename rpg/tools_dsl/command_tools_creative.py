@@ -11,10 +11,13 @@ scope="script", origins=_USER_ORIGINS_READ (任意 origin 可调, 纯 LLM 推荐
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
 from tools_dsl.command_dispatcher import ToolSpec, get_registry
+
+_log = logging.getLogger(__name__)
 
 # 与 command_tools_saves.py 保持一致 — 任何 origin 都可以调只读工具
 _USER_ORIGINS_READ = frozenset({
@@ -282,6 +285,7 @@ def _call_llm_emit_identities(
         from character_card_generator import _select_backend
         backend = _select_backend(user_id)
     except Exception:
+        _log.exception("[identity-gen] _select_backend 失败 user_id=%s", user_id)
         return None
 
     backend_kind = type(backend).__name__
@@ -309,6 +313,7 @@ def _call_llm_emit_identities(
                     if isinstance(inp, dict):
                         return inp.get("recommendations") or []
         except Exception:
+            _log.exception("[identity-gen] Anthropic 调用失败 model=%s", getattr(backend, "model_name", "?"))
             return None
     else:
         # JSON mode fallback
@@ -328,6 +333,8 @@ def _call_llm_emit_identities(
             if obj and isinstance(obj.get("recommendations"), list):
                 return obj["recommendations"]
         except Exception:
+            _log.exception("[identity-gen] %s 调用失败 model=%s",
+                           backend_kind, getattr(backend, "model_name", "?"))
             return None
     return None
 

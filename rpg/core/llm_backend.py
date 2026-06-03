@@ -53,6 +53,36 @@ def first_user_model(user_id: Optional[int], api_id: str | None = None) -> tuple
         credential_api_ids = {normalize_api_id(row["api_id"]) for row in rows}
         # 每用户视图:含该用户同步到的模型 + 自建中转站,BYOK 默认才能命中
         catalog = load_catalog_for_user(int(user_id))
+
+        # 用户的 GM 模型偏好 = 他们实际在用、已验证可用的模型。优先返回它(在有凭证的
+        # provider 下)。否则盲取"第一个 enabled" 会撞上 catalog 里排最前的过期/已下线模型
+        # —— 例如平台 vertex provider 的首个模型 gemini-1.5-pro-002 早已 404 NOT_FOUND,
+        # 导致子代理(身份生成 / phase compact 等)对没设专用偏好的用户一律失败。
+        gm_pref = None
+        try:
+            with connect() as _dbp:
+                _pr = _dbp.execute(
+                    "select preferences->>'gm.model_real_name' as m from user_preferences where user_id = %s",
+                    (int(user_id),),
+                ).fetchone()
+            gm_pref = (_pr or {}).get("m") if _pr else None
+        except Exception:
+            gm_pref = None
+        if gm_pref:
+            for api in catalog.get("apis", []):
+                aid = normalize_api_id(api.get("id") or api.get("api_id"))
+                if target_api and aid != target_api:
+                    continue
+                if aid not in credential_api_ids:
+                    continue
+                for model in api.get("models", []) or []:
+                    if model.get("enabled") is False:
+                        continue
+                    rn = model.get("real_name") or model.get("id")
+                    if rn and str(rn) == str(gm_pref):
+                        return aid, str(rn)
+
+        # 回退:有凭证 provider 的第一个 enabled 模型(原逻辑)
         for api in catalog.get("apis", []):
             aid = normalize_api_id(api.get("id") or api.get("api_id"))
             if target_api and aid != target_api:
