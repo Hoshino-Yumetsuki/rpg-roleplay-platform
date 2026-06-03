@@ -183,9 +183,17 @@ def _search_entities(
 ) -> dict[str, list[dict[str, Any]]]:
     """task 51/52: LightRAG 双层检索的第二层 — entity 层。
 
-    **时间线对齐**(task 52 关键): chapter_max 是 GM 当前回合"可见的最大章节",
-    硬过滤掉 first_chapter > chapter_max 的角色/词条 —— 否则第 1 章玩家会被召回
-    第 391 章才出现的莉莉丝,严重剧透。chapter_min 同理(防止已过去章节不再相关)。
+    **时间线对齐**(task 52 关键 + BUG-1 修复): chapter_max 是 GM 当前回合"可见的最大章节"
+    (= 玩家进度,见 retrieve_script_context 把 progress_chapter 钳进来)。硬过滤掉
+    first_revealed_chapter > chapter_max 的角色/词条 —— 否则第 1 章玩家会被召回第 391 章
+    才出现的莉莉丝,严重剧透。
+
+    进度列统一到 first_revealed_chapter(character_cards 自 v28 有;worldbook 自 v53 有),
+    not null default 0(0=开局即可见,与 kb_canon_entities / canon_repo._reveal_clause 同约定)。
+    **方向铁律**:不再用 `first_chapter is null` 放行 —— 过滤直接 `first_revealed_chapter <= %s`,
+    未知/NULL 一律收紧(`null <= x` 为 false → 不召回),绝不放行后期实体。
+    旧代码引用从不存在的 first_chapter/last_seen_chapter 列 → 裸 except 静默返空(漏功能但不剧透);
+    本修复恢复召回的同时保持"不剧透"。
 
     Returns: {"cards": [...], "worldbook": [...]}
     """
@@ -201,16 +209,17 @@ def _search_entities(
             out["cards"] = db.execute(
                 """
                 select id, name, identity, personality, appearance,
-                       first_chapter, last_seen_chapter,
+                       first_revealed_chapter,
                        (1 - (embedding_vec <=> %s::vector)) as score
                 from character_cards
                 where script_id = %s
                   and embedding_vec is not null
                   and enabled = true
-                  -- task 52: 时间线硬过滤,GM 不该看到玩家还没读到的章节里的角色
+                  -- BUG-1: 时间线硬过滤,GM 不该看到玩家还没读到的章节里的角色。
+                  -- chapter_max is null 仅出现在管理/编辑器视角(无进度上下文);
+                  -- 线上回合一定带 progress 钳定的 chapter_max,故 NULL 收紧。
                   and (%s::integer is null
-                       or first_chapter is null
-                       or first_chapter <= %s)
+                       or first_revealed_chapter <= %s)
                 order by embedding_vec <=> %s::vector
                 limit %s
                 """,
@@ -224,14 +233,13 @@ def _search_entities(
         try:
             out["worldbook"] = db.execute(
                 """
-                select id, title, content, first_chapter, last_seen_chapter,
+                select id, title, content, first_revealed_chapter,
                        (1 - (embedding_vec <=> %s::vector)) as score
                 from worldbook_entries
                 where script_id = %s
                   and embedding_vec is not null
                   and (%s::integer is null
-                       or first_chapter is null
-                       or first_chapter <= %s)
+                       or first_revealed_chapter <= %s)
                 order by embedding_vec <=> %s::vector
                 limit %s
                 """,

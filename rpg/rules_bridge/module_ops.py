@@ -6,7 +6,14 @@ from rules.dnd5e.character import make_default_character
 from rules_bridge.entity_sync import _entities_from_room, _sync_active_entities_to_scene
 
 
-def _room_snapshot(room: dict) -> dict:
+def _loot_id(entry: dict) -> str:
+    return str(entry.get("item_id") or entry.get("id") or "")
+
+
+def _room_snapshot(room: dict, taken_loot: set[str] | None = None) -> dict:
+    # 已拾取的 loot 不再出现在房间 snapshot 里，防止重新进房刷新可拾取项（重复刷）。
+    taken = taken_loot or set()
+    loot = [l for l in (room.get("loot") or []) if _loot_id(l) not in taken]
     return {
         "id": room.get("id"),
         "name": room.get("name"),
@@ -18,7 +25,7 @@ def _room_snapshot(room: dict) -> dict:
         "hazards": list(room.get("hazards") or []),
         "npcs": list(room.get("npcs") or []),
         "enemies": list(room.get("enemies") or []),
-        "loot": list(room.get("loot") or []),
+        "loot": loot,
         "flags": dict(room.get("flags") or {}),
     }
 
@@ -61,6 +68,7 @@ def start_module(state, module_id: str, character_overrides: dict | None = None)
         "exits": list(start_room.get("exits") or []),
         "visible_clues": list(start_room.get("visible_clues") or []),
         "flags": {},
+        "taken_loot": [],  # 已拾取 loot 的 item_id（持久），防重复刷
         "current_room": _room_snapshot(start_room),
         "module_manifest": {
             "id": manifest.get("id"),
@@ -184,7 +192,7 @@ def enter_room(state, location_id: str) -> dict:
     scene["location_id"] = location_id
     scene["exits"] = list(room.get("exits") or [])
     scene["visible_clues"] = list(room.get("visible_clues") or [])
-    scene["current_room"] = _room_snapshot(room)
+    scene["current_room"] = _room_snapshot(room, set(scene.get("taken_loot") or []))
     state.data.setdefault("player", {})["current_location"] = room.get("name") or location_id
     state.mark_scene_visit(location_id)
     # 同步 active_entities (覆盖 source='room_data',不动 encounter / gm_provisional)

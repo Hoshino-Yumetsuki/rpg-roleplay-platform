@@ -147,7 +147,7 @@ def _t_mark_anchor_satisfied(user_id: int, args: dict) -> str:
             if anchor_key:
                 row = db.execute(
                     """
-                    select id, status, summary from save_anchor_states
+                    select id, status, summary, source_chapter from save_anchor_states
                     where save_id = %s and anchor_key = %s
                     """,
                     (save_id, anchor_key),
@@ -155,7 +155,7 @@ def _t_mark_anchor_satisfied(user_id: int, args: dict) -> str:
             else:
                 row = db.execute(
                     """
-                    select id, status, summary from save_anchor_states
+                    select id, status, summary, source_chapter from save_anchor_states
                     where save_id = %s and id = %s
                     """,
                     (save_id, int(anchor_id_raw)),
@@ -179,6 +179,16 @@ def _t_mark_anchor_satisfied(user_id: int, args: dict) -> str:
                 """,
                 (new_status, how, occurred_turn, drift, save_id, row["id"]),
             )
+            # BUG-3: 锚点满足 = 玩家已推进到该锚点所在原著章节 → 同步玩家进度
+            # (advance_progress 取 max 只增不减,幂等)。让 progress_chapter 真随剧情走,
+            # 防剧透集合(Phase D canon_repo._reveal_clause + retrieval 层级图)随之扩。
+            _src_ch = row.get("source_chapter")
+            if isinstance(_src_ch, int) and _src_ch >= 1:
+                try:
+                    from gm_serving.settings import advance_progress
+                    advance_progress(db, save_id, _src_ch)
+                except Exception:
+                    pass  # 进度同步失败不阻断锚点标记
         return json.dumps({
             "ok": True,
             "anchor_id": row["id"],

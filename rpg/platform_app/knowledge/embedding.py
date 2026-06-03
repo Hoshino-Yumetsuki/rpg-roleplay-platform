@@ -554,51 +554,12 @@ def _embed_chunks_loop_inner(script_id: int, user_id: int) -> None:
                 )
         log.info("[embedding] chunks +%d (script_id=%s)", len(rows), script_id)
 
-    # task 52: entity 层 embed 之前,先回填 first_chapter / last_seen_chapter。
-    # 这样下游 _search_entities 能按时间线硬过滤,GM 不会被召回未来章节的角色/词条。
-    # 算法:全文 LIKE 搜 script_chapters.content,聚合 MIN/MAX chapter_index。
-    # 一次性 SQL,~O(N × chapter_count),866 章场景下 ~200ms。
-    #
-    # P0 修:character_cards 表没 first_chapter/last_seen_chapter 列时(v41+ 还
-    # 没加这两列?),整段 SQL 抛 "column does not exist" 导致 cards/wb embed
-    # 永远跑不到。包 try/except,backfill 失败不阻断后续 embedding。
-    try:
-        with connect() as db:
-            db.execute(
-                """
-                with char_first_last as (
-                  select cc.id as cc_id,
-                         min(sc.chapter_index) as first_ch,
-                         max(sc.chapter_index) as last_ch
-                  from character_cards cc
-                  join script_chapters sc on sc.script_id = cc.script_id
-                  where cc.script_id = %s
-                    and cc.card_type = 'npc'           -- v28: 章节边界回填只对 NPC 行
-                    and sc.content like '%%' || cc.name || '%%'
-                  group by cc.id
-                )
-                update character_cards cc
-                set first_chapter = cfl.first_ch,
-                    last_seen_chapter = cfl.last_ch
-                from char_first_last cfl
-                where cc.id = cfl.cc_id
-                  and cc.first_chapter is null
-                  and cc.card_type = 'npc'
-                """,
-                (script_id,),
-            )
-            db.execute(
-                "update worldbook_entries set first_chapter = 1 "
-                "where script_id = %s and first_chapter is null",
-                (script_id,),
-            )
-            log.info("[embedding] task 52: backfilled chapter boundaries for script %s", script_id)
-    except Exception as exc:
-        log.warning(
-            "[embedding] chapter-boundary backfill skipped for script %s: %s "
-            "(missing first_chapter/last_seen_chapter columns — see migrations)",
-            script_id, exc,
-        )
+    # BUG-1: 旧 task 52 在此用全文 LIKE 回填 character_cards/worldbook_entries 的
+    # first_chapter / last_seen_chapter —— 但那两列全库从未建过,整段 SQL 恒抛
+    # "column does not exist",被 try/except 静默吞,从未生效过。
+    # 进度过滤已统一到 first_revealed_chapter:character_cards 由 extraction/resolve 写
+    # (v28 _sync upsert),worldbook_entries 由 migration v53 补列 + 从 metadata.chapter_min
+    # 回填。_search_entities 直接读 first_revealed_chapter,无需此回填。故移除死代码避免误导。
 
     # entity 层:character_cards
     with connect() as db:

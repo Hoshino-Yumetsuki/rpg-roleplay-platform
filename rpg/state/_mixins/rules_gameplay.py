@@ -3,7 +3,7 @@
 承载:
 - dice_log:           append_dice_log
 - player character:   set_player_character / update_player_hp / damage_player
-- inventory:          consume_inventory_item / sync_resources_from_inventory / _audit_rules_inventory
+- inventory:          consume_inventory_item / grant_inventory_item / sync_resources_from_inventory / _audit_rules_inventory
 - encounter:          set_encounter / clear_encounter
 - scene:              set_scene / mark_scene_visit / set_scene_flag
 - active_entities:    _active_entities / set_active_entities / upsert_active_entity /
@@ -72,6 +72,35 @@ class RulesGameplayMixin:
             self._audit_rules_inventory(
                 action="consume",
                 alias=alias,
+                detail=result,
+            )
+        return result
+
+    def grant_inventory_item(self, item_id: str, name: str | None = None,
+                             qty: int = 1, kind: str = "misc") -> dict:
+        """Canonical inventory 授予（consume 的镜像）。返回 character.py 标准 result dict。
+
+        副作用（成功时）：
+          1. player_character.inventory 按 item_id 判重累加 / 新建条目
+          2. memory.resources 派生重写为当前 inventory 列表
+          3. audit_log 记一条 source=rules_engine 的 inventory grant 记录
+
+        这是"有授予"路径的唯一 canonical 入口：GM 的"获得 X"经 grant 桥接 / 拾取
+        loot 都走这里，确保玩家看得到（resources 派生）也用得了（canonical consume）。
+        """
+        from rules.dnd5e.character import (
+            grant_inventory_item as _grant,
+        )
+        from rules.dnd5e.character import (
+            resources_from_inventory as _derive,
+        )
+        pc = self.data.setdefault("player_character", {})
+        result = _grant(pc, item_id, name=name, qty=qty, kind=kind)
+        if result.get("ok"):
+            self.data.setdefault("memory", {})["resources"] = _derive(pc)
+            self._audit_rules_inventory(
+                action="grant",
+                alias=str(item_id or ""),
                 detail=result,
             )
         return result

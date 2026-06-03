@@ -457,6 +457,10 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
     _ensure_timeline_ready()
     is_default = _is_default_mumu_script(script_id) if script_id else True  # 兼容老 caller 不传 script_id 时按默认走
     timeline_filter = None
+    # BUG-2/BUG-3: 玩家进度 + 元知识模式,函数级缓存供层级图过滤 / entity 召回天花板用。
+    # spoiler-safe 默认:progress=1(绝不 None,否则 _reveal_clause 放行全书=剧透)、mode=none。
+    _progress_chapter = 1
+    _foreknowledge_mode: str = "none"
     # task 117: 算法 phase fallback — 当 state.world.time 空(turn=0 等)时 timeline_filter
     # 拿不到 chapter window,从 phase_digests 拿该 save 当前 phase 的 chapter_range。
     # 这样 BM25/worldbook 不会全文检索整本书。
@@ -467,6 +471,34 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
         pending = timeline.get("pending_jump") or {}
         label = pending.get("to") or world.get("time", "")
         timeline_filter = timeline_filter_for_label(label)
+        # ── BUG-3: 把"时间线派生的当前章节"materialize 进 progress_chapter ──────────
+        # 病灶:gm_serving.settings.advance_progress 全库零调用 → 新存档 progress 恒=1,
+        # Phase D(canon_repo._reveal_clause)与层级图永远只看第 1 章实体。
+        # 真·进度信号 = get_progress_window 的 chapter_min(玩家当前所处章节:已满足锚点+1 /
+        # world.time 标签映射章 / fallback=1),它对存量存档也有效(不依赖从未写过的 progress_chapter)。
+        # 每回合幂等同步(advance_progress 取 max 只增不减),并顺手读 foreknowledge_mode。
+        # 剧透方向:用 chapter_min(当前位置)而非 chapter_max(+50 前瞻窗口),绝不超前揭示。
+        if script_id:
+            try:
+                _save_id_prog = _resolve_save_id_from_user(user_id)
+                if _save_id_prog:
+                    from agents.anchor_seed_agent import get_progress_window as _gpw_sync
+                    _wt_sync = (world.get("time") or "").strip()
+                    _pw_sync = _gpw_sync(_save_id_prog, world_time_label=_wt_sync,
+                                         script_id=int(script_id), window_size=50)
+                    _progress_chapter = max(1, int(_pw_sync.get("chapter_min") or 1))
+                    from gm_serving.settings import advance_progress as _adv_prog
+                    from platform_app.db import connect as _conn_prog
+                    with _conn_prog() as _db_prog:
+                        _sess_prog = _db_prog.execute(
+                            "select worldline from game_sessions where save_id=%s", (_save_id_prog,)
+                        ).fetchone()
+                        _wl_prog = (_sess_prog or {}).get("worldline") if _sess_prog else None
+                        if isinstance(_wl_prog, dict):
+                            _foreknowledge_mode = _wl_prog.get("foreknowledge_mode") or "none"
+                        _adv_prog(_db_prog, _save_id_prog, _progress_chapter)
+            except Exception as _prog_err:
+                log.warning(f"[retrieval] progress_chapter 同步跳过(非致命): {_prog_err}")
         if not timeline_filter.get("anchor_chapter"):
             previous = (timeline.get("last_transition") or {}).get("from")
             if previous:
@@ -720,17 +752,26 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
         try:
             if script_id:
                 from platform_app.db import connect as _connect_tree
+                from kb.canon_repo import _reveal_clause as _rc_fn
+                # BUG-2: 层级图注入 kb_canon_entities 时必须按"已揭示集合"过滤,否则
+                # `order by importance desc limit 60` 会把全书后期势力/地点塞给早章玩家 = 剧透。
+                # 复用 canon_repo._reveal_clause(与 Phase D 同语义,单一真源):
+                #   CTE 实体用裸列;parent self-join 用 p. 前缀,防"早章子实体的后期父势力名"泄漏
+                #   (父若未揭示 → join 不命中 → 该实体退化为顶级独立项,不显示父名)。
+                _rc, _rc_p = _rc_fn(_progress_chapter, _foreknowledge_mode)
+                _rc_par, _rc_par_p = _rc_fn(_progress_chapter, _foreknowledge_mode, prefix="p.")
                 with _connect_tree() as _db_tree:
                     # 拉前 25 个 importance 最高的有 parent_logical_key 的实体 + 它们的 parent
                     # 再拉前 8 个无 parent 但有 children 的顶级 entity
                     rows = _db_tree.execute(
-                        """
+                        f"""
                         with top_entities as (
                           select logical_key, name, type, entity_subtype, parent_logical_key, importance
                           from kb_canon_entities
                           where script_id = %s
                             and type in ('faction', 'location', 'concept')
                             and entity_subtype != ''
+                            and {_rc}
                           order by importance desc
                           limit 60
                         )
@@ -740,9 +781,10 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                         from top_entities e
                         left join kb_canon_entities p
                           on p.script_id = %s and p.logical_key = e.parent_logical_key
+                          and {_rc_par}
                         order by e.importance desc
                         """,
-                        (script_id, script_id),
+                        (script_id, *_rc_p, script_id, *_rc_par_p),
                     ).fetchall()
                 if rows:
                     # 建邻接:parent_lk → [(name, subtype, importance), ...]
@@ -813,6 +855,7 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                 chapter_max=_ch_max,
                 top_k=3,
                 user_id=user_id,
+                progress_chapter=_progress_chapter,  # BUG-1: entity 召回剧透天花板钳到玩家进度
             )
             if pg_context:
                 # 非默认剧本：抹掉历史脏数据里残留的默认柏林 token 行（防御性）

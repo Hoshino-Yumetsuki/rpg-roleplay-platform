@@ -1366,6 +1366,25 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """,
         "create index if not exists idx_user_model_entries_user on user_model_entries(user_id, api_id)",
     ]),
+    (53, "worldbook_first_revealed_chapter", [
+        # BUG-1 修复:规范进度过滤(防剧透"已揭示集合")统一到 first_revealed_chapter。
+        # 背景:_search.py / embedding.py 一直引用 character_cards / worldbook_entries 的
+        #   first_chapter / last_seen_chapter 列,但全库从未建过这两列 → 两处被裸 except
+        #   静默吞,cards/worldbook 向量召回恒返 []。character_cards 早有 first_revealed_chapter
+        #   (v28),worldbook_entries 连进度列都没有。这里给 worldbook 补上,
+        #   下游 _search_entities 改读 first_revealed_chapter(见 _search.py),召回恢复且按进度硬过滤。
+        # 方向铁律:列 not null default 0(0=开局即可见,与 kb_canon_entities / canon_repo 同约定);
+        #   _search_entities 过滤不再用 `is null` 放行,NULL/未知一律收紧。
+        "alter table worldbook_entries add column if not exists first_revealed_chapter integer not null default 0",
+        "create index if not exists idx_worldbook_first_revealed "
+        "on worldbook_entries(script_id, first_revealed_chapter)",
+        # 从 metadata.chapter_min 回填已揭示章节(retrieval._entry_chapter_min 同源)。
+        # 无 chapter_min 的条目保持 0(开局即设定),与旧 backfill 把 first_chapter 设 1 的过滤效果一致
+        # (0/1 对任意 progress>=1 均 <=,等价)。正则保证 metadata 缺键时为 NULL→false,不误填。
+        "update worldbook_entries "
+        "set first_revealed_chapter = greatest(0, (metadata->>'chapter_min')::int) "
+        "where (metadata->>'chapter_min') ~ '^[0-9]+$' and first_revealed_chapter = 0",
+    ]),
 ]
 
 
