@@ -30,6 +30,12 @@ def start_encounter_by_id(state, encounter_id: str, seed: int | None = None) -> 
     module_id = scene.get("module_id")
     if not module_id:
         return {"ok": False, "error": "未加载模组"}
+    # 守卫:已有进行中的战斗时不得重复 combat_start —— 原来无条件 set_encounter 覆盖,
+    # 战斗打到一半再次触发同一 encounter_id(LLM 叙事"重新开打"/场景脚本二次触发)会用
+    # 满血 stat_block 重建所有 combatants → 敌人血量重置、已 defeated 的复活、进度全丢
+    # (玩家可借此无限重置 boss)。
+    if (state.data.get("encounter") or {}).get("active"):
+        return {"ok": False, "error": "已有进行中的战斗,请先结束当前战斗再开新战斗"}
     bundle = module_registry.load_module(module_id)
     enc_defs = bundle.get("encounters") or []
     enc_def = next((e for e in enc_defs if e.get("id") == encounter_id), None)
@@ -67,6 +73,20 @@ def start_encounter_by_id(state, encounter_id: str, seed: int | None = None) -> 
             "ts": datetime.now().isoformat(timespec="seconds"),
         })
     return {"ok": True, "encounter": encounter}
+
+
+def _finalize_encounter(state, encounter: dict, outcome: str) -> None:
+    """战斗结算收尾:置 active=False/outcome,胜利时写 victory_flag 进 scene.flags。
+    必须在 player_attack 和 enemy_attack 两条结算路径都调用 —— 原来 victory_flag 只在
+    player_attack 路径写,最后一个敌人在**敌方回合**死亡(反伤/群体/GM 误调 enemy_attack
+    让 boss 死于敌方结算)时,is_encounter_resolved=victory 但 victory_flag 永不置位 →
+    boss_defeated 等剧情门控 flag 拿不到 → 后续房间/结局门控卡死。"""
+    encounter["active"] = False
+    encounter["outcome"] = outcome
+    if outcome == "victory":
+        victory_flag = (encounter.get("definition") or {}).get("victory_flag")
+        if victory_flag:
+            state.set_scene_flag(victory_flag, True)
 
 
 def player_attack(state, target_id: str, weapon_id: str = "shortsword",
@@ -110,12 +130,7 @@ def player_attack(state, target_id: str, weapon_id: str = "shortsword",
 
     resolved, outcome = engine.is_encounter_resolved(encounter)
     if resolved:
-        encounter["active"] = False
-        encounter["outcome"] = outcome
-        if outcome == "victory":
-            victory_flag = (encounter.get("definition") or {}).get("victory_flag")
-            if victory_flag:
-                state.set_scene_flag(victory_flag, True)
+        _finalize_encounter(state, encounter, outcome)
         result.gm_facts.append(f"战斗结束：{outcome}。")
     return {"ok": True, "result": result.to_dict(), "encounter": encounter}
 
@@ -142,6 +157,10 @@ def enemy_attack(state, attacker_id: str, target_id: str = "player",
         target = next((c for c in encounter.get("combatants", []) if c.get("id") == target_id), None)  # type: ignore[arg-type]
         if not target:
             return {"ok": False, "error": f"未知目标：{target_id}"}
+        # 与 player_attack 一致:不能攻击已倒下的目标(原来 enemy_attack 缺此守卫,
+        # 可对已 defeated 目标反复结算,刷无意义 dice_log)。
+        if target.get("defeated"):
+            return {"ok": False, "error": f"目标已倒下：{target_id}"}
 
     result = engine.attack_roll(
         attacker=attacker, target=target,
@@ -167,8 +186,8 @@ def enemy_attack(state, attacker_id: str, target_id: str = "player",
     engine.mark_defeated_by_hp(encounter)
     resolved, outcome = engine.is_encounter_resolved(encounter)
     if resolved:
-        encounter["active"] = False
-        encounter["outcome"] = outcome
+        # 用共用 finalize:原来这里漏写 victory_flag → 最后一敌死于敌方回合时门控 flag 永不置。
+        _finalize_encounter(state, encounter, outcome)
         result.gm_facts.append(f"战斗结束：{outcome}。")
     return {"ok": True, "result": result.to_dict(), "encounter": encounter}
 
