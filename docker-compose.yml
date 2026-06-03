@@ -2,8 +2,8 @@ services:
   backend:
     image: rpg-app:latest
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     restart: always
     ports:
       - "7860:7860"
@@ -34,7 +34,7 @@ services:
       # EMBED_MODEL: ${EMBED_MODEL:-text-embedding-004}
       # EMBED_API_KEY: ${EMBED_API_KEY}
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:7860/api/state || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:7860/api/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -49,8 +49,8 @@ services:
   cron:
     image: rpg-app:latest
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     restart: always
     command:
       - "/bin/sh"

@@ -52,9 +52,9 @@ WORKDIR /app/rpg
 
 EXPOSE 7860
 
-# 健康检查:/api/state 始终 200(匿名也返回基础状态)
+# 健康检查:/api/health 无需鉴权,始终检查 DB 连通性
 HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl -sf http://localhost:7860/api/state || exit 1
+    CMD curl -sf http://localhost:7860/api/health || exit 1
 
 # Docker stop → SIGTERM → uvicorn 优雅 drain
 STOPSIGNAL SIGTERM
