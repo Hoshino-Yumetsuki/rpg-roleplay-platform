@@ -86,7 +86,11 @@ def _active_worldbook(
     if not entries:
         entries = _worldbook_entries(world, state)
     active = []
-    seen_titles: set[str] = set()
+    # 按 entry 唯一 id 去重(非 title):DB 条目 id 是 db_{id}、内置条目是 entry_id,均唯一。
+    # 原来按 title 去重有 bug —— LLM 抽取的世界书常出现两条同 title(如都叫"势力""背景设定")
+    # 或空 title(""),一旦其中一条激活,backfill 会把所有同 title 的高优先条目排除,
+    # 使 keys 为空、只能靠基线出场的核心设定漏注入("世界书是摆设"残留变体)。
+    seen_ids: set[str] = set()
     for entry in entries:
         matched = [key for key in entry["keys"] if key and key in scan_text]
         if entry.get("regex"):
@@ -105,7 +109,7 @@ def _active_worldbook(
         entry["matched"] = matched[:5]
         entry["score"] = entry.get("priority", 50) + len(matched) * 6
         active.append(entry)
-        seen_titles.add(str(entry.get("title", "")))
+        seen_ids.add(str(entry.get("id", "")))
     active.sort(key=lambda x: (x["score"], x.get("priority", 0)), reverse=True)
     # 常驻基线:纯关键词门控会让 recent text 不含 key 时整个世界书都不注入,
     # GM 永远拿不到核心世界设定(用户报"世界书完全是摆设")。命中不足 MIN 时,
@@ -116,7 +120,7 @@ def _active_worldbook(
     if len(active) < MIN_CONSTANT:
         backfill = [
             e for e in entries
-            if str(e.get("title", "")) not in seen_titles
+            if str(e.get("id", "")) not in seen_ids
         ]
         backfill.sort(key=lambda x: x.get("priority", 50), reverse=True)
         for e in backfill:
@@ -126,7 +130,7 @@ def _active_worldbook(
             e["matched"] = ["(常驻设定)"]
             e["score"] = int(e.get("priority", 50))
             active.append(e)
-            seen_titles.add(str(e.get("title", "")))
+            seen_ids.add(str(e.get("id", "")))
     return active[:10]
 
 
