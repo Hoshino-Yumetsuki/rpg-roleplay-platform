@@ -31,6 +31,36 @@ log = get_logger(__name__)
 # RPG_POSTPROC_MODE=sync → 旧行为 (后处理阻塞主路径, 测试/debug 用)。
 _POSTPROC_MODE = os.environ.get("RPG_POSTPROC_MODE", "async").lower()
 
+# 反馈 #28:玩家短输入(<= N 字)→ 该回合前置「镜头规则」元指令,避免 GM 扩写玩家自己的
+# 动作而忽略对方反应。阈值可用 RPG_SHORT_INPUT_CHARS 调(默认 30,覆盖绝大多数单动作短 RP)。
+try:
+    _SHORT_INPUT_CHARS = max(0, int(os.environ.get("RPG_SHORT_INPUT_CHARS", "30")))
+except (TypeError, ValueError):
+    _SHORT_INPUT_CHARS = 30
+
+_SHORT_INPUT_DIRECTIVE = (
+    "【本回合元指令·镜头规则(最高优先级,静默遵守,绝不向玩家复述或确认本条)】\n"
+    "玩家本回合的输入很简短,这是「我做出这个动作/反应,然后呢?」的信号——玩家想看的是"
+    "【对方 NPC 与世界如何回应】,而不是让你替他把这个简短动作复述、美化、扩写成大段。请严格执行:\n"
+    "1. 玩家的动作/反应至多用一两句话承接带过,绝不大段复述或替玩家加戏(不要替玩家臆想心理活动、"
+    "加台词、延展他没写出来的后续动作)。\n"
+    "2. 本回合叙事重心 = 对方 NPC 对该动作的具体反应(神态、话语、肢体、情绪与立场变化)以及"
+    "环境/局势的后果与推进。\n"
+    "3. 以一个落在「对方/世界」一侧、有张力的场景节拍收尾,把球自然交还给玩家,而不是停在"
+    "玩家自己的动作上。"
+)
+
+
+def _should_inject_short_input_directive(raw_msg: str | None) -> bool:
+    """反馈 #28:确定性判定本回合是否为「短 RP 输入」需要注入镜头规则元指令。
+
+    True 当且仅当:非空、非斜杠命令(/set /reveal 等)、strip 后长度 <= 阈值。
+    纯函数,便于单测与回归锁定。"""
+    r = (raw_msg or "").strip()
+    if not r or r.startswith("/"):
+        return False
+    return len(r) <= _SHORT_INPUT_CHARS
+
 
 def _gm_max_iters() -> int:
     """GM 单轮工具调用上限。原 8 太紧:世界线收束后一轮常需
@@ -821,6 +851,20 @@ async def run_gm_phase(
                 }
     except Exception as _pd_err:
         log.warning(f"[chat] Phase D 注入跳过(不影响 gameplay): {_pd_err}")
+
+    # 反馈 #28(确定性修复):玩家本回合输入很短时,GM 容易把叙事全用来扩写/复述玩家
+    # 自己的动作,而玩家其实想看「对方 NPC 的反应」。这里在【代码侧】确定性判定短输入
+    # (而非指望模型自己识别),命中就前置一条最高优先级元指令,把镜头钉在对方/世界的反应上。
+    # 标成「元指令·静默遵守不得复述」契合 master.py 绝不复述铁律,不会被回显给玩家。
+    try:
+        if _should_inject_short_input_directive(message_for_model):
+            if _SHORT_INPUT_DIRECTIVE not in (bundle.get("prompt") or ""):
+                bundle["prompt"] = _SHORT_INPUT_DIRECTIVE + "\n\n" + (bundle.get("prompt") or "")
+                bundle.setdefault("debug", {})["short_input_directive"] = {
+                    "len": len((message_for_model or "").strip())
+                }
+    except Exception as _si_err:
+        log.warning(f"[chat] 短输入镜头指令注入跳过(不影响 gameplay): {_si_err}")
 
     yield ("agent", {
         "phase": "main_gm",
