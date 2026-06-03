@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import queue
 import threading
 from typing import Any
 
@@ -12,6 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, GenericOkResponse, OkResponse, StateResponse
 from schemas.game import ChatEstimateRequest, ChatRequest, NewGameRequest
+from state.parsers import _extract_trailing_markdown_options
 
 
 async def _bridge_sync_generator_to_async(gen_factory, stop_event: threading.Event | None = None):
@@ -23,30 +23,37 @@ async def _bridge_sync_generator_to_async(gen_factory, stop_event: threading.Eve
     """
     if stop_event is None:
         stop_event = threading.Event()
-    q: queue.Queue = queue.Queue()
+    loop = asyncio.get_running_loop()
+    # asyncio.Queue + call_soon_threadsafe:工作线程产出的 item 投递回 event loop,
+    # async 端 `await q.get()` 真正挂起协程,不忙等。
+    # 旧实现用 `await asyncio.sleep(0)` 轮询 → 每条并发流 spin 紧循环烧满 CPU、
+    # 饿死 event loop(新请求分配延迟 + SSE 事件被挤掉 = 并发阻碍/丢事件根因)。
+    q: asyncio.Queue = asyncio.Queue()
     SENTINEL = object()
+
+    def _put(item) -> None:
+        # 从工作线程安全地把 item 投递回 event loop 线程
+        try:
+            loop.call_soon_threadsafe(q.put_nowait, item)
+        except RuntimeError:
+            # loop 已关闭(进程收尾):忽略,runner 下一轮靠 stop_event 早退
+            pass
 
     def _runner():
         try:
             for item in gen_factory():
                 if stop_event.is_set():
                     break
-                q.put(item)
+                _put(item)
         except Exception as exc:
-            q.put(exc)
+            _put(exc)
         finally:
-            q.put(SENTINEL)
+            _put(SENTINEL)
 
-    loop = asyncio.get_running_loop()
     fut = loop.run_in_executor(None, _runner)
     try:
         while True:
-            # 轮询 queue,避免 blocking get 占用 event loop
-            try:
-                item = q.get_nowait()
-            except queue.Empty:
-                await asyncio.sleep(0)
-                continue
+            item = await q.get()
             if item is SENTINEL:
                 break
             if isinstance(item, Exception):
@@ -170,6 +177,8 @@ async def api_opening(
         _persist_runtime_checkpoint,
         _resolve_persist_target,
         _sse,
+        platform_branches,
+        platform_knowledge,
         retrieve_context,
     )
     state = _ensure_loaded(api_user)
@@ -225,15 +234,33 @@ async def api_opening(
                 yield _sse("token", {"text": chunk})
             opening = text
             yield _sse("stage", {"phase": "done", "label": ""})
-            state.data["history"].append({"role": "assistant", "content": opening})
+            opening_for_history, opening_options = _extract_trailing_markdown_options(opening)
+            state.data["history"].append({"role": "assistant", "content": opening_for_history})
             # 让开场也走结构化解析,把【询问玩家】+JSON ops 解析进 pending_questions / state
+            before_questions = len(((state.data.get("permissions") or {}).get("pending_questions") or []))
             try:
-                state.apply_structured_updates(opening)
+                state.apply_structured_updates(opening_for_history)
             except Exception:
                 import logging as _logging
                 _logging.getLogger(__name__).warning("opening apply_structured_updates failed", exc_info=True)
+            after_questions = len(((state.data.get("permissions") or {}).get("pending_questions") or []))
+            if opening_options and after_questions == before_questions:
+                state.add_pending_question("你想怎么行动？", source="gm:opening_options", options=opening_options)
             state.save()
-            _persist_runtime_checkpoint(state, api_user)
+            try:
+                persist_user_id, active_save_id = _resolve_persist_target(api_user)
+                if api_user and persist_user_id and active_save_id:
+                    platform_branches.record_runtime_turn(
+                        "",
+                        opening_for_history,
+                        user_id=api_user["id"],
+                        state_data=state.data,
+                    )
+                    platform_knowledge.ensure_game_session(persist_user_id, active_save_id, state.data)
+                else:
+                    _persist_runtime_checkpoint(state, api_user)
+            except Exception:
+                _persist_runtime_checkpoint(state, api_user)
             yield _sse("done", {"status": _payload(api_user)})
         except Exception as exc:
             yield _sse("error", {"message": str(exc), "partial": text})
