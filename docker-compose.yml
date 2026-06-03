@@ -36,7 +36,7 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:7860/api/health || exit 1"]
       interval: 15s
-      timeout: 5s
+      timeout: 12s
       retries: 3
       start_period: 40s
     depends_on:
