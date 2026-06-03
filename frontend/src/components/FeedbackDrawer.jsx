@@ -119,16 +119,31 @@ export function FeedbackDrawer({ open, onClose }) {
     let cancelled = false;
     (async () => {
       try {
-        // 从游戏 state 拉最近对话，适配现有 window.api 结构
-        const state = await window.api?.game?.state?.();
-        const nodes = state?.history || state?.branch_nodes || state?.turns || [];
-        const recent = nodes.slice(-10).filter((n) => n.role === 'gm' || n.role === 'user');
-        const turns = recent.slice(-5).map((n, i) => ({
+        // 后端 history 节点形如 {role:'user'|'assistant', content}（core.py:559-560 +
+        // DB schema role in user/assistant/system/tool）。
+        // 必须现拉一次 /api/state 拿权威最新对话 —— MOCK_STATE.history 只在页面 boot/
+        // __refreshPlatform 时灌一次,游戏进行中不更新,直接读会拿到开局快照(陈旧)。
+        // /state 失败或为空时才回退到 MOCK_STATE。
+        let nodes = null;
+        let saveId = '';
+        try {
+          const state = await window.api?.game?.state?.();
+          nodes = state?.history || state?.branch_nodes || state?.turns || null;
+          saveId = state?.save_id || state?._raw?.save_id || '';
+        } catch (_) { /* 下面回退 */ }
+        if (!Array.isArray(nodes) || nodes.length === 0) {
+          if (window.MOCK_STATE && Array.isArray(window.MOCK_STATE.history)) nodes = window.MOCK_STATE.history;
+          saveId = saveId || window.MOCK_STATE?._raw?.save_id || '';
+        }
+        // GM 消息 role 是 'assistant'(不是 'gm');保留 user/assistant/gm,丢掉 system/tool 与空内容。
+        const recent = (Array.isArray(nodes) ? nodes : [])
+          .filter((n) => n && (n.role === 'user' || n.role === 'assistant' || n.role === 'gm') && (n.content || n.text));
+        const turns = recent.slice(-6).map((n, i) => ({
           idx: i,
-          session_id: state?.save_id || '',
-          range: `${n.turn_index ?? i}`,
+          session_id: saveId,
+          range: String(n.turn_index ?? n.turn ?? i),
           plaintext: ((n.content || n.text || '') + '').slice(0, 200),
-          label: `第 ${n.turn_index ?? i + 1} 回合 (${n.role === 'gm' ? 'GM' : '玩家'})`,
+          label: n.role === 'user' ? '玩家' : 'GM',
         }));
         if (!cancelled) setRecentTurns(turns);
       } catch (_) {
@@ -163,7 +178,13 @@ export function FeedbackDrawer({ open, onClose }) {
       // 用户勾"包含运行环境"的同时,也连带带最近 3 轮对话 — 跟 errors/api 同档保守披露
       if (includeRuntime) {
         try {
-          const snap = window.__getRuntimeSnapshot && window.__getRuntimeSnapshot({ includeRecentDialog: true });
+          // 现拉一次 /api/state,把最新对话喂给运行环境快照(避免 MOCK_STATE 陈旧)
+          let freshHistory = null;
+          try {
+            const st = await window.api?.game?.state?.();
+            if (st && Array.isArray(st.history)) freshHistory = st.history;
+          } catch (_) {}
+          const snap = window.__getRuntimeSnapshot && window.__getRuntimeSnapshot({ includeRecentDialog: true, recentDialog: freshHistory });
           if (snap && snap.__runtime__) excerpts.push(snap);
         } catch (_) {}
       }
