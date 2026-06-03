@@ -97,6 +97,7 @@ export function FeedbackDrawer({ open, onClose }) {
     setBusy(false);
     setDone(false);
     setError(null);
+    setRecentTurns([]);  // 防跨存档残留上一次的对话节选
     try {
       const snap = window.__getRuntimeSnapshot && window.__getRuntimeSnapshot();
       setRuntimePreview(snap ? snap.__runtime__ : null);
@@ -119,8 +120,8 @@ export function FeedbackDrawer({ open, onClose }) {
     (async () => {
       try {
         // 从游戏 state 拉最近对话，适配现有 window.api 结构
-        const state = await window.api?.getState?.();
-        const nodes = state?.branch_nodes || state?.turns || [];
+        const state = await window.api?.game?.state?.();
+        const nodes = state?.history || state?.branch_nodes || state?.turns || [];
         const recent = nodes.slice(-10).filter((n) => n.role === 'gm' || n.role === 'user');
         const turns = recent.slice(-5).map((n, i) => ({
           idx: i,

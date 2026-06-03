@@ -1,5 +1,24 @@
 /* === Platform-specific styles, on top of tokens.css === */
 
+/* ── InfoHint(ⓘ 信息按钮)── 把过长说明从常驻副标题收进按需 popover,
+   表单行高统一 → 输入框对齐;全站 label 旁通用。 */
+.label-with-hint { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.label-with-hint-sub { color: var(--muted-2); font-weight: 400; font-size: 12px; }
+.info-hint {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0; flex: 0 0 auto;
+  border: 0; border-radius: 999px; cursor: help;
+  color: var(--muted-2); background: transparent; vertical-align: middle;
+  transition: color .12s ease, background .12s ease;
+}
+.info-hint:hover { color: var(--accent); background: var(--accent-soft); }
+.info-hint:focus-visible { outline: 1px solid var(--accent-edge); outline-offset: 1px; }
+.info-hint svg { width: 13px; height: 13px; display: block; }
+.info-hint-text {
+  display: block; max-width: 280px;
+  font-size: 12.5px; line-height: 1.55; color: var(--text-quiet); letter-spacing: .01em;
+}
+
 /* ── 移动健壮性基线(全局,桌面无副作用)──────────────────────────────
    · text-size-adjust:阻止 iOS Safari 横屏时自动放大正文(放大后布局错位)。
    · tap-highlight-color:去掉触屏点击时刺眼的蓝/灰高亮闪烁。

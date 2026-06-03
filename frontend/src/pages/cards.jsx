@@ -8,6 +8,7 @@ import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL,
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
 import { fmtBytes, ResizableSplit } from '../platform-app.jsx';
+import AgentModelPicker from '../components/AgentModelPicker.jsx';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSHeader from '@cloudscape-design/components/header';
 import CSCards from '@cloudscape-design/components/cards';
@@ -41,6 +42,21 @@ const _asLines = (v) => Array.isArray(v)
   ? v.map((x) => (typeof x === 'string' ? x : (x && (x.content || x.text)) || '')).filter(Boolean).join('\n')
   : (v || '');
 const _asCsv = (v) => Array.isArray(v) ? v.join(', ') : (v || '');
+
+// 防溢出工具:导入的酒馆卡常把整段人设塞进一个字段,长文本会把表格 / 详情
+// 横向撑爆(用户反馈)。这些 helper 把长字段压成可控的单行预览 / 多行夹断,
+// 完整内容仍在「设定」tab 与编辑表单里。
+const _oneLine = (v, n = 90) => {
+  const s = String(v || '').replace(/\s*\n+\s*/g, ' · ').replace(/\s+/g, ' ').trim();
+  return s.length > n ? s.slice(0, n).trimEnd() + '…' : s;
+};
+// 单行省略号(需配合 maxWidth 生效)
+const ELLIPSIS_1 = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' };
+// N 行夹断
+const clampLines = (n) => ({
+  display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: n,
+  overflow: 'hidden', wordBreak: 'break-word',
+});
 
 function cardFormInit(card) {
   const c = card || {};
@@ -251,7 +267,7 @@ function CardSheet({ card, kind = 'user' }) {
             {raw.name || t('cards.detail.unnamed')}
             {fullName && <span style={{ fontSize: 13, color: 'var(--muted, #968f85)', marginLeft: 8, fontStyle: 'italic' }}>{fullName}</span>}
           </div>
-          {raw.identity && <div style={{ fontSize: 13.5, color: 'var(--text-quiet, #c8c2b7)', marginTop: 3 }}>{raw.identity}</div>}
+          {raw.identity && <div style={{ fontSize: 13.5, color: 'var(--text-quiet, #c8c2b7)', marginTop: 3, ...clampLines(2) }}>{_oneLine(raw.identity, 160)}</div>}
           {(aliases.length > 0 || tags.length > 0) && (
             <div style={{ marginTop: 9 }}>
               <CSSpaceBetween direction="horizontal" size="xxs">
@@ -436,7 +452,7 @@ function CardGrid({ cards, onEdit, kind, filter, empty, onDeleted, onDuplicate, 
               {c.tone && c.tone !== '—' && <CSBadge key="tone" color="grey">{c.tone}</CSBadge>}
             </CSSpaceBetween>
           ) },
-          { id: 'bio', content: (c) => <CSBox color="text-body-secondary">{c.bio || '—'}</CSBox> },
+          { id: 'bio', content: (c) => <div style={{ ...clampLines(3), fontSize: 13, color: 'var(--text-quiet, #968f85)' }}>{c.bio || '—'}</div> },
           { id: 'tags', content: (c) => (c.tags?.length
             ? <CSSpaceBetween direction="horizontal" size="xxs">{c.tags.map((tg) => <CSBadge key={tg}>{tg}</CSBadge>)}</CSSpaceBetween>
             : null) },
@@ -516,9 +532,9 @@ function UserCardsView() {
   const onImport = async (payload) => {
     try {
       if (payload?.type === "card" && payload.file) {
-        await window.api.cards.importTavern(payload.file);
+        await window.api.cards.importTavern(payload.file, { aiSplit: payload.aiSplit });
       } else if (payload?.type === "card_json" && payload.json_string) {
-        await window.api.cards.importJson({ json_string: payload.json_string });
+        await window.api.cards.importJson({ json_string: payload.json_string, ai_split: payload.aiSplit });
       } else if (payload?.type === "chat" && payload.jsonl) {
         const title = payload.charName ? `[酒馆导入] ${payload.charName}` : undefined;
         await window.api.chats.importTavern({ jsonl: payload.jsonl, title });
@@ -585,7 +601,12 @@ function UserCardsView() {
       empty={<CSBox textAlign="center" color="inherit" padding={{ vertical: 'l' }}>{q ? t('cards.empty.no_match') : t('cards.empty.no_user_cards')}</CSBox>}
       columnDefinitions={[
         { id: 'name', header: t('cards.list.col_card'), cell: (c) => (
-          <div><CSBox fontWeight="bold">{c.name}</CSBox><CSBox fontSize="body-s" color="text-body-secondary">{c.role !== '—' ? c.role : (c.bio || '').slice(0, 40)}</CSBox></div>
+          <div style={{ maxWidth: 'min(560px, 46vw)' }}>
+            <CSBox fontWeight="bold">{c.name}</CSBox>
+            <div style={{ ...ELLIPSIS_1, fontSize: 12.5, color: 'var(--text-quiet, #968f85)' }}>
+              {_oneLine(c.role !== '—' ? c.role : c.bio, 80)}
+            </div>
+          </div>
         ) },
         { id: 'tags', header: t('cards.list.col_tags'), cell: (c) => (c.tags?.length
           ? <CSSpaceBetween direction="horizontal" size="xxs">{c.tags.slice(0, 4).map((tg) => <CSBadge key={tg}>{tg}</CSBadge>)}</CSSpaceBetween>
@@ -651,6 +672,7 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
   useEffectPL(() => {
     setTab('info');
     setForm(cardFormInit(raw));
+    setSaving(false);  // 切卡时重置:防上一张卡的保存挂起态残留 → 新卡保存键卡死 loading
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.id]);
   const u = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -683,7 +705,9 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
       <CSTabs activeTabId={tab} onChange={({ detail }) => setTab(detail.activeTabId)} tabs={[
         { id: 'info', label: t('cards.detail.tab_info'), content: (
           <CSKeyValuePairs columns={4} items={[
-            { label: t('cards.detail.identity'), value: raw.identity || raw.role || '—' },
+            { label: t('cards.detail.identity'), value: (raw.identity || raw.role)
+                ? <div style={{ ...clampLines(2) }}>{_oneLine(raw.identity || raw.role, 140)}</div>
+                : '—' },
             ...(fullName ? [{ label: t('cards.detail.full_name'), value: fullName }] : []),
             { label: t('cards.detail.type'), value: cardTypeLabel[raw.card_type] || (kind === 'npc' ? t('cards.detail.type_npc') : t('cards.detail.type_user')) },
             { label: t('cards.detail.source'), value: sourceLabel[raw.source] || card.origin || t('cards.detail.source_generic') },
@@ -718,6 +742,8 @@ function TavernImportModal({ open, onClose, onConfirm }) {
   const [dragOver, setDragOver] = useStatePL(false);
   const [parseError, setParseError] = useStatePL(null);
   const [parsed, setParsed] = useStatePL(null);
+  const [aiSplit, setAiSplit] = useStatePL(false);  // 用 AI 整理字段(消耗额度)
+  // 整理用模型不在此重复选择 — 统一在「设置 → 模型 → AI 整理卡字段」配置。
   // chat-specific
   const [chatText, setChatText] = useStatePL("");
   const [chatFile, setChatFile] = useStatePL(null);
@@ -727,7 +753,7 @@ function TavernImportModal({ open, onClose, onConfirm }) {
   React.useEffect(() => {
     if (!open) return;
     setImportType("card"); setMode("file"); setJson(""); setFiles([]);
-    setParseError(null); setParsed(null);
+    setParseError(null); setParsed(null); setAiSplit(false);
     setChatText(""); setChatFile(null); setChatParsed(null); setChatError(null);
   }, [open]);
 
@@ -832,10 +858,11 @@ function TavernImportModal({ open, onClose, onConfirm }) {
 
   const doConfirmCard = () => {
     if (!parsed) return;
+    // 整理用模型统一走「设置 → 模型 → AI 整理卡字段」配置,这里不再透传 per-import 模型。
     if (parsed._file) {
-      onConfirm({ type: "card", file: parsed._file });
+      onConfirm({ type: "card", file: parsed._file, aiSplit });
     } else if (parsed._jsonString) {
-      onConfirm({ type: "card_json", json_string: parsed._jsonString });
+      onConfirm({ type: "card_json", json_string: parsed._jsonString, aiSplit });
     }
   };
 
@@ -954,6 +981,29 @@ function TavernImportModal({ open, onClose, onConfirm }) {
                     </div>
                   )}
                 </div>
+              )}
+              {/* AI 整理字段 opt-in:确定性规则拆不开的自由文本卡才需要,默认关闭、消耗额度 */}
+              <label style={{
+                display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer",
+                padding: "10px 12px", borderRadius: 6,
+                border: `1px solid ${aiSplit ? "var(--accent-edge, rgba(201,100,66,.5))" : "var(--line-soft, #2a2724)"}`,
+                background: aiSplit ? "var(--accent-soft, rgba(201,100,66,.1))" : "var(--bg-deep)",
+              }}>
+                <input type="checkbox" checked={aiSplit} onChange={(e) => setAiSplit(e.target.checked)}
+                  style={{ marginTop: 2, accentColor: "var(--accent, #c96442)" }} />
+                <span style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                  <strong style={{ color: "var(--text)" }}>{t('cards.import.ai_split_label')}</strong>
+                  <span className="muted-2" style={{ display: "block", fontSize: 11.5 }}>{t('cards.import.ai_split_hint')}</span>
+                </span>
+              </label>
+              {aiSplit && (
+                <AgentModelPicker
+                  prefPrefix="card_import"
+                  variant="bare"
+                  defaultModel="gemini-3.5-flash"
+                  configHash="settings-models"
+                  persistOnMount
+                />
               )}
             </>
           )}
@@ -1078,20 +1128,22 @@ function NpcCardsView() {
   }, [t]);
   React.useEffect(() => { reload(); }, [reload]);
 
-  const allSaves = ["all", ...new Set(cards.map(c => c.save))];
+  // 按 script_id 筛选(不能用 c.save=剧本标题——同名剧本「未命名/新档」会互相串台,
+  // 且 selectedScriptId 反查命中第一个同名剧本 → 新增 NPC 落到错误剧本)。
+  const scriptKeys = [...new Set(cards.map((c) => String(c.script_id)))].filter((k) => k && k !== 'null' && k !== 'undefined');
+  const titleOfScript = (sid) => {
+    const s = scripts.find((x) => String(x.id) === String(sid));
+    return (s && s.title) || cards.find((c) => String(c.script_id) === String(sid))?.save || t('cards.list.script_n', { id: sid });
+  };
   let filtered = cards;
-  if (saveFilter !== "all") filtered = filtered.filter(c => c.save === saveFilter);
+  if (saveFilter !== "all") filtered = filtered.filter((c) => String(c.script_id) === saveFilter);
   if (q) filtered = filtered.filter(c =>
     (String(c.name) + String(c.role) + String(c.bio) + (c.tags || []).join(" "))
       .toLowerCase().includes(q.toLowerCase())
   );
 
-  const saveOpts = allSaves.map((s) => ({ value: s, label: s === 'all' ? t('cards.list.all_scripts') : s }));
-  const selectedScriptId = saveFilter !== "all"
-    ? (scripts.find((s) => (s.title || t('cards.list.script_n', { id: s.id })) === saveFilter)?.id
-      || cards.find((c) => c.save === saveFilter)?.script_id
-      || null)
-    : null;
+  const saveOpts = [{ value: "all", label: t('cards.list.all_scripts') }, ...scriptKeys.map((k) => ({ value: k, label: titleOfScript(k) }))];
+  const selectedScriptId = saveFilter !== "all" ? saveFilter : null;
   const scriptOptions = scripts.map((s) => ({
     value: String(s.id),
     label: s.title || t('cards.list.script_n', { id: s.id }),

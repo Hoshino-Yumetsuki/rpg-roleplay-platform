@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
 import { ConfirmModal, SettingsToggle, useAutoSave, usePlatformData, useReactiveUser, publishUser, fmtN, ResizableSplit } from '../platform-app.jsx';
 import AgentModelPicker from '../components/AgentModelPicker.jsx';
+import InfoHint, { LabelWithHint } from '../components/InfoHint.jsx';
 import { getCaps as _getCapsImported } from '../components/catalog-helpers.js';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSContainer from '@cloudscape-design/components/container';
@@ -67,16 +68,19 @@ function catalogApiIdForCredential(apiId) {
    SetGroup = Container + Header(h2)  ·  SetRow = FormField(label 上 / 控件下)。
    各 section 用这两个套,保证全站基线对齐、间距一致。 */
 function SetGroup({ title, description, actions, children }) {
+  // 简化:section 说明收进标题旁 ⓘ,不再占常驻副标题行。
   return (
-    <CSContainer header={<CSHeader variant="h2" description={description} actions={actions}>{title}</CSHeader>}>
+    <CSContainer header={<CSHeader variant="h2" actions={actions}>{description ? <LabelWithHint label={title} hint={description} /> : title}</CSHeader>}>
       {/* React.Children.toArray 给多子元素派稳定 key,避免 SpaceBetween 的 key 警告 */}
       <CSSpaceBetween size="l">{React.Children.toArray(children)}</CSSpaceBetween>
     </CSContainer>
   );
 }
 function SetRow({ label, description, children }) {
+  // 简化 + 对齐:行说明从常驻 description 副标题收进 label 旁的 ⓘ。
+  // 所有行只剩单行 label → 行高统一 → 输入框纵向对齐(根治「输入框对不齐」)。
   return (
-    <CSFormField label={label} description={description}>
+    <CSFormField label={description ? <LabelWithHint label={label} hint={description} /> : label}>
       {children}
     </CSFormField>
   );
@@ -2488,7 +2492,7 @@ function ModuleModelsSection() {
         window.api.account.profile(),
         window.api.models.list().catch(() => ({})),
         window.api.credentials.list().catch(() => ({ items: [] })),
-        fetch('/api/v1/me/embedder/status', { credentials: 'include' }).then(r => r.json()).catch(() => null),
+        fetch('/api/me/embedder/status', { credentials: 'include' }).then(r => r.json()).catch(() => null),
       ]);
       setPrefs((profile && profile.preferences) || {});
       const ids = new Set();

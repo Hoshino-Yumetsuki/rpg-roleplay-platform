@@ -1598,7 +1598,7 @@ function ChaptersModal({ script, onClose, onChanged }) {
           <div style={{display: "grid", gridTemplateColumns: "220px 1fr", gap: 0, flex: 1, minHeight: 0}}>
             <div style={{borderRight: "1px solid var(--line-soft)", overflow: "auto", maxHeight: 480}}>
               {chapters.map((c, i) => (
-                <button key={c.index ?? i}
+                <button key={c.chapter_index ?? c.index ?? i}
                   className="btn ghost"
                   style={{display: "flex", justifyContent: "flex-start", width: "100%", padding: "8px 12px", borderRadius: 0,
                     background: i === activeIdx ? "var(--accent-soft)" : "transparent",
