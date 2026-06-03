@@ -118,7 +118,11 @@ def emit(user_id: int, topic: str, op: str, payload: dict[str, Any] | None = Non
     for q in queues:
         if loop is not None and loop.is_running():
             # 跨线程安全:把 put 调度回 loop 线程执行
-            loop.call_soon_threadsafe(_deliver, q, event)
+            try:
+                loop.call_soon_threadsafe(_deliver, q, event)
+            except RuntimeError:
+                # loop 正在关闭(进程收尾):丢弃该事件即可,不让异常冒泡进 dispatcher
+                pass
         else:
             _deliver(q, event)
 
