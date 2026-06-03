@@ -89,6 +89,18 @@ def _origin_allowed(origin: str | None) -> bool:
 async def lifespan(app: FastAPI):
     """FastAPI lifespan: startup → yield → shutdown。"""
     # ── startup ──────────────────────────────────────────────────────────
+    # 0a. 放大默认线程执行器。run_in_executor(None)/asyncio.to_thread 默认池 =
+    #     min(32, cpu+4) = 10/worker,是聊天并发天花板(每轮 chat 占 1~4 线程)。LLM 流多为
+    #     socket recv 阻塞,放大到 64 线程仅多 ~0.5MB 栈/worker、几乎不占 CPU。
+    try:
+        import asyncio as _asyncio
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        _asyncio.get_running_loop().set_default_executor(
+            _TPE(max_workers=64, thread_name_prefix="rpg-blocking")
+        )
+    except Exception:
+        log.exception("[startup] set_default_executor failed")
+
     # 0. init_db — schema 创建 + migration（lazy import 避免循环依赖）
     try:
         from app import _bootstrap_init_db  # type: ignore[import]

@@ -52,7 +52,9 @@ def get_sync_client():
         client = redis.Redis.from_url(
             url,
             socket_timeout=2,
-            socket_connect_timeout=2,
+            # 本机 Redis(localhost),0.5s 连接超时绰绰有余;Redis 抖动时降级路径不再阻塞
+            # 调用方线程长达 2s(限流走登录路径,2s 阻塞放大「登录风暴」卡顿)。
+            socket_connect_timeout=0.5,
             decode_responses=True,
             health_check_interval=30,
         )

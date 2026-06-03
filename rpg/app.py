@@ -515,8 +515,10 @@ from platform_app.db import init_db as _bootstrap_init_db  # noqa: F401  (lifesp
 _startup_auth_banner()
 
 
-# P1-2: 全局用户缓存改用 OrderedDict + LRU 上限,防止无界内存增长
-_LRU_MAXSIZE = 512
+# P1-2: 全局用户缓存改用 OrderedDict + LRU 上限,防止无界内存增长。
+# 7 个 per-user OrderedDict × 每 worker 独立,每用户驻留 GameState(含 history)+2 GM,
+# 512 上限多 worker 下最坏可达 GB 级 → 小内存机 OOM。128 足够单 worker 活跃用户,LRU 逐出。
+_LRU_MAXSIZE = 128
 
 
 def _lru_set(d: OrderedDict, k, v, maxsize: int = _LRU_MAXSIZE) -> None:
