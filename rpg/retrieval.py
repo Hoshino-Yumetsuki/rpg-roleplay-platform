@@ -116,6 +116,7 @@ def bm25_search(query: str, top_k: int = 4, chapter_min: int | None = None, chap
     if not tokens:
         return []
 
+    conn = None
     try:
         conn = sqlite3.connect(str(DB_PATH))
         cur  = conn.cursor()
@@ -145,7 +146,6 @@ def bm25_search(query: str, top_k: int = 4, chapter_min: int | None = None, chap
             score = sum(1 for t in tokens if t in content)
             results.append((chapter, content, score))
 
-        conn.close()
         # 按评分排序，取 top_k
         results.sort(key=lambda x: x[2], reverse=True)
         snippets = []
@@ -156,6 +156,15 @@ def bm25_search(query: str, top_k: int = 4, chapter_min: int | None = None, chap
         return snippets
     except Exception:
         return []
+    finally:
+        # 修复连接泄漏:原 conn.close() 在 try 内,cur.execute/fetchall 抛异常时
+        # 被 except 吞掉而跳过 close → SQLite 连接(fd + 读锁)泄漏,重复失败累积
+        # 可致 fd 耗尽 / "database is locked"。移到 finally 保证所有路径释放。
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def load_recent_summaries(n: int = 3) -> str:
