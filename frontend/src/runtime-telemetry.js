@@ -135,7 +135,11 @@ window.__getRuntimeSnapshot = function (opts) {
   // 时才走到这里 — 隐私上跟 errors/api_failures 同一档)。每条 plaintext 截 300 字符。
   if (opts.includeRecentDialog) {
     try {
-      const hist = (state.history || []).slice(-6); // 最多 3 round = 6 message
+      // MOCK_STATE.history 只在 boot/refresh 灌一次,游戏进行中不更新 → 直接读会陈旧。
+      // 调用方(FeedbackDrawer 提交前)现拉 /api/state 并通过 opts.recentDialog 传入最新对话;
+      // 缺省才退回 MOCK_STATE.history。
+      const src = Array.isArray(opts.recentDialog) ? opts.recentDialog : (state.history || []);
+      const hist = src.slice(-6); // 最多 3 round = 6 message
       payload.recent_dialog = hist.map((m, i) => ({
         idx: i,
         role: m.role || m.author || 'unknown',

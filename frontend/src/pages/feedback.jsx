@@ -78,13 +78,25 @@ export function FeedbackPage() {
     let cancelled = false;
     (async () => {
       try {
-        const state = await window.api?.game?.state?.();
-        const nodes = state?.history || state?.branch_nodes || state?.turns || [];
-        const recent = nodes.slice(-10).filter((n) => n.role === 'gm' || n.role === 'user');
-        const turns = recent.slice(-5).map((n, i) => ({
-          idx: i, session_id: state?.save_id || '', range: `${n.turn_index ?? i}`,
+        // history 节点 {role:'user'|'assistant', content}(core.py:559-560)。GM=assistant。
+        // 现拉 /api/state 拿最新对话;平台页通常无活动游戏 → 空,UI 显示「暂无可用对话节选」。
+        let nodes = null;
+        let saveId = '';
+        try {
+          const state = await window.api?.game?.state?.();
+          nodes = state?.history || state?.branch_nodes || state?.turns || null;
+          saveId = state?.save_id || state?._raw?.save_id || '';
+        } catch (_) { /* 回退 */ }
+        if (!Array.isArray(nodes) || nodes.length === 0) {
+          if (window.MOCK_STATE && Array.isArray(window.MOCK_STATE.history)) nodes = window.MOCK_STATE.history;
+          saveId = saveId || window.MOCK_STATE?._raw?.save_id || '';
+        }
+        const recent = (Array.isArray(nodes) ? nodes : [])
+          .filter((n) => n && (n.role === 'user' || n.role === 'assistant' || n.role === 'gm') && (n.content || n.text));
+        const turns = recent.slice(-6).map((n, i) => ({
+          idx: i, session_id: saveId, range: String(n.turn_index ?? n.turn ?? i),
           plaintext: ((n.content || n.text || '') + '').slice(0, 200),
-          label: `第 ${n.turn_index ?? i + 1} 回合 (${n.role === 'gm' ? 'GM' : '玩家'})`,
+          label: n.role === 'user' ? '玩家' : 'GM',
         }));
         if (!cancelled) setRecentTurns(turns);
       } catch (_) { if (!cancelled) setRecentTurns([]); }
@@ -105,7 +117,12 @@ export function FeedbackPage() {
         : [];
       if (includeRuntime) {
         try {
-          const snap = window.__getRuntimeSnapshot && window.__getRuntimeSnapshot({ includeRecentDialog: true });
+          let freshHistory = null;
+          try {
+            const st = await window.api?.game?.state?.();
+            if (st && Array.isArray(st.history)) freshHistory = st.history;
+          } catch (_) {}
+          const snap = window.__getRuntimeSnapshot && window.__getRuntimeSnapshot({ includeRecentDialog: true, recentDialog: freshHistory });
           if (snap && snap.__runtime__) excerpts.push(snap);
         } catch (_) {}
       }

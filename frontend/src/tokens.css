@@ -103,6 +103,25 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
+/* 系统性根治表格横向溢出(深度 DOM 诊断结论,非个案补丁)。
+   根因:从表格往上,Cloudscape 多个结构容器默认 min-width:auto —— Container 内容
+   (awsui_content_)、SpaceBetween(awsui_child_ / awsui_root_ vertical|horizontal)、
+   AppLayout 内容定位容器(awsui_split-panel-position)、main(awsui_main_)。
+   flex/grid/block 子项 min-width:auto = 拒绝收缩到内容宽度以下,宽表就把这些祖先一路撑破、
+   推宽整页;而表格自带的 overflow-x:auto 横滚 wrapper 因祖先不收缩而永远触发不了。
+   统一给这条链 min-width:0 → 宽表回到自身 wrapper 内部横滚,绝不外溢。
+   实测:把表格强撑到 2200px,1280 视口整页仍 0 溢出。
+   (上一版选择器 [class*=awsui_content_][class*=awsui_layout] 是复合、要求同元素含两子串,
+    实际匹配 0 个,完全没生效——这是之前没修好的真因。) */
+[class*="awsui_split-panel-position"],
+[class*="awsui_content_"],
+[class*="awsui_content-inner_"],
+[class*="awsui_child_"],
+[class*="awsui_root_"][class*="awsui_vertical_"],
+[class*="awsui_root_"][class*="awsui_horizontal_"],
+[class*="awsui_main_"] { min-width: 0 !important; }
+/* 最终兜底:任何漏网内在宽度都不产生整页横滚(min-width:0 链已根治,这里只是双保险) */
+html, body { overflow-x: hidden; max-width: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -170,8 +189,13 @@ textarea { resize: vertical; }
    .pl-vsplit-top 形成嵌套滚动、让 thead 无法相对外层 sticky;先把内层改成
    overflow:visible,只保留 .pl-vsplit-top 这一个滚动容器,再把表头钉在顶部。 */
 .pl-vsplit-top [class*="awsui_wrapper"] {
-  overflow: visible !important;
+  /* 根因修复:原来 overflow:visible 把表格自带的 overflow-x:auto 横滚「安全气囊」
+     一起关掉了 → 宽表不再内部横滚、直接撑破外层 → 整页横向溢出。
+     现在只让纵向 visible(表头 sticky 相对外层吸顶仍生效),横向恢复 auto(宽表自滚)。 */
+  overflow-y: visible !important;
+  overflow-x: auto !important;
 }
+.pl-vsplit, .pl-vsplit-top, .pl-vsplit-bottom { min-width: 0; }
 /* 列头滚动时静止吸顶(搜索/筛选条已移到面板外,面板里只有表格 → top:0 即可) */
 .pl-vsplit-top thead[class*="awsui_thead"] th,
 .pl-vsplit-top thead[class*="awsui_thead"] td {
