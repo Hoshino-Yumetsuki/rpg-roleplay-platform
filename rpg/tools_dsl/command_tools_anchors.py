@@ -548,16 +548,18 @@ def _t_revoke_protagonist_pov(user_id: int, args: dict) -> str:
         with connect() as db:
             if not _own_save(db, save_id, user_id):
                 return f"失败 (权限): save {save_id} 不属于当前用户或不存在"
-            # 1. 把 variant_description 标过 "玩家以...代入 X" 的 anchor 重置 pending
-            #    (匹配 summary 含 "X(character)首次登场" + status='occurred'/'variant')
+            # 1. 把 claim 标记过的 anchor 重置 pending。
+            #    BUG 修复:原来用 `summary like '%X(character)首次登场%' AND variant_description like`,
+            #    但 claim 是按 (summary OR must_preserve like '%X 参与%') 标记的 —— 靠 must_preserve
+            #    命中(summary 无"首次登场")的锚点会被 claim 标 occurred 却永不被 revoke 重置,
+            #    POV 切回后原著事件永久吞失。改为只按 claim 自己写的 variant_description 签名
+            #    "代入 {name} 的 POV 位置"(claim 给所有标记锚点统一写入)精确反查,与 claim 镜像。
             rows = db.execute(
                 """select id, anchor_key, summary, status, variant_description
                    from save_anchor_states
                    where save_id=%s and status in ('occurred','variant')
-                     and summary like %s
-                     and (variant_description like %s or variant_description like %s)""",
-                (save_id, f"%{name}(character)首次登场%",
-                 f"%代入 {name}%", f"%代入「{name}」%"),
+                     and variant_description like %s""",
+                (save_id, f"%代入 {name} 的 POV 位置%"),
             ).fetchall() or []
             reverted = []
             for r in rows:

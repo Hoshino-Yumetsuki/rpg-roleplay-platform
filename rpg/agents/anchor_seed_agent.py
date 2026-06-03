@@ -323,10 +323,14 @@ def get_progress_window(save_id: int, world_time_label: str | None = None,
     init_db()
     sid = int(save_id)
     with connect() as db:
-        # 1. 已 occurred / variant 的最大章节
+        # 1. 已处理(occurred / variant / superseded)的最大章节
+        #    BUG 修复:原只算 occurred/variant,漏了 superseded。玩家早章绕过某锚点
+        #    (mark_anchor_superseded)但此后未满足任何锚点时,last_sat 为 None → 进度窗口
+        #    永停在书本开头,GM 反复注入已绕过的开头锚点、剧情推进停滞。绕过也是"这一章
+        #    已处理过"的进度信号,纳入计算。
         row = db.execute(
             "select max(source_chapter) as max_ch from save_anchor_states "
-            "where save_id = %s and status in ('occurred', 'variant')",
+            "where save_id = %s and status in ('occurred', 'variant', 'superseded')",
             (sid,),
         ).fetchone()
         last_sat = int(row["max_ch"]) if row and row.get("max_ch") is not None else None
