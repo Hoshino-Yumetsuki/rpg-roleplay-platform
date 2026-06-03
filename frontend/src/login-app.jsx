@@ -205,15 +205,6 @@ function LoginApp() {
     return () => { cancelled = true; };
   }, []);
 
-  // 2a) 注册关闭时,任何残留的 register 状态都强制回到登录(防直接进注册页)
-  useEffect(() => {
-    if (schema?.notes?.registration_disabled && (mode === 'register' || mode === 'verify')) {
-      setMode('login');
-      setErr('');
-      setNotice('');
-    }
-  }, [schema, mode]);
-
   // 2b) 检测邮件链接中的 #reset?token=... 跳转重置模式
   useEffect(() => {
     try {
@@ -256,7 +247,7 @@ function LoginApp() {
           setErr('');
           // 清掉 magic 参数防回退按钮重放
           try { history.replaceState(null, '', location.pathname); } catch (_) {}
-          setTimeout(() => { location.href = (j.needs_profile ? 'Platform.html#profile-setup' : 'Platform.html'); }, 500);
+          setTimeout(() => { location.href = (j.needs_profile ? '/profile-setup' : '/profile'); }, 500);
         } else if (j.ok && j.next === 'otp') {
           // 旧版后端兼容(部署期回退)
           setMagicEmail(j.email || emailParam);
@@ -281,7 +272,6 @@ function LoginApp() {
   const fields = ['verify', 'code-login', 'forgot', 'reset'].includes(mode) ? [] : (schema?.[mode] || []);
   const minPw = schema?.notes?.min_password_length || 8;
   const inviteOnly = !!schema?.notes?.invite_only;
-  const registrationDisabled = !!schema?.notes?.registration_disabled;
 
   const setField = (k, v) => setValues((prev) => ({ ...prev, [k]: v }));
 
@@ -652,14 +642,12 @@ function LoginApp() {
                     className={mode === 'code-login' ? 'active' : ''}
                     aria-selected={mode === 'code-login'}
                     onClick={() => { setMode('code-login'); setErr(''); setNotice(''); }}>{t('auth.login_code_tab')}</button>
-            {!registrationDisabled && (
-              <button type="button" role="tab"
-                      className={mode === 'register' ? 'active' : ''}
-                      aria-selected={mode === 'register'}
-                      onClick={() => { setMode('register'); setErr(''); setNotice(''); }}
-                      disabled={inviteOnly}
-                      data-tip={inviteOnly ? t('auth.invite_only_tip') : undefined}>{t('auth.register_tab')}</button>
-            )}
+            <button type="button" role="tab"
+                    className={mode === 'register' ? 'active' : ''}
+                    aria-selected={mode === 'register'}
+                    onClick={() => { setMode('register'); setErr(''); setNotice(''); }}
+                    disabled={inviteOnly}
+                    data-tip={inviteOnly ? t('auth.invite_only_tip') : undefined}>{t('auth.register_tab')}</button>
           </div>
         )}
 
@@ -983,13 +971,15 @@ function LoginApp() {
 
           <div className="pl-auth-foot">
             <span>
-              {registrationDisabled
-                ? t('auth.registration_closed_note')
-                : schema?.notes?.first_user_is_admin
+              {schema?.notes?.first_user_is_admin
                 ? t('auth.first_admin')
-                : schema?.notes?.invite_only
+                : ''}
+              {schema?.notes?.invite_only
                 ? t('auth.invite_only_note')
-                : t('auth.min_password', { min: minPw })}
+                : ''}
+              {!schema?.notes?.invite_only && !schema?.notes?.first_user_is_admin
+                ? t('auth.min_password', { min: minPw })
+                : ''}
             </span>
             <a href="#"
                onClick={(e) => {

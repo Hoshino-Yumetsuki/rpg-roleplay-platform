@@ -284,7 +284,7 @@ function navigateTo(pageId) {
   }
   // Game Console: 跨页跳到 Platform
   try {
-    window.open("Platform.html#" + pageId, "_blank");
+    window.open("/" + pageId, "_blank");
     return true;
   } catch (_) { return false; }
 }

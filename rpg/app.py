@@ -474,6 +474,30 @@ app.include_router(sidebar_router)
 from pathlib import Path as _Path
 
 from fastapi.staticfiles import StaticFiles as _StaticFiles
+from starlette.exceptions import HTTPException as _StarletteHTTPException
+
+
+class _SPAStaticFiles(_StaticFiles):
+    """SPA History 路由回退。
+    Platform 是单页应用,干净 URL(/settings、/saves、/cards 等)对应不存在的静态文件;
+    dist 里也没有 index.html。Starlette StaticFiles(html=True) 不会为任意不存在路径回退,
+    直接深链/刷新就会 404。这里把这类「无扩展名、非 /api」的 404 兜回 Platform.html(SPA 壳),
+    由前端 router.js 按 location.pathname 解析出对应页面。
+    保留:真实文件(Login.html / Game Console.html / /assets/*)正常直出;
+    带扩展名的缺失资源(/assets/x.js)仍 404(不返回 HTML,避免 JS/CSS 被误当页面);
+    /api/* 不兜底(交给 API 层返回 JSON 404)。"""
+
+    async def get_response(self, path, scope):
+        try:
+            return await super().get_response(path, scope)
+        except _StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                last = path.rsplit("/", 1)[-1]
+                is_root = path in ("", ".", "/")
+                if not path.startswith("api/") and (is_root or "." not in last):
+                    return await super().get_response("Platform.html", scope)
+            raise
+
 
 _FRONTEND_ROOT = _Path(__file__).resolve().parent.parent / "frontend"
 # Vite 构建产物在 frontend/dist;同源/生产服务必须挂 dist(打包后的 /assets/*.js)。
@@ -481,8 +505,8 @@ _FRONTEND_ROOT = _Path(__file__).resolve().parent.parent / "frontend"
 # dist 不存在(未 npm run build)时回退源码目录,仅配合 vite dev server (:5173) 用。
 _FRONTEND_DIR = _FRONTEND_ROOT / "dist" if (_FRONTEND_ROOT / "dist").is_dir() else _FRONTEND_ROOT
 if _FRONTEND_DIR.is_dir():
-    # html=True: SPA 深路由（如 /saves/123）返回 index.html 而非 404
-    app.mount("/", _StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")
+    # SPA history-fallback:/ 与所有干净路径 → Platform.html(见 _SPAStaticFiles)。
+    app.mount("/", _SPAStaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")
 
 # 注：init_db 已移到 core.startup.lifespan startup 段（lazy import 避免循环依赖）。
 # 此处保留函数引用，供 lifespan 使用。

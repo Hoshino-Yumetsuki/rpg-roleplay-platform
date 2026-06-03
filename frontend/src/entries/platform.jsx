@@ -33,6 +33,7 @@ import { SavesPage } from '../pages/saves.jsx';
 import { ScriptsPage } from '../pages/scripts.jsx';
 import { CardsPage } from '../pages/cards.jsx';
 import { SettingsPage } from '../pages/settings.jsx';
+import { plPathToPage, plNavigate, plPageToPath } from '../router.js';
 
 // AGE-02: splash gate
 import AdultSplash from '../components/AdultSplash.jsx';
@@ -60,34 +61,28 @@ const TWEAK_DEFAULTS = {
   accent: 'terracotta',
 };
 
-// settings-deploy 已拆到系统管理模块,旧链接重定向到 admin-deploy
-const HASH_ALIASES = { branches: 'saves-branches', 'settings-deploy': 'admin-deploy' };
-function parsePageFromHash() {
-  const raw = location.hash.replace('#', '');
-  const hash = HASH_ALIASES[raw] || raw;
-  const ids = [
-    ...((PL_NAV || []).filter((i) => i.id).map((i) => i.id)),
-    'me', 'me-edit', 'me-settings', 'saves-branches', 'scripts-import', 'cards-npc',
-    // 新 IA 子页(Cloudscape 迁移后):剧本 / 开始游戏 / 设置&账户 各模块的左栏子页
-    'scripts-library', 'scripts-editor', 'scripts-settings', 'play-settings',
-    'settings-models', 'settings-modelparams', 'settings-modules', 'settings-memory',
-    'settings-permissions', 'settings-danger', 'admin-deploy',
-    'admin-users', 'admin-usage', 'admin-audit', 'admin-health',
-    'admin-logs', 'admin-registration', 'admin-security', 'admin-maintenance',
-    'admin-dmca-takedowns', 'admin-dmca-strikes', 'admin-csam-reports', 'admin-aup-actions',
-    'admin-feedback',
-    'usage', 'plugins', 'mcp', 'skills', 'apis',
-  ];
-  if (!ids.includes(hash)) return null;
-  if (raw !== hash) {
-    try { history.replaceState(null, '', '#' + hash); } catch (_) {}
-  }
-  return hash;
+// 合法 page id 全集(History 路由 /<id> 校验用)。settings-deploy 等旧别名在 router.js
+// PL_HASH_ALIASES 里归一。
+const PL_IDS = [
+  ...((PL_NAV || []).filter((i) => i.id).map((i) => i.id)),
+  'me', 'me-edit', 'me-settings', 'saves-branches', 'scripts-import', 'cards-npc',
+  // 新 IA 子页(Cloudscape 迁移后):剧本 / 开始游戏 / 设置&账户 各模块的左栏子页
+  'scripts-library', 'scripts-editor', 'scripts-settings', 'play-settings',
+  'settings-models', 'settings-modelparams', 'settings-modules', 'settings-memory',
+  'settings-permissions', 'settings-danger', 'admin-deploy',
+  'admin-users', 'admin-usage', 'admin-audit', 'admin-health',
+  'admin-logs', 'admin-registration', 'admin-security', 'admin-maintenance',
+  'admin-dmca-takedowns', 'admin-dmca-strikes', 'admin-csam-reports', 'admin-aup-actions',
+  'admin-feedback',
+  'usage', 'plugins', 'mcp', 'skills', 'apis',
+];
+function parsePage() {
+  return plPathToPage(PL_IDS);
 }
 
 function PlatformApp() {
   const t = TWEAK_DEFAULTS;
-  const [page, setPage] = useState(parsePageFromHash() || t.startPage || 'profile');
+  const [page, setPage] = useState(parsePage() || t.startPage || 'profile');
   const [assistantOpen, setAssistantOpen] = useState(false);
   // AGE-02: null = loading, true = need splash, false = no splash needed
   const [splashNeeded, setSplashNeeded] = useState(null);
@@ -114,19 +109,28 @@ function PlatformApp() {
     };
   }, []);
 
+  // 首屏:把旧 hash 直达(Platform.html#x)/ 非规范路径规范化成干净路径,保留 query。
   useEffect(() => {
-    const onHashChange = () => {
-      const p = parsePageFromHash();
-      if (p) setPage(p);
-    };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
+    const canonical = plPageToPath(page) + (location.search || '');
+    if (location.pathname + location.search + location.hash !== canonical) {
+      try { history.replaceState(null, '', canonical); } catch (_) {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const go = (id) => {
-    setPage(id);
-    history.replaceState(null, '', '#' + id);
-  };
+  // 浏览器前进/后退 → 按当前路径重解析;编程跳转(plNavigate)→ pl-navigate 事件。
+  useEffect(() => {
+    const onPop = () => { const p = parsePage(); if (p) setPage(p); };
+    const onNav = (e) => { if (e && e.detail) setPage(e.detail); };
+    window.addEventListener('popstate', onPop);
+    window.addEventListener('pl-navigate', onNav);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      window.removeEventListener('pl-navigate', onNav);
+    };
+  }, []);
+
+  const go = (id) => plNavigate(id);
 
   let body = null;
   if (page === 'profile') body = <ProfilePage />;

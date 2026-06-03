@@ -826,7 +826,7 @@ async def api_search(request: Request):
             if scripts:
                 groups.append({"kind": "scripts", "items": [
                     {"id": r["id"], "label": r["title"], "sub": r["description"],
-                     "href": "Platform.html#scripts"}
+                     "href": "/scripts"}
                     for r in scripts
                 ]})
 
@@ -838,7 +838,7 @@ async def api_search(request: Request):
             ).fetchall()
             if saves:
                 groups.append({"kind": "saves", "items": [
-                    {"id": r["id"], "label": r["title"], "href": "Platform.html#saves"}
+                    {"id": r["id"], "label": r["title"], "href": "/saves"}
                     for r in saves
                 ]})
 
@@ -854,7 +854,7 @@ async def api_search(request: Request):
                 ).fetchall()
                 if cards:
                     groups.append({"kind": "cards", "items": [
-                        {"id": r["id"], "label": r["name"], "href": "Platform.html#cards"}
+                        {"id": r["id"], "label": r["name"], "href": "/cards"}
                         for r in cards
                     ]})
             except Exception:
@@ -883,7 +883,7 @@ async def api_search(request: Request):
                             "id": r["id"],
                             "label": r["title"],
                             "sub": r["snippet"],
-                            "href": f"Platform.html#worldbook?script={r['script_id']}",
+                            "href": f"/scripts?script={r['script_id']}",
                         }
                         for r in wb_rows
                     ]})
@@ -940,7 +940,7 @@ async def api_search(request: Request):
                             "id": r["id"],
                             "label": r["name"],
                             "sub": r["snippet"],
-                            "href": f"Platform.html#cards?script={r['script_id']}",
+                            "href": f"/cards?script={r['script_id']}",
                         }
                         for r in npc_rows
                     ]})

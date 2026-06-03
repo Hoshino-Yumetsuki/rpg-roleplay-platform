@@ -7,6 +7,7 @@ import React from 'react';
 import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL, useCallback as useCallbackPL } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
+import { plNavigate } from '../router.js';
 import { PromptModal, usePlatformData, fmtBytes, fmtN, ResizableSplit } from '../platform-app.jsx';
 import { CardEditModal, cardSnippet } from './cards.jsx';
 import { NewGameModal } from './saves.jsx';
@@ -783,12 +784,25 @@ function ScriptDetailPanel({ script: s, savesCount, embedStatus, currentUserId,
                         <CSSpaceBetween size="xxs">
                           {(p.anchors || []).map((a) => {
                             const label = (a.story_time_label || '').trim();
-                            const summary = String(a.sample_summary || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+                            const summary = String(a.sample_summary || '').replace(/\s+/g, ' ').trim();
                             return (
-                              <CSBox key={a.anchor_id} fontSize="body-s">
-                                <span className="mono" style={{ color: 'var(--accent)' }}>{label || t('scripts.editor.chapter_range', { min: a.chapter_min, max: a.chapter_max })}</span>
-                                {summary ? ` · ${summary}${summary.length >= 80 ? '…' : ''}` : ''}
-                              </CSBox>
+                              <div
+                                key={a.anchor_id}
+                                style={{
+                                  borderTop: '1px solid var(--line-soft)',
+                                  paddingTop: 8,
+                                  overflowWrap: 'anywhere',
+                                }}
+                              >
+                                <CSBox fontSize="body-s">
+                                  <span className="mono" style={{ color: 'var(--accent)', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{label || t('scripts.editor.chapter_range', { min: a.chapter_min, max: a.chapter_max })}</span>
+                                </CSBox>
+                                {summary && (
+                                  <CSBox color="text-body-secondary" fontSize="body-s">
+                                    <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{summary}</span>
+                                  </CSBox>
+                                )}
+                              </div>
                             );
                           })}
                         </CSSpaceBetween>
@@ -980,7 +994,7 @@ function ScriptsListView() {
             kind: "warn",
             detail: hint + ' — ' + t('scripts.toast.embed_go_rag_settings'),
             duration: 8000,
-            action: { label: t('scripts.import.go_api_settings'), onClick: () => { window.location.hash = 'settings-models'; } },
+            action: { label: t('scripts.import.go_api_settings'), onClick: () => { plNavigate('settings-models'); } },
           });
         } else {
           // 其他失败(含 405 relay 错误被翻译成人话后从 j.error 传出)

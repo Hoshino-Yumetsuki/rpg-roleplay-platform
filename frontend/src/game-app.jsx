@@ -900,7 +900,7 @@ function BranchTreeRail({ saveId }) {
       <div className="gc-rail-branch-head">
         <span className="muted-2 mono" style={{fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.14em"}}>当前子分支</span>
         <span className="muted-2 mono" style={{fontSize: 10.5, marginLeft: "auto"}}>HEAD 历史</span>
-        <a className="iconbtn" href="Platform.html#saves-branches"
+        <a className="iconbtn" href="/saves-branches"
            target="_blank" rel="noopener noreferrer"
            data-tip="在新标签打开完整分支图(查看所有分支路线)" data-tip-pos="below"
            style={{width: 18, height: 18}}>
@@ -1127,7 +1127,7 @@ function GameSettingsModal({ open, onClose, saveTitle, permission }) {
             <Icon name="info" size={11} /> 密度/字体改动即时生效
           </span>
           <div style={{display: "flex", gap: 8}}>
-            <a className="btn ghost" href="Platform.html#settings"
+            <a className="btn ghost" href="/settings"
                target="_blank" rel="noopener noreferrer"
                style={{textDecoration: "none"}}>
               <Icon name="settings" size={12} /> 全局设置 ↗

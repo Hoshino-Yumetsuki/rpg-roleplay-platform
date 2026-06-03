@@ -6,6 +6,7 @@ import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL,
 import { useTranslation } from 'react-i18next';
 import { Icon } from './game-icons.jsx';
 import { useResizable, ResizeHandle } from './responsive.jsx';
+import { plNavigate } from './router.js';
 import { MODELS_DATA } from './pages/settings.jsx';
 // ESM 重构遗漏修复:ContinuePicker / NewGameModal 的真实现在 pages/saves.jsx,
 // platform-app 之前留了返回 null 的 stub 遮蔽它们 → "继续游戏"/"新建存档" 全失效。
@@ -338,7 +339,7 @@ function WelcomeModal({ open, firstTime = false, onClose }) {
 
   const handleGoSettings = async () => {
     await handleClose();
-    window.location.hash = 'settings-models';
+    plNavigate('settings-models');
   };
 
   if (!open) return null;
@@ -802,8 +803,8 @@ function UnifiedSearch({ open, onClose, setPage }) {
   const cursor = Math.max(0, Math.min(activeIdx, flatList.length - 1));
 
   const pick = React.useCallback((it) => {
-    if (it.kind === "page") { setPage(it.id); location.hash = "#" + it.id; }
-    else if (it.hash) { setPage(it.hash); location.hash = "#" + it.hash; }
+    if (it.kind === "page") { setPage(it.id); }
+    else if (it.hash) { setPage(it.hash); }
     onClose();
   }, [setPage, onClose]);
 
@@ -3940,7 +3941,7 @@ function AdminGuard({ children }) {
           当前账号角色为 <strong style={{ color: 'var(--text,#ebe7df)' }}>{role}</strong>。如需权限请联系管理员。
         </div>
         <div style={{ marginTop: 22 }}>
-          <a href="#profile" onClick={(e) => { e.preventDefault(); location.hash = '#profile'; }}
+          <a href="/profile" onClick={(e) => { e.preventDefault(); plNavigate('profile'); }}
             style={{ color: 'var(--accent,#c96442)', textDecoration: 'none', fontSize: 13.5 }}>← 返回主页</a>
         </div>
       </div>
@@ -4150,7 +4151,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
       setFeedbackOpen(true);
     } else if (id === 'help') {
       if (window.__openHelp) window.__openHelp(helpSlugForPage || 'intro');
-    } else { setPage(id); location.hash = '#' + id; }
+    } else { setPage(id); }
   };
 
   // 独立页(无侧栏):欢迎页就是登陆后的工作台首页,不归任何模块,整页铺满
@@ -4189,7 +4190,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
             items={_csSwitcherItems(reactiveUser.role === 'admin', csModules)}
             expandToViewport
             ariaLabel={t('platform.menu.all_modules')}
-            onItemClick={({ detail }) => { const m = csModules.find((x) => x.id === detail.id); if (m) { setPage(m.pages[0]); location.hash = '#' + m.pages[0]; } }}
+            onItemClick={({ detail }) => { const m = csModules.find((x) => x.id === detail.id); if (m) { setPage(m.pages[0]); } }}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, lineHeight: 1 }}>
               <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true" style={{ display: 'block' }}>
@@ -4232,7 +4233,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
             identity={{ href: '#profile', title: '', onFollow: (e) => { e.preventDefault(); setPage('profile'); } }}
             utilities={[
               { type: 'button', iconName: 'search', title: t('platform.menu.search_title'), ariaLabel: t('platform.menu.search_title'), disableUtilityCollapse: true, onClick: () => setSearchOpen(true) },
-              { type: 'button', iconName: 'settings', title: t('platform.nav.settings'), ariaLabel: t('platform.nav.settings'), disableUtilityCollapse: true, onClick: () => { setPage('settings'); location.hash = '#settings'; } },
+              { type: 'button', iconName: 'settings', title: t('platform.nav.settings'), ariaLabel: t('platform.nav.settings'), disableUtilityCollapse: true, onClick: () => { setPage('settings'); } },
               { type: 'button', iconName: 'status-info', title: helpSlugForPage ? `${t('platform.menu.help_current')} (${helpSlugForPage})` : t('platform.menu.help'), ariaLabel: t('platform.menu.help'), disableUtilityCollapse: true, onClick: () => { if (window.__openHelp) window.__openHelp(helpSlugForPage || 'intro'); } },
               { type: 'button', iconName: 'refresh', title: t('common.refresh'), ariaLabel: t('platform.menu.refresh_aria'), disableUtilityCollapse: true, onClick: _csRefresh },
               {
@@ -4268,7 +4269,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
           <CSSideNavigation
             header={{ text: _csActiveModule(page, csModules).label, href: '#' + _csActiveModule(page, csModules).pages[0] }}
             activeHref={'#' + page}
-            onFollow={(e) => { e.preventDefault(); const id = (e.detail.href || '').slice(1); if (id) { setPage(id); location.hash = '#' + id; } }}
+            onFollow={(e) => { e.preventDefault(); const id = (e.detail.href || '').slice(1); if (id) { setPage(id); } }}
             items={_csActiveModule(page, csModules).sub.map((s) => ({ type: 'link', text: s.text, href: s.href }))}
           />
         }

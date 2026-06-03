@@ -215,7 +215,7 @@ function GCWelcomeModal({ open, onClose }) {
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button
-            onClick={() => { onClose(); window.open('Platform.html#settings-models', '_blank'); }}
+            onClick={() => { onClose(); window.open('/settings-models', '_blank'); }}
             style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line-strong)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}
           >去配 API Key</button>
           <button
@@ -1302,7 +1302,7 @@ function App() {
         collapsed={railCollapsed}
         onToggle={() => setRailCollapsed((c) => !c)}
         state={game} runState={runState}
-        onNew={() => { if (!confirm('新建存档需要选择剧本与角色,将跳到平台『存档目录』走正规创建流。\n\n确认跳转?')) return; window.open('Platform.html#saves-list', '_blank'); }}
+        onNew={() => { if (!confirm('新建存档需要选择剧本与角色,将跳到平台『存档目录』走正规创建流。\n\n确认跳转?')) return; window.open('/saves', '_blank'); }}
         onSave={async () => { try { await window.api.game.saveGame(); window.__apiToast?.('已保存', { kind: 'ok' }); } catch (e) { window.__apiToast?.('保存失败', { kind: 'danger', detail: e?.message }); } }}
         onSwitchSave={async (sid) => { setMobileNav(false); try { if (runRef.current.sse || runState.running) stopRun(); await window.api.saves.activate(sid); reloadState(); } catch (e) { window.__apiToast?.('切换失败', { kind: 'danger', detail: e?.message }); } }}
         onMemoryMode={async (mode) => { setGame((g) => ({ ...g, memory: { ...(g.memory || {}), mode } })); try { await window.api.game.memoryMode(mode); } catch (_) {} }}
@@ -1400,7 +1400,7 @@ function App() {
                 <div style={{ marginBottom: 8 }}>无法加载存档，请检查网络或刷新页面。</div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                   <button className="btn ghost" onClick={() => { setRetryFailed(false); reloadState().then(ok => { if (!ok) setRetryFailed(true); }); reloadSaves(); }}>重试</button>
-                  <button className="btn ghost" onClick={() => { location.href = '/Platform.html#saves'; }}>返回存档列表</button>
+                  <button className="btn ghost" onClick={() => { location.href = '/saves'; }}>返回存档列表</button>
                 </div>
               </div>
             </div>

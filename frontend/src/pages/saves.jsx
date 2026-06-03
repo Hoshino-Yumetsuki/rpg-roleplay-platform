@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom';
 import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL, useCallback as useCallbackPL } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
+import { plNavigate } from '../router.js';
 import { ConfirmModal, useShellChrome, ResizableSplit } from '../platform-app.jsx';
 import { BranchGraph } from '../branch-graph.jsx';
 import { NewGameWizard } from './new-game-wizard.jsx';
@@ -770,7 +771,7 @@ function BranchesPage() {
               {t('saves.branches.no_saves_hint')}
             </div>
             <div style={{display: "inline-flex", gap: 8}}>
-              <button className="btn primary" onClick={() => window.location.hash = "saves-scripts"}>
+              <button className="btn primary" onClick={() => plNavigate("scripts")}>
                 <Icon name="bookmark" size={12} /> {t('saves.branches.no_saves_btn_scripts')}
               </button>
               <button className="btn ghost" onClick={() => window.location.hash = "saves-list"}>
