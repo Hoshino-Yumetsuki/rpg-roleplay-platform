@@ -110,7 +110,15 @@ async def api_save_import(request: Request, user=Depends(require_user)):
             except (UnicodeDecodeError, _json.JSONDecodeError) as exc:
                 raise HTTPException(status_code=400, detail=f"JSON 解析失败: {exc}") from exc
         else:
-            body = await request.json()
+            # JSON body 路径也要受大小约束(multipart 已有 _MAX_SAVE_IMPORT_BYTES 关,
+            # 这条原来直接 request.json() 无上限 → 超大 body 撑内存)。先按 raw 长度卡再解析。
+            raw_body = await request.body()
+            if len(raw_body) > _MAX_SAVE_IMPORT_BYTES:
+                raise HTTPException(status_code=400, detail=f"文件过大 (>{_MAX_SAVE_IMPORT_BYTES // 1024 // 1024}MB)")
+            try:
+                body = _json.loads(raw_body.decode("utf-8"))
+            except (UnicodeDecodeError, _json.JSONDecodeError) as exc:
+                raise HTTPException(status_code=400, detail=f"JSON 解析失败: {exc}") from exc
             payload = body.get("payload") if isinstance(body, dict) and isinstance(body.get("payload"), dict) else body
         if not isinstance(payload, dict):
             return json_response({"ok": False, "error": "payload 必须是对象"}, status_code=400)

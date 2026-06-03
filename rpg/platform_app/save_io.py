@@ -158,9 +158,12 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     if not save_data:
         raise ValueError("payload.save 缺失")
 
-    new_title = (save_data.get("title") or "导入存档")
+    new_title = (save_data.get("title") or "导入存档")[:200]  # 限标题长度,防超长 title
     script_id_raw = save_data.get("script_id")
-    state_snapshot = save_data.get("state_snapshot") or {}
+    # 主 save 的 state_snapshot 也必须过大小校验(原仅 per-commit 校验,主 snapshot 漏检):
+    # application/json body 导入路径无 _MAX_SAVE_IMPORT_BYTES 上限,构造超大 save.state_snapshot
+    # 可绕过端点大小关 + 直插 game_saves 撑 DB/内存。与 per-commit 一致用 _check_json_size。
+    state_snapshot = _check_json_size(save_data.get("state_snapshot") or {}, "save.state_snapshot")
     warnings: list[str] = []
     if pv == 1:
         warnings.append("v1 存档包未含 anchor/kb/identity 状态表,建议在游戏内 /reseed 重建锚点")
