@@ -97,8 +97,11 @@ def next_turn(encounter: dict) -> dict:
             turn_index = 0
             round_no += 1
             if round_no > 50:
-                # 防御性兜底
+                # 防御性兜底:超过 50 回合判定为僵局,强制结束。必须置 outcome,
+                # 否则 encounter 静默失活(active=False 无 outcome)→ 调用方拿不到结局、
+                # 无法收尾(无 victory_flag/无结算事实)→ 依赖战斗结局的剧情门控软锁。
                 encounter["active"] = False
+                encounter["outcome"] = "stalemate"
                 encounter["round"] = round_no
                 encounter["turn_index"] = turn_index
                 return encounter

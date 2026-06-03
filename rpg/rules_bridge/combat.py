@@ -199,4 +199,14 @@ def advance_turn(state) -> dict:
         return {"ok": False, "error": "没有进行中的战斗"}
     _sync_player_combatant(state)
     engine.next_turn(encounter)
+    # next_turn 可能因 >50 回合僵局(或退化空 initiative)兜底强制结束战斗(active=False)。
+    # 这条路径不经攻击结算,故必须在此收尾:否则 encounter 静默失活、无结算事实/无 flag,
+    # 玩家再攻击只会得"没有进行中的战斗",依赖战斗结局的剧情门控卡死(软锁)。
+    if not encounter.get("active"):
+        outcome = encounter.get("outcome") or "stalemate"
+        _finalize_encounter(state, encounter, outcome)
+        return {
+            "ok": True, "encounter": encounter, "resolved": True, "outcome": outcome,
+            "message": "战斗超过 50 回合未分胜负,判定为僵局(stalemate)结束。",
+        }
     return {"ok": True, "encounter": encounter}

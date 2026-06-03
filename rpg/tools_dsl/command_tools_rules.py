@@ -94,6 +94,9 @@ def _t_combat_next_turn(state: Any, args: dict) -> str:
         res = advance_turn(state)
         if not res.get("ok"):
             return f"失败: {res.get('error') or '未知错误'}"
+        if res.get("resolved"):
+            # next_turn 兜底强制结束(>50 回合僵局):别再误报"推进到下一回合"
+            return res.get("message") or f"战斗结束:{res.get('outcome','stalemate')}。"
         enc = res.get("encounter") or {}
         return f"推进到下一回合 (round={enc.get('round','?')}, turn_index={enc.get('turn_index','?')})"
     except Exception as exc:
