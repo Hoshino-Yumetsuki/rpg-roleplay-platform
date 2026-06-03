@@ -60,9 +60,16 @@ def enqueue_postproc(
         "state_snapshot_keys": list((state_data or {}).keys()),
     }
 
+    # 只入队"在独立 worker 进程里真能工作"的后处理。
+    # extractor / phase_digest 需要 FastAPI 进程内的实时 GameState(extractor 要 apply
+    # ops 回 state、phase_digest 要按实时 phase 摘要),而 worker 是独立进程够不到内存态,
+    # payload 也只带了 state_snapshot_keys(非完整 state)→ 二者在 worker 内是 no-op:
+    # extractor 每轮白烧一次 LLM 调用再丢弃结果(record_usage 照样计费),phase_digest 调
+    # 一个不存在的函数。故不下发,避免无效成本与僵尸任务行。这两项的状态依赖后处理仍由
+    # GM 阶段内联路径(apply_structured_updates)+ sync 模式 _run_post_gm_parallel 承担。
+    # acceptance_verifier(读 curator_plan+GM 文本,写 audit_log)、black_swan(enable_llm
+    # =False 的确定性检查)不依赖实时内存态,worker 内可正确执行 → 保留。
     tasks = [
-        ("extractor", {**_base_payload}),
-        ("phase_digest", {**_base_payload}),
         ("acceptance_verifier", {**_base_payload, "curator_plan": curator_plan or {}}),
     ]
     if is_bs_enabled:

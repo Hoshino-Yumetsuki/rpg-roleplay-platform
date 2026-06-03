@@ -136,9 +136,12 @@ def update_vector_timeline_from_facts() -> dict[str, Any]:
     if not VECTOR_DB.exists():
         return {"updated_vectors": 0, "inserted_events": 0}
     ensure_timeline_schema(VECTOR_DB)
-    fact_conn = sqlite3.connect(str(OUT_DB))
-    vec_conn = sqlite3.connect(str(VECTOR_DB))
+    # 两个 connect 必须在 try 内:否则第二个 connect 抛异常时第一个连接泄漏(finally 未进入)
+    fact_conn = None
+    vec_conn = None
     try:
+        fact_conn = sqlite3.connect(str(OUT_DB))
+        vec_conn = sqlite3.connect(str(VECTOR_DB))
         fact_cur = fact_conn.cursor()
         vec_cur = vec_conn.cursor()
         fact_cur.execute("""
@@ -181,8 +184,12 @@ def update_vector_timeline_from_facts() -> dict[str, Any]:
         vec_conn.commit()
         return {"updated_vectors": updated_vectors, "inserted_events": inserted_events}
     finally:
-        fact_conn.close()
-        vec_conn.close()
+        for _c in (fact_conn, vec_conn):
+            if _c is not None:
+                try:
+                    _c.close()
+                except Exception:
+                    pass
 
 
 def _create_schema(conn: sqlite3.Connection) -> None:

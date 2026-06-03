@@ -142,13 +142,36 @@ def persist_runtime_state(
     state_data = json.loads(json.dumps(state_data, ensure_ascii=False)) if isinstance(state_data, dict) else load_state(state_path)
     init_db()
     with connect() as db:
+        # 与 record_runtime_turn 同 key 的事务级 advisory lock:串行化 autosave 与回合提交。
+        # 否则二者并发(多 tab:一 tab 发回合创建 commit N+1,另一 tab 改 state 触发 autosave)时,
+        # autosave 可能在回合提交后用过时 commit_id 回退活跃指针 + 覆盖刚提交回合 → 丢回合。
+        # 持锁后回合无法在本函数读 save 与写 UPDATE 之间提交,save.active 在事务内稳定。
+        try:
+            uid_for_lock = int(user_id or (save_id * 7919))
+            db.execute(
+                "select pg_advisory_xact_lock(hashtext(%s)::int, hashtext(%s)::int)",
+                (f"rpg_turn_{uid_for_lock}", f"save_{save_id}"),
+            )
+        except Exception:
+            pass
         save = db.execute("select * from game_saves where id = %s", (save_id,)).fetchone()
         if user_id and (not save or int(save["user_id"]) != int(user_id)):
             return {"ok": False, "reason": "runtime 不属于当前用户"}
         if not save:
             return {"ok": False, "reason": "存档不存在"}
         db_snapshot = commit_state(save)
-        if _snapshot_quality(state_data) + 5 < _snapshot_quality(db_snapshot):
+        # 防丢回合:以事务内 game_saves 的当前活跃指针为权威(而非可能滞后的 meta.commit_id —
+        # record_runtime_turn 的 TXN1 先更 game_saves,runtime 表由其后的 update_active_node 异步同步,
+        # 故回合后正常即存在 game_saves=N+1 / runtime 表=N 的瞬时分歧)。二者分歧说明本 checkpoint
+        # 的 state_data 基于过时 commit:此时不回退指针、也不用过时 state 覆盖 state_snapshot,
+        # 改用 DB 当前真相(指针与快照保持不变),dirty 态留待下次 checkpoint 重存。
+        db_active = int(save.get("active_commit_id") or save.get("active_branch_node_id") or 0)
+        if db_active and commit_id and db_active != commit_id:
+            commit_id = db_active
+            ref_id = int(save.get("active_branch_ref_id") or 0) or ref_id
+            state_data = db_snapshot
+            state_path = Path(save.get("state_path") or state_path)
+        elif _snapshot_quality(state_data) + 5 < _snapshot_quality(db_snapshot):
             state_data = db_snapshot
             state_path = Path(save.get("state_path") or state_path)
         db.execute(

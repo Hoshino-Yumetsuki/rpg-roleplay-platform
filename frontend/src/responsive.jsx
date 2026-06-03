@@ -102,40 +102,66 @@ function useResizable({
   const sizeRef = useRef(size);
   useEffect(() => { sizeRef.current = size; }, [size]);
 
-  const onMouseDown = useCallback((e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    // 找被拖元素: handle 父元素 (sidebar/cap-root/gc-rail)
+  // 统一鼠标 + 触摸:触屏平板(pointer:coarse)上拖拽手柄可见(CSS 加宽到 12px),
+  // 但原实现只监听 mouse 事件 → 触屏拖不动。这里抽出共用逻辑,鼠标走 mouse* 事件,
+  // 触摸走 touch* 事件,从 e.clientX 或 e.touches[0].clientX 统一取坐标。
+  const _startDrag = useCallback((e, startX, isTouch) => {
     const target = e.currentTarget.parentElement;
     if (!target) return;
-    const startX = e.clientX;
     const startSize = sizeRef.current;
     let pending = startSize;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
+    if (!isTouch) {
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    }
 
-    const onMove = (ev) => {
-      const dx = ev.clientX - startX;
+    const apply = (clientX) => {
+      const dx = clientX - startX;
       let next = side === "left" ? startSize + dx : startSize - dx;
       next = Math.max(min, Math.min(max, next));
       if (next === pending) return;
       pending = next;
-      // 直写元素 inline style — 高 specificity, 覆盖 React 写的 var
       if (cssVar) target.style.setProperty(cssVar, next + "px");
       else target.style.width = next + "px";
     };
-    const onUp = () => {
+    const onMouseMove = (ev) => apply(ev.clientX);
+    const onTouchMove = (ev) => {
+      if (ev.touches && ev.touches.length) {
+        ev.preventDefault();  // 阻止拖拽时页面滚动
+        apply(ev.touches[0].clientX);
+      }
+    };
+    const onEnd = () => {
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      // mouseup 才同步 React state + localStorage (一次性)
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onEnd);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onEnd);
+      window.removeEventListener("touchcancel", onEnd);
       setSize(pending);
       try { if (storageKey) localStorage.setItem(storageKey, String(pending)); } catch (_) {}
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    if (isTouch) {
+      window.addEventListener("touchmove", onTouchMove, { passive: false });
+      window.addEventListener("touchend", onEnd);
+      window.addEventListener("touchcancel", onEnd);
+    } else {
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onEnd);
+    }
   }, [side, min, max, cssVar, storageKey]);
+
+  const onMouseDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    _startDrag(e, e.clientX, false);
+  }, [_startDrag]);
+
+  const onTouchStart = useCallback((e) => {
+    if (!e.touches || !e.touches.length) return;
+    _startDrag(e, e.touches[0].clientX, true);
+  }, [_startDrag]);
 
   const onDoubleClick = useCallback(() => {
     setSize(defaultSize);
@@ -147,6 +173,7 @@ function useResizable({
     setSize,
     dragHandleProps: {
       onMouseDown,
+      onTouchStart,
       onDoubleClick,
       role: "separator",
       "aria-orientation": "vertical",

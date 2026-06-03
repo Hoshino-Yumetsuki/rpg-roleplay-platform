@@ -23,12 +23,18 @@ def _player_card(state, chars: dict[str, Any]) -> dict[str, str]:
     # sample_dialogue 也包含玩家私人语气样本,GM 可借此学语气,但不应该把"卡里
     # 的对白原话"当成 NPC 已知信息 — 暂时保留(GM 一般只学风格,不会复述),
     # 后续可再加 strip。
+    # !! 秘密剥离 !! player.background 是玩家可写字段(/set、老存档可埋"我是穿越者/原著她会
+    # 死"这类秘密段),必须像 short_summary(core.py:726)一样剥掉 `## 秘密/隐藏/元知识` 段
+    # 再注入。原来这里直接用 raw player.background 当"当前状态" → 与 short_summary 不对称,
+    # 把上面注释声称已隔离的玩家秘密又原文放给 GM(实际泄漏路径)。card.* 来自 canon NPC 卡是干净的。
+    from state.core import _strip_secret_sections
+    _bg = _strip_secret_sections(player.get("background") or "")
     text = _format_card(name, {
         "identity": player.get("role") or card.get("identity", ""),
         "appearance": card.get("appearance", ""),
         "personality": card.get("personality", ""),
         "speech_style": card.get("speech_style", ""),
-        "current_status": player.get("background") or card.get("current_status", ""),
+        "current_status": _bg or card.get("current_status", ""),
         # secrets 显式不注入 — 玩家秘密物理隔离
         "sample_dialogue": card.get("sample_dialogue", []),
     })
@@ -86,18 +92,52 @@ def _active_worldbook(
     if not entries:
         entries = _worldbook_entries(world, state)
     active = []
+    # 按 entry 唯一 id 去重(非 title):DB 条目 id 是 db_{id}、内置条目是 entry_id,均唯一。
+    # 原来按 title 去重有 bug —— LLM 抽取的世界书常出现两条同 title(如都叫"势力""背景设定")
+    # 或空 title(""),一旦其中一条激活,backfill 会把所有同 title 的高优先条目排除,
+    # 使 keys 为空、只能靠基线出场的核心设定漏注入("世界书是摆设"残留变体)。
+    seen_ids: set[str] = set()
     for entry in entries:
         matched = [key for key in entry["keys"] if key and key in scan_text]
         if entry.get("regex"):
-            matched.extend(pattern for pattern in entry["regex"] if re.search(pattern, scan_text))
+            # regex_keys 是 LLM 抽取 / 用户编写,写入时未做 re.compile 校验。畸形正则
+            # 会让 re.search 抛 re.error;若不隔离,会冒泡炸掉整个世界书激活 → 上下文组装
+            # → 整轮 GM。逐条 try,坏正则只跳过该 pattern,不影响其余条目与关键词激活。
+            for pattern in entry["regex"]:
+                try:
+                    if pattern and re.search(pattern, scan_text):
+                        matched.append(pattern)
+                except re.error:
+                    continue
         if not matched:
             continue
         entry = dict(entry)
         entry["matched"] = matched[:5]
         entry["score"] = entry.get("priority", 50) + len(matched) * 6
         active.append(entry)
+        seen_ids.add(str(entry.get("id", "")))
     active.sort(key=lambda x: (x["score"], x.get("priority", 0)), reverse=True)
-    return active[:6]
+    # 常驻基线:纯关键词门控会让 recent text 不含 key 时整个世界书都不注入,
+    # GM 永远拿不到核心世界设定(用户报"世界书完全是摆设")。命中不足 MIN 时,
+    # 用最高 priority 的条目补足,保证每轮至少注入核心设定。
+    # 注:实测部分剧本(如 script 11)的 DB 世界书条目 keys 为空,关键词激活彻底失效,
+    # 这些条目只能靠常驻基线出现 → 基线给厚一点(8 条),配合 10000 字层预算。
+    MIN_CONSTANT = 8
+    if len(active) < MIN_CONSTANT:
+        backfill = [
+            e for e in entries
+            if str(e.get("id", "")) not in seen_ids
+        ]
+        backfill.sort(key=lambda x: x.get("priority", 50), reverse=True)
+        for e in backfill:
+            if len(active) >= MIN_CONSTANT:
+                break
+            e = dict(e)
+            e["matched"] = ["(常驻设定)"]
+            e["score"] = int(e.get("priority", 50))
+            active.append(e)
+            seen_ids.add(str(e.get("id", "")))
+    return active[:10]
 
 
 def _worldbook_entries(world: dict[str, Any], state) -> list[dict[str, Any]]:

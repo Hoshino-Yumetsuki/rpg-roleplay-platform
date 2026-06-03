@@ -249,7 +249,11 @@ def timeline_filter_for_label(label: str, db_path: Path = DB_PATH) -> dict[str, 
         if "翌日" in label and ("暂留" in text or "北城" in text or "蛇信" in text):
             score += 2
         scored.append((score, chapter, event, time_label))
-    scored.sort(reverse=True)
+    # 打平时取**最小章号**(剧透安全方向),而非原来的 sort(reverse=True) 取最大章号。
+    # 原实现:通用词(如"宴会"在 ch52/152/.../1310 反复出现)全 score=1 打平时,reverse=True
+    # 按 chapter 降序选 ch1310(全书结局)→ 早期场景的检索窗口被锚到大结局 → 严重剧透。
+    # 改为 score 降序、章号升序:同分取最早章,把早期玩家钉在书末结局的剧透堵死。
+    scored.sort(key=lambda x: (-x[0], x[1]))
     best_score, chapter, event, time_label = scored[0]
     if best_score <= 0:
         return {

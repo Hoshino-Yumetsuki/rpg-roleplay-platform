@@ -703,7 +703,7 @@ function UnifiedSearch({ open, onClose, setPage }) {
 
   const scripts = platform.scripts.map(s => ({
     id: "scr-" + s.id, label: s.title, kind: "script",
-    sub: `${s.chapter_count.toLocaleString()} 章 · ${(s.word_count / 10000).toFixed(1)}万字`,
+    sub: `${Number(s.chapter_count || 0).toLocaleString()} 章 · ${((s.word_count || 0) / 10000).toFixed(1)}万字`,
     icon: "book", keywords: s.uid + " " + s.description,
     hash: "scripts",
   }));
@@ -1132,7 +1132,7 @@ function MeOverview() {
                   ) : (
                     <div className="pl-achv-progress">
                       <div className="pl-achv-bar"><div className="pl-achv-fill" style={{width: (a.progress / a.target * 100).toFixed(0) + "%"}} /></div>
-                      <span className="muted-2 mono" style={{fontSize: 10.5}}>{a.progress.toLocaleString()} / {a.target.toLocaleString()}</span>
+                      <span className="muted-2 mono" style={{fontSize: 10.5}}>{Number(a.progress || 0).toLocaleString()} / {Number(a.target || 0).toLocaleString()}</span>
                     </div>
                   )}
                 </div>
@@ -4105,6 +4105,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
         new_card: payload.new_card || null,
         birthpoint: payload.birthpoint || null,
         identity: payload.identity || null,
+        identity_known: payload.identity_known ?? null,
         story_intent: payload.story_intent || null,
         player_origin: payload.player_origin || null,
       });

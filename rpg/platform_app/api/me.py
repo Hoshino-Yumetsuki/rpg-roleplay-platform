@@ -1,6 +1,8 @@
 """platform_app.api.me — /api/me/* 路由 (profile/usage/stats/personas/character-cards/credentials/preference)。"""
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, Request
 from psycopg.types.json import Jsonb
 
@@ -466,6 +468,10 @@ async def api_delete_character_card(card_id: int, user=Depends(require_user)):
 
 
 # ── 酒馆 (SillyTavern) 角色卡兼容 ───────────────────────────────────
+def _truthy(v) -> bool:
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 @router.post("/api/me/character-cards/import-tavern")
 async def api_import_tavern_card(request: Request, user=Depends(require_user)):
     """导入酒馆角色卡。
@@ -482,10 +488,14 @@ async def api_import_tavern_card(request: Request, user=Depends(require_user)):
     _MAX_IMPORT_PAYLOAD_BYTES = 16 * 1024 * 1024
 
     content_type = request.headers.get("content-type", "")
+    ai_split = False  # 用户显式 opt-in「AI 整理字段」时才挂 LLM 兜底
+    # 整理用模型统一走「设置 → 模型 → card_import」配置(apply_llm_structure 内部解析),
+    # 不在导入请求里透传 per-import 模型。
     try:
         # ── multipart/form-data（前端 importTavern(file)）─────────────
         if "multipart/form-data" in content_type:
             form = await request.form()
+            ai_split = _truthy(form.get("ai_split"))
             file_field = form.get("file")
             if file_field is None:
                 return json_response({"ok": False, "error": "multipart 中缺少 file 字段"}, status_code=400)
@@ -504,6 +514,7 @@ async def api_import_tavern_card(request: Request, user=Depends(require_user)):
         # ── JSON body ────────────────────────────────────────────────
         else:
             body = await request.json()
+            ai_split = _truthy(body.get("ai_split"))
             if body.get("png_base64"):
                 import base64 as _b64
                 png_b64 = body["png_base64"]
@@ -526,8 +537,19 @@ async def api_import_tavern_card(request: Request, user=Depends(require_user)):
                 return json_response({"ok": False, "error": "需要 file(multipart) / json / json_string / base64 / png_base64 之一"}, status_code=400)
 
         payload = tavern_cards.tavern_to_user_card(v2)
+        if ai_split:
+            # LLM 兜底拆分(同步调用包进线程,失败不阻断导入)。模型走 card_import 统一配置,usage 自动入账。
+            try:
+                payload, _used = await asyncio.to_thread(
+                    tavern_cards.apply_llm_structure, payload, user["id"]
+                )
+            except Exception:
+                pass
         card = user_cards.upsert_user_card(user["id"], payload)
-        return json_response({"ok": True, "card": card, "imported_from": "tavern_v2"})
+        return json_response({
+            "ok": True, "card": card, "imported_from": "tavern_v2",
+            "llm_structured": bool((payload.get("metadata") or {}).get("llm_structured_description")),
+        })
     except ValueError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
@@ -568,6 +590,7 @@ async def api_import_json_card(request: Request, user=Depends(require_user)):
     payload: {"json": {...V2 dict...}}  或  {"json_string": "..."}
     """
     body = await request.json()
+    ai_split = _truthy(body.get("ai_split"))
     from .. import tavern_cards, user_cards
     try:
         if body.get("json") is not None:
@@ -577,8 +600,18 @@ async def api_import_json_card(request: Request, user=Depends(require_user)):
         else:
             return json_response({"ok": False, "error": "需要 json 或 json_string 字段"}, status_code=400)
         payload = tavern_cards.tavern_to_user_card(v2)
+        if ai_split:
+            try:
+                payload, _used = await asyncio.to_thread(
+                    tavern_cards.apply_llm_structure, payload, user["id"]
+                )
+            except Exception:
+                pass
         card = user_cards.upsert_user_card(user["id"], payload)
-        return json_response({"ok": True, "card": card, "imported_from": "tavern_v2"})
+        return json_response({
+            "ok": True, "card": card, "imported_from": "tavern_v2",
+            "llm_structured": bool((payload.get("metadata") or {}).get("llm_structured_description")),
+        })
     except ValueError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 

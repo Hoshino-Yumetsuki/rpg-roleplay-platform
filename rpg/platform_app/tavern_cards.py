@@ -8,8 +8,12 @@ tavern_cards.py — SillyTavern V1/V2 角色卡 import/export 兼容
 
 字段映射（V2 data → character_cards card_type='pc'）：
   name              → name
-  description       → identity
-  personality       → personality
+  description       → 结构化拆分到 identity/background/appearance/personality/
+                      speech_style/current_status/secrets（缩进大纲 / 扁平 colon / W++）;
+                      原文始终留存 metadata.tavern_raw_description。
+                      拆不开的自由文本可经 ai_split opt-in 用 LLM 兜底（apply_llm_structure，
+                      走平台统一 usage 管理）。
+  personality       → personality（与 description 拆出的性格合并）
   scenario          → metadata.scenario
   first_mes         → metadata.first_mes
   mes_example       → 取首段对话进 sample_dialogue[0]
@@ -33,34 +37,59 @@ import zlib
 from typing import Any
 
 
+# 标签 → 字段映射。同时覆盖两类 label：
+#   · 叶子标签（W++ 的 Age/Occupation、扁平 colon 的「身份/外貌」）
+#   · 段落标题（中文人设模板的「基本信息/背景故事/家庭背景/NSFW」等大段落头）
+# 段落标题命中时，整段（含缩进子字段）归属该字段，避免「全堆进 identity」。
 _LABEL_ALIASES: dict[str, tuple[str, ...]] = {
     "identity": (
+        # 叶子
         "identity", "role", "occupation", "job", "class", "race", "species", "gender",
-        "age", "身份", "身份设定", "职业", "种族", "物种", "性别", "年龄", "定位",
+        "age", "身份", "身份设定", "职业", "职位", "种族", "物种", "性别", "年龄", "定位",
+        # 段落标题
+        "基本信息", "基础信息", "基本资料", "基础资料", "基本資料", "角色信息", "人物信息",
+        "人物资料", "角色资料", "个人信息", "基本设定", "profile", "basic info", "basics",
+        "basic information",
     ),
     "background": (
         "background", "backstory", "history", "lore", "past", "origin", "relationship",
-        "relationships", "背景", "经历", "过去", "来历", "身世", "关系", "设定",
+        "relationships", "family", "goal", "goals",
+        "背景", "经历", "过去", "来历", "身世", "关系", "设定",
+        "背景故事", "家庭", "家庭背景", "家世", "家族", "社交关系", "人际关系", "社会关系",
+        "关系网", "社会地位", "地位", "身份地位", "人生目标", "目标", "理想", "抱负",
+        "能力技能", "技能", "能力", "特长", "专长", "经历背景",
     ),
     "appearance": (
         "appearance", "looks", "look", "body", "clothing", "outfit", "features",
         "外貌", "外观", "长相", "体型", "衣着", "服装", "特征",
+        "形象", "容貌", "身材", "衣着风格", "着装", "穿着", "服饰", "外形",
     ),
     "personality": (
         "personality", "mind", "traits", "temperament", "likes", "dislikes", "quirks",
         "性格", "人格", "个性", "喜好", "厌恶", "特点",
+        "性格特点", "性格特征", "情绪", "情绪表现", "喜好厌恶", "好恶", "工作行为", "行为",
+        "行为习惯", "生活习惯", "习惯", "缺点弱点", "缺点", "弱点", "优点", "爱好",
+        # NSFW 偏好/硬限归 personality:GM 可见,才能尊重取向并避开禁忌底线。
+        # 不放 secrets——secrets 被硬隔离、绝不进 GM 上下文(见 context_engine 安全边界)。
+        "nsfw", "性相关特征", "性相关", "性癖", "性癖好", "性设定", "性偏好",
+        "禁忌底线", "禁忌",
     ),
     "speech_style": (
         "speech", "speaking style", "speech style", "dialogue style", "voice", "tone",
-        "口癖", "说话方式", "语气", "语调", "台词风格",
+        "口癖", "说话方式", "语气", "语调", "台词风格", "谈吐", "言谈",
     ),
     "current_status": (
         "current status", "status", "state", "situation", "当前状态", "状态", "处境",
+        "现状", "近况", "目前状态",
     ),
     "secrets": (
-        "secret", "secrets", "hidden", "private", "秘密", "隐秘", "隐藏设定",
+        # 仅"玩家知道但 GM/NPC 不应知道"的剧情秘密。NSFW 偏好不归这里(见 personality)。
+        "secret", "secrets", "hidden", "private", "秘密", "隐秘", "隐藏设定", "私密",
     ),
 }
+
+# 未识别的段落标题，整段归入该字段（lore 兜底），绝不污染 identity/appearance。
+_DEFAULT_SECTION_FIELD = "background"
 
 
 def _label_field(label: str) -> str | None:
@@ -84,25 +113,103 @@ def _append_section(out: dict[str, list[str]], field: str, label: str, value: st
         out[field].append(entry)
 
 
-def _split_colon_sections(text: str) -> list[tuple[str, str]]:
-    """Parse common Label: value blocks used by exported Tavern cards."""
-    sections: list[tuple[str, str]] = []
-    current_label: str | None = None
-    current_lines: list[str] = []
-    label_re = re.compile(r"^\s*(?:[-*]\s*)?([^:：\n]{1,32})[:：]\s*(.*)$")
+# 缩进式大纲 / 扁平 colon 通用的 label 行：可选缩进 + 可选列表符 + label + 冒号 + 值
+_OUTLINE_LABEL_RE = re.compile(r"^([ \t]*)(?:[-*]\s*)?([^:：\n]{1,40})[:：][ \t]*(.*)$")
+
+
+def _split_outline_sections(text: str) -> list[tuple[str, str]]:
+    """把缩进式大纲（或扁平 label 列表）切成「顶层 (label, 正文)」。
+
+    顶层标题的正文包含其行内值 + 所有更深缩进的子行，因此嵌套子字段会粘在
+    各自段落上，而不会泄漏进下一个被识别的 label——这正是「全堆进 identity」
+    bug 的根因修复。
+    """
+    rows: list[tuple[int | None, str | None, str]] = []  # (indent, label, text)
     for line in str(text or "").splitlines():
-        match = label_re.match(line)
-        field = _label_field(match.group(1)) if match else None
-        if match and field:
-            if current_label is not None:
-                sections.append((current_label, "\n".join(current_lines).strip()))
-            current_label = match.group(1).strip()
-            current_lines = [match.group(2).strip()] if match.group(2).strip() else []
-        elif current_label is not None:
-            current_lines.append(line.rstrip())
-    if current_label is not None:
-        sections.append((current_label, "\n".join(current_lines).strip()))
+        if not line.strip():
+            rows.append((None, None, ""))  # 空行标记，保留段内分段
+            continue
+        m = _OUTLINE_LABEL_RE.match(line)
+        indent = len(line) - len(line.lstrip(" \t"))
+        if m:
+            rows.append((indent, m.group(2).strip(), m.group(3).strip()))
+        else:
+            rows.append((indent, None, line.strip()))
+
+    label_indents = [r[0] for r in rows if r[1] is not None and r[0] is not None]
+    if not label_indents:
+        return []
+    top = min(label_indents)
+
+    sections: list[tuple[str, str]] = []
+    cur_label: str | None = None
+    cur_lines: list[str] = []
+
+    def _flush() -> None:
+        if cur_label is not None:
+            sections.append((cur_label, "\n".join(cur_lines).strip()))
+
+    for indent, label, txt in rows:
+        is_top = label is not None and indent is not None and indent <= top
+        if is_top:
+            _flush()
+            cur_label = label
+            cur_lines = [txt] if txt else []
+        elif cur_label is not None:
+            if label is not None:
+                cur_lines.append(f"{label}: {txt}" if txt else f"{label}:")
+            elif txt:
+                cur_lines.append(txt)
+            else:
+                cur_lines.append("")  # 段内空行，维持可读分段
+    _flush()
     return sections
+
+
+def _extract_outline(text: str) -> dict[str, str]:
+    """缩进大纲 / 扁平 colon 风格 → 我方字段。
+
+    顶层段落标题命中字段则整段归属；未识别段落整段折进 background（lore 兜底），
+    不污染其它字段。仅当至少 2 个顶层段落命中已知字段时才认为「结构化成功」。
+    """
+    sections = _split_outline_sections(text)
+    if not sections:
+        return {}
+
+    buckets: dict[str, list[tuple[str, str]]] = {field: [] for field in _LABEL_ALIASES}
+    mapped = 0
+    unknown: list[tuple[str, str]] = []
+    for label, content in sections:
+        if not label:
+            continue
+        field = _label_field(label)
+        if field:
+            mapped += 1
+            buckets[field].append((label, content))
+        else:
+            unknown.append((label, content))
+
+    if mapped < 2:
+        return {}
+
+    # 未识别段落整段折进 background，绝不污染 identity/appearance/personality。
+    for label, content in unknown:
+        if content:
+            buckets[_DEFAULT_SECTION_FIELD].append((label, content))
+
+    out: dict[str, str] = {}
+    for field, items in buckets.items():
+        items = [(lab, body) for lab, body in items if (body or lab)]
+        if not items:
+            continue
+        if len(items) == 1:
+            lab, body = items[0]
+            out[field] = (body or lab).strip()
+        else:
+            # 一个字段聚合多个段落 → 保留段落标题作小标题，便于阅读
+            blocks = [f"{lab}:\n{body}" if body else f"{lab}" for lab, body in items]
+            out[field] = "\n\n".join(blocks).strip()
+    return out
 
 
 def _extract_structured_description(description: str) -> dict[str, str]:
@@ -132,23 +239,16 @@ def _extract_structured_description(description: str) -> dict[str, str]:
         matched += 1
         _append_section(buckets, field, label, value)
 
-    # Markdown/plain style: Personality: ... blocks.
-    if matched < 2:
-        for label, value in _split_colon_sections(text):
-            field = _label_field(label)
-            if not field:
-                continue
-            matched += 1
-            _append_section(buckets, field, label, value)
+    # W++ 命中 ≥2 → 用 W++ 结果。
+    if matched >= 2:
+        return {
+            field: "\n".join(parts).strip()
+            for field, parts in buckets.items()
+            if parts
+        }
 
-    if matched < 2:
-        return {}
-
-    return {
-        field: "\n".join(parts).strip()
-        for field, parts in buckets.items()
-        if parts
-    }
+    # 否则按缩进大纲 / 扁平 colon 拆分（覆盖中文人设模板的大段落结构）。
+    return _extract_outline(text)
 
 
 def _join_text(*parts: str, limit: int) -> str:
@@ -350,7 +450,8 @@ def tavern_to_user_card(card_v2: dict[str, Any]) -> dict[str, Any]:
         "metadata": {
             "tavern_imported": True,
             "tavern_structured_description": bool(structured),
-            "tavern_raw_description": raw_description[:8000] if structured else "",
+            # 始终保留原文:供「AI 整理字段」兜底 / 用户对照核查 / 重新解析。
+            "tavern_raw_description": raw_description[:8000],
             "scenario": d.get("scenario", ""),
             "first_mes": d.get("first_mes", ""),
             "alternate_greetings": d.get("alternate_greetings", []),
@@ -365,6 +466,128 @@ def tavern_to_user_card(card_v2: dict[str, Any]) -> dict[str, Any]:
             "spec_version": card_v2.get("spec_version"),
         },
     }
+
+
+# ── LLM 兜底:确定性规则拆不开的自由文本 description,挂 LLM 拆字段 ──────
+#    仅在调用方显式 opt-in(ai_split)时触发,走平台统一 usage 管理:
+#    call_agent_json 在 user_id + agent_kind 下自动 record_usage,不会赊账。
+_LLM_SPLIT_FIELDS = (
+    "identity", "background", "appearance",
+    "personality", "speech_style", "current_status", "secrets",
+)
+
+
+def llm_structure_description(
+    raw_description: str,
+    user_id: int | None,
+    *,
+    save_id: int | None = None,
+    api_id_override: str | None = None,
+    model_override: str | None = None,
+) -> dict[str, str]:
+    """把自由文本角色档案用 LLM 拆进我方字段。失败 / 无 user / 空文本 → {}。
+
+    只做语义归类与适度精简,不新增设定;走平台便宜模型(默认 gemini-3.5-flash),
+    usage 由 call_agent_json 自动入账(agent_kind='card_import')。
+
+    模型解析:override(本次导入选的) > user_preferences['card_import.*'] >
+    'agent.*' 通配 > 用户首个可用模型 > 便宜默认 gemini-3.5-flash。
+    """
+    text = str(raw_description or "").strip()
+    if not text or not user_id:
+        return {}
+
+    from core.logging import get_logger
+
+    log = get_logger(__name__)
+    try:
+        from agents._harness import call_agent_json, resolve_api_and_model
+    except Exception as exc:  # pragma: no cover - harness 不可用时静默降级
+        log.warning(f"[card-import] LLM 拆分不可用: {exc}")
+        return {}
+
+    api_id, model = resolve_api_and_model(
+        user_id,
+        api_pref_key="card_import.api_id",
+        model_pref_key="card_import.model_real_name",
+        default_api="vertex_ai",
+        default_model="gemini-3.5-flash",
+        api_id_override=api_id_override or None,
+        model_override=model_override or None,
+    )
+    schema = {
+        "name": "emit_card_fields",
+        "description": "把角色卡自由文本档案按语义拆进结构化字段",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "identity": {"type": "string", "description": "身份/职业/年龄/性别等基本定位,简短一两行"},
+                "background": {"type": "string", "description": "背景故事/经历/家庭/社交关系/社会地位/人生目标/能力技能"},
+                "appearance": {"type": "string", "description": "外貌/体型/衣着风格"},
+                "personality": {"type": "string", "description": "性格/情绪/喜好厌恶/习惯/优缺点;以及 NSFW 取向/性癖/禁忌底线等亲密偏好与硬限(GM 需可见才能尊重)"},
+                "speech_style": {"type": "string", "description": "说话方式/语气/口癖;没有则空字符串"},
+                "current_status": {"type": "string", "description": "当前状态/近况;没有则空字符串"},
+                "secrets": {"type": "string", "description": "仅剧情秘密/隐藏设定(玩家知道但 GM/NPC 不应知道的);不要放 NSFW 偏好;没有则空字符串"},
+            },
+            "required": ["identity", "background", "appearance", "personality"],
+        },
+    }
+    system = (
+        "你是角色卡字段整理器。把用户给的角色档案原文,按语义归类拆进给定字段。规则:"
+        "1) 只做归类与适度精简,绝不新增或编造任何设定;"
+        "2) 原文是什么语言就用什么语言输出;"
+        "3) 找不到对应内容的字段填空字符串;"
+        "4) 必须且只能通过调用 emit_card_fields 工具输出结果。"
+    )
+    user = f"角色档案原文:\n\n{text[:8000]}"
+    try:
+        out, _usage = call_agent_json(
+            api_id, model, system, user, user_id,
+            tool_schema=schema, max_tokens=2000,
+            agent_kind="card_import", save_id=save_id,
+        )
+        data = json.loads(out)
+    except Exception as exc:
+        log.warning(f"[card-import] LLM 拆分失败({api_id}/{model}): {exc}")
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        f: str(data.get(f) or "").strip()
+        for f in _LLM_SPLIT_FIELDS
+        if str(data.get(f) or "").strip()
+    }
+
+
+def apply_llm_structure(
+    payload: dict[str, Any],
+    user_id: int | None,
+    *,
+    save_id: int | None = None,
+    api_id_override: str | None = None,
+    model_override: str | None = None,
+) -> tuple[dict[str, Any], bool]:
+    """对已确定性解析的 user-card payload 跑 LLM 兜底拆分,非空字段覆盖回 payload。
+
+    同步函数(call_agent_json 同步);异步路由里请用 asyncio.to_thread 包裹。
+    api_id_override/model_override:本次导入用户在弹窗里选的模型(为空则跟随配置)。
+    返回 (payload, used)。
+    """
+    md = payload.get("metadata") or {}
+    raw = md.get("tavern_raw_description") or payload.get("identity") or ""
+    fields = llm_structure_description(
+        raw, user_id, save_id=save_id,
+        api_id_override=api_id_override, model_override=model_override,
+    )
+    if not fields:
+        return payload, False
+    for key, val in fields.items():
+        if val:
+            payload[key] = val[:2000]
+    payload.setdefault("metadata", {})
+    payload["metadata"]["llm_structured_description"] = True
+    payload["metadata"]["tavern_structured_description"] = True
+    return payload, True
 
 
 # ── 导出:PC 卡(character_cards card_type='pc') → V2 JSON ────────────

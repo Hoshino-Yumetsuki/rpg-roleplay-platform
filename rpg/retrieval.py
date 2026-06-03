@@ -33,10 +33,16 @@ def _load_aliases():
         return
     with open(CHAR_IDX, encoding="utf-8") as f:
         chars = json.load(f)["characters"]
+    # 先建局部 dict 再原子整体赋值给全局。retrieve_context 跑在 to_thread worker 线程,
+    # 两个用户冷启首回合并发时,若直接往全局 dict 边插边被 detect_mentioned_characters
+    # 迭代 → RuntimeError: dictionary changed size during iteration。整体 rebind 后,读方
+    # 看到的要么是空(走 if 提前返回前)要么是完整 dict,绝不会是半建状态。
+    local: dict[str, str] = {}
     for name, info in chars.items():
-        _CHAR_ALIASES[name] = name
+        local[name] = name
         for alias in info.get("aliases", []):
-            _CHAR_ALIASES[alias] = name
+            local[alias] = name
+    _CHAR_ALIASES = local
 
 
 def detect_mentioned_characters(text: str) -> list[str]:
@@ -110,6 +116,7 @@ def bm25_search(query: str, top_k: int = 4, chapter_min: int | None = None, chap
     if not tokens:
         return []
 
+    conn = None
     try:
         conn = sqlite3.connect(str(DB_PATH))
         cur  = conn.cursor()
@@ -139,7 +146,6 @@ def bm25_search(query: str, top_k: int = 4, chapter_min: int | None = None, chap
             score = sum(1 for t in tokens if t in content)
             results.append((chapter, content, score))
 
-        conn.close()
         # 按评分排序，取 top_k
         results.sort(key=lambda x: x[2], reverse=True)
         snippets = []
@@ -150,6 +156,15 @@ def bm25_search(query: str, top_k: int = 4, chapter_min: int | None = None, chap
         return snippets
     except Exception:
         return []
+    finally:
+        # 修复连接泄漏:原 conn.close() 在 try 内,cur.execute/fetchall 抛异常时
+        # 被 except 吞掉而跳过 close → SQLite 连接(fd + 读锁)泄漏,重复失败累积
+        # 可致 fd 耗尽 / "database is locked"。移到 finally 保证所有路径释放。
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def load_recent_summaries(n: int = 3) -> str:
@@ -179,7 +194,7 @@ def load_summaries_window(chapter_min: int | None, chapter_max: int | None, fall
     return "\n".join(selected[:6])
 
 
-def load_chapter_facts(chapter_min: int | None, chapter_max: int | None, limit: int = 5) -> str:
+def load_chapter_facts(chapter_min: int | None, chapter_max: int | None, limit: int = 12) -> str:
     # task 79: 新存档 world.time 为空 → timeline_filter 没有 anchor → chapter_min/max=None。
     # 之前直接返 "" 导致 GM 收不到任何原著 ChapterFact,凭训练数据瞎编开局
     # (柏林 1914 / Aldnoah / 界冢伊奈帆 等都属于这种幻觉)。
@@ -204,8 +219,13 @@ def load_chapter_facts(chapter_min: int | None, chapter_max: int | None, limit: 
         """, (chapter_min, chapter_max, limit))
         lines = []
         for chapter, title, time_label, summary, events_json in cur.fetchall():
-            events = json.loads(events_json or "[]")
-            event_text = "；".join(event.get("event", "") for event in events[:2] if event.get("event"))
+            # events_json 是 LLM 抽取列,可能畸形 JSON 或非 dict 列表。逐章 try:单章坏
+            # 只丢该章事件(仍出摘要),不让一个坏行丢掉整段章节摘要(与 worldbook 同隔离粒度)。
+            try:
+                events = json.loads(events_json or "[]")
+                event_text = "；".join(event.get("event", "") for event in events[:2] if isinstance(event, dict) and event.get("event"))
+            except (json.JSONDecodeError, TypeError, ValueError):
+                event_text = ""
             lines.append(
                 f"第{chapter}章《{title}》｜{time_label}\n"
                 f"摘要：{summary[:180]}\n"
@@ -344,7 +364,7 @@ def _load_anchor_chapter_text(script_id: int, chapter_min: int, chapter_max: int
                 from document_chunks
                 where script_id = %s and chapter_index between %s and %s
                 order by chapter_index asc, chunk_index asc
-                limit 12
+                limit 48
                 """,
                 (int(script_id), int(chapter_min), int(cmax)),
             ).fetchall() or []
@@ -437,6 +457,10 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
     _ensure_timeline_ready()
     is_default = _is_default_mumu_script(script_id) if script_id else True  # 兼容老 caller 不传 script_id 时按默认走
     timeline_filter = None
+    # BUG-2/BUG-3: 玩家进度 + 元知识模式,函数级缓存供层级图过滤 / entity 召回天花板用。
+    # spoiler-safe 默认:progress=1(绝不 None,否则 _reveal_clause 放行全书=剧透)、mode=none。
+    _progress_chapter = 1
+    _foreknowledge_mode: str = "none"
     # task 117: 算法 phase fallback — 当 state.world.time 空(turn=0 等)时 timeline_filter
     # 拿不到 chapter window,从 phase_digests 拿该 save 当前 phase 的 chapter_range。
     # 这样 BM25/worldbook 不会全文检索整本书。
@@ -447,6 +471,34 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
         pending = timeline.get("pending_jump") or {}
         label = pending.get("to") or world.get("time", "")
         timeline_filter = timeline_filter_for_label(label)
+        # ── BUG-3: 把"时间线派生的当前章节"materialize 进 progress_chapter ──────────
+        # 病灶:gm_serving.settings.advance_progress 全库零调用 → 新存档 progress 恒=1,
+        # Phase D(canon_repo._reveal_clause)与层级图永远只看第 1 章实体。
+        # 真·进度信号 = get_progress_window 的 chapter_min(玩家当前所处章节:已满足锚点+1 /
+        # world.time 标签映射章 / fallback=1),它对存量存档也有效(不依赖从未写过的 progress_chapter)。
+        # 每回合幂等同步(advance_progress 取 max 只增不减),并顺手读 foreknowledge_mode。
+        # 剧透方向:用 chapter_min(当前位置)而非 chapter_max(+50 前瞻窗口),绝不超前揭示。
+        if script_id:
+            try:
+                _save_id_prog = _resolve_save_id_from_user(user_id)
+                if _save_id_prog:
+                    from agents.anchor_seed_agent import get_progress_window as _gpw_sync
+                    _wt_sync = (world.get("time") or "").strip()
+                    _pw_sync = _gpw_sync(_save_id_prog, world_time_label=_wt_sync,
+                                         script_id=int(script_id), window_size=50)
+                    _progress_chapter = max(1, int(_pw_sync.get("chapter_min") or 1))
+                    from gm_serving.settings import advance_progress as _adv_prog
+                    from platform_app.db import connect as _conn_prog
+                    with _conn_prog() as _db_prog:
+                        _sess_prog = _db_prog.execute(
+                            "select worldline from game_sessions where save_id=%s", (_save_id_prog,)
+                        ).fetchone()
+                        _wl_prog = (_sess_prog or {}).get("worldline") if _sess_prog else None
+                        if isinstance(_wl_prog, dict):
+                            _foreknowledge_mode = _wl_prog.get("foreknowledge_mode") or "none"
+                        _adv_prog(_db_prog, _save_id_prog, _progress_chapter)
+            except Exception as _prog_err:
+                log.warning(f"[retrieval] progress_chapter 同步跳过(非致命): {_prog_err}")
         if not timeline_filter.get("anchor_chapter"):
             previous = (timeline.get("last_transition") or {}).get("from")
             if previous:
@@ -484,11 +536,30 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
         # turn=0 / 空 history → 也走章节原文注入 (用 phase 起始章)
         is_opening = (int(state.data.get("turn", 0) or 0) == 0
                       and not (state.data.get("history") or []))
-        if anchor_min is None and is_opening and (timeline_filter or {}).get("chapter_min"):
+        # 修复 ongoing 回合饥饿:原来只有 is_opening 才从时间线派生 anchor_min,
+        # 正常游戏回合 anchor_min=None → 章节原文整段不注入,GM 每轮只拿 bm25 碎片,
+        # 拿不到当前章节原著正文 → 写不出原著文风/细节。现在任何回合只要有时间线窗口
+        # 都注入当前窗口原文。
+        if anchor_min is None and (timeline_filter or {}).get("chapter_min"):
             anchor_min = int(timeline_filter["chapter_min"])
-            anchor_max = anchor_min  # 只拉锚点 1 章
+            anchor_max = int(timeline_filter.get("chapter_max") or anchor_min)
+        # 兜底:时间线没精确命中章节时,用世界线收束的"进度→章节"窗口(get_progress_window),
+        # 这才是权威的当前进度章节段(ch1..30 等)。保证每轮都注入当前进度的原著正文,
+        # 不再因 timeline 未命中就整段不注入。
+        if anchor_min is None and script_id:
+            try:
+                from agents.anchor_seed_agent import get_progress_window as _gpw
+                _sid2 = _resolve_save_id_from_user(user_id)
+                if _sid2:
+                    _pw = _gpw(_sid2, world_time_label=(world.get("time") or "").strip(),
+                               script_id=int(script_id), window_size=50)
+                    if _pw and _pw.get("chapter_min"):
+                        anchor_min = int(_pw["chapter_min"])
+                        anchor_max = int(_pw.get("chapter_max") or anchor_min)
+            except Exception:
+                pass
         if anchor_min and script_id:
-            anchor_text = _load_anchor_chapter_text(int(script_id), anchor_min, anchor_max, max_chars=2400)
+            anchor_text = _load_anchor_chapter_text(int(script_id), anchor_min, anchor_max, max_chars=9000)
             if anchor_text:
                 # task 131: 明确标记"风格 + 骨架参考,不是必须复现的戏剧强度"
                 parts.append(
@@ -681,17 +752,26 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
         try:
             if script_id:
                 from platform_app.db import connect as _connect_tree
+                from kb.canon_repo import _reveal_clause as _rc_fn
+                # BUG-2: 层级图注入 kb_canon_entities 时必须按"已揭示集合"过滤,否则
+                # `order by importance desc limit 60` 会把全书后期势力/地点塞给早章玩家 = 剧透。
+                # 复用 canon_repo._reveal_clause(与 Phase D 同语义,单一真源):
+                #   CTE 实体用裸列;parent self-join 用 p. 前缀,防"早章子实体的后期父势力名"泄漏
+                #   (父若未揭示 → join 不命中 → 该实体退化为顶级独立项,不显示父名)。
+                _rc, _rc_p = _rc_fn(_progress_chapter, _foreknowledge_mode)
+                _rc_par, _rc_par_p = _rc_fn(_progress_chapter, _foreknowledge_mode, prefix="p.")
                 with _connect_tree() as _db_tree:
                     # 拉前 25 个 importance 最高的有 parent_logical_key 的实体 + 它们的 parent
                     # 再拉前 8 个无 parent 但有 children 的顶级 entity
                     rows = _db_tree.execute(
-                        """
+                        f"""
                         with top_entities as (
                           select logical_key, name, type, entity_subtype, parent_logical_key, importance
                           from kb_canon_entities
                           where script_id = %s
                             and type in ('faction', 'location', 'concept')
                             and entity_subtype != ''
+                            and {_rc}
                           order by importance desc
                           limit 60
                         )
@@ -701,9 +781,10 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                         from top_entities e
                         left join kb_canon_entities p
                           on p.script_id = %s and p.logical_key = e.parent_logical_key
+                          and {_rc_par}
                         order by e.importance desc
                         """,
-                        (script_id, script_id),
+                        (script_id, *_rc_p, script_id, *_rc_par_p),
                     ).fetchall()
                 if rows:
                     # 建邻接:parent_lk → [(name, subtype, importance), ...]
@@ -774,6 +855,7 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                 chapter_max=_ch_max,
                 top_k=3,
                 user_id=user_id,
+                progress_chapter=_progress_chapter,  # BUG-1: entity 召回剧透天花板钳到玩家进度
             )
             if pg_context:
                 # 非默认剧本：抹掉历史脏数据里残留的默认柏林 token 行（防御性）
@@ -795,7 +877,7 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
         # 2. BM25 章节片段（.webnovel/vectors.db 是 MuMu 原著 chunks，仅默认走）
         snippets = bm25_search(
             user_input,
-            top_k=3,
+            top_k=8,
             chapter_min=timeline_filter.get("chapter_min") if timeline_filter else None,
             chapter_max=timeline_filter.get("chapter_max") if timeline_filter else None,
         )

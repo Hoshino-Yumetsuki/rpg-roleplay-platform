@@ -8,6 +8,11 @@ from rules_bridge.combat import (
 )
 from rules_bridge.consume import consume_item_action, parse_consume_intent, short_rest
 from rules_bridge.intent import classify_combat_intent
+from rules_bridge.inventory import (
+    grant_item_action,
+    parse_pickup_intent,
+    pickup_loot_action,
+)
 from rules_bridge.module_ops import enter_room, start_module
 from rules_bridge.suggest import suggest_rule_actions
 
@@ -16,6 +21,7 @@ __all__ = [
     "perform_skill_check", "perform_saving_throw", "trap_check",
     "start_encounter_by_id", "player_attack", "enemy_attack", "advance_turn",
     "parse_consume_intent", "consume_item_action", "short_rest",
+    "grant_item_action", "pickup_loot_action", "parse_pickup_intent",
     "classify_combat_intent",
     "suggest_rule_actions",
 ]

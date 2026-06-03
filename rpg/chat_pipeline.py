@@ -31,6 +31,22 @@ log = get_logger(__name__)
 # RPG_POSTPROC_MODE=sync → 旧行为 (后处理阻塞主路径, 测试/debug 用)。
 _POSTPROC_MODE = os.environ.get("RPG_POSTPROC_MODE", "async").lower()
 
+
+def _gm_max_iters() -> int:
+    """GM 单轮工具调用上限。原 8 太紧:世界线收束后一轮常需
+    update_state → list_pending_anchors → mark_anchor_satisfied → set_question → 写正文,
+    8 轮经常没串完就被「已达工具上限」硬截,浪费整轮 token。默认提到 16,可用
+    RPG_GM_MAX_ITERS 调。GM 不再需要工具时会自然停,调高只给上限不强制多调。"""
+    try:
+        return max(4, int(os.environ.get("RPG_GM_MAX_ITERS", "16")))
+    except (TypeError, ValueError):
+        return 16
+
+
+def _should_route_to_curator_clarify(confidence: float, threshold: float, clarify: str) -> bool:
+    """Only interrupt the GM when the curator is actually below confidence threshold."""
+    return bool((clarify or "").strip()) and float(confidence) < float(threshold)
+
 # ---------------------------------------------------------------------------
 # Pipeline context: 在 phase 之间传递的可变状态
 # ---------------------------------------------------------------------------
@@ -217,6 +233,17 @@ async def apply_player_directives_phase(
                     "status": "error", "elapsed_ms": 0,
                 })
             else:
+                # 关键:compact_phase(force=True) 把当前 open phase 就地标 closed,但不重开。
+                # 若不补开新 phase,ensure_initial_phase 会因"已存在(closed)phase 行"早退、
+                # detect_phase_boundary 因无 active phase 恒 False → 该存档自此**永久停止**
+                # 自动折叠历史,/compact 之后到最近 6 轮之间的剧情既无原文也无摘要 = GM 失忆
+                # (与 /compact 目的相反)。这里立即开一个新 open phase 接管后续回合。
+                try:
+                    from save_phase_manager import open_new_phase as _open_new_phase
+                    _cur_turn = int((state.data or {}).get("turn") or 0)
+                    _open_new_phase(_sid, turn_index=_cur_turn + 1)
+                except Exception:
+                    pass
                 _summary_excerpt = (_result.get("summary") or "")[:200]
                 yield ("agent", {
                     "phase": "compact",
@@ -438,6 +465,9 @@ async def run_context_phase(
         stop_requested=stop_event.is_set,
         user_id=api_user["id"] if api_user else None,
         script_id=active_script_id(api_user),
+        # task 107E: 透传 save_id,否则 RuntimePhaseDigestProvider(本存档历史摘要)+
+        # 锚点 NPC 强制登场(_extract_anchor_npc_names)因 services.save_id=None 永远 skipped。
+        save_id=ctx.early_active_save_id,
         api_id_override=_sub_api,
         model_override=_sub_model,
     ):
@@ -661,53 +691,74 @@ async def run_rules_phase(
     yield ("context", {"debug": bundle["debug"]})
     yield ("status", payload_fn(api_user))
 
-    # (d) clarify 短路
+    # (d) curator 低 confidence **不再短路**。
+    # 用户 harness 要求:每轮必须先推进剧情,绝不"一上来甩 (A)(B) 菜单回去 + 跳过 GM"。
+    # curator 的 clarifying_question / candidate_actions / risk_flags 已通过 bundle 传给主 GM
+    # 作上下文;主 GM 照常出场推进剧情,回合末再用结构化 question op 给出动作选项
+    # (finalize 阶段 extract_trailing_choice 会确定性兜底,强制任何提问/选项结构化、不入正文)。
     _curator_plan = agent_result.get("curator_plan", {}) or {}
     _confidence = float(_curator_plan.get("confidence") or 1.0)
-    _clarify = (_curator_plan.get("clarifying_question") or "").strip()
-    _confidence_threshold = clarify_threshold(api_user)
-    _route_to_clarify = bool(_clarify) or _confidence < _confidence_threshold
-    if _route_to_clarify and _clarify:
-        try:
-            state.add_pending_question(_clarify, source="curator:clarify")
-        except Exception:
-            pass
+    if _confidence < clarify_threshold(api_user):
         try:
             from datetime import datetime as _dt
             audit = state.data.setdefault("permissions", {}).setdefault("audit_log", [])
             audit.append({
                 "ts": _dt.now().isoformat(timespec="seconds"),
-                "kind": "clarify_yield",
+                "kind": "curator_low_confidence",
                 "source": "curator",
-                "hint": f"confidence={_confidence:.2f}；curator 主动询问：{_clarify[:160]}",
+                "hint": f"confidence={_confidence:.2f} 偏低,但 GM 仍推进剧情(不再短路反问)",
                 "turn": state.data.get("turn", 0),
             })
-            if len(audit) > 200:
-                state.data["permissions"]["audit_log"] = audit[-200:]
+            state.data["permissions"]["audit_log"] = audit[-200:]
         except Exception:
             pass
-        _q_text = f"【需要先确认】{_clarify}"
-        yield ("token", {"text": _q_text})
-        try:
-            persist_chat_turn(
-                api_user, state, message_for_model, _q_text,
-                persist_user_id=persist_user_id, active_save_id=active_save_id,
-            )
-        except Exception:
-            pass
-        mark_context_run(
-            context_run_id, "done",
-            duration_ms=int((time.time() - ctx.chat_start_time) * 1000),
-        )
-        yield ("status", payload_fn(api_user))
-        yield ("done", {"status": payload_fn(api_user), "interrupted": False, "clarify": True})
-        ctx.early_return = True
-        return
 
 
 # ---------------------------------------------------------------------------
 # Phase 4: GM 主响应 (流式 token + tool_call + 后处理 extractor / acceptance)
 # ---------------------------------------------------------------------------
+
+
+def _apply_gm_json_ops(
+    *,
+    state: "GameState",
+    response_with_ops: str,
+    api_user: dict[str, Any] | None,
+    active_script_id: Callable[[dict[str, Any] | None], int | None],
+    ctx: "PipelineContext",
+    extractor_active: bool,
+) -> list[str]:
+    """把 GM 的 JSON op(set/append/overwrite/question/hypothesis/...)经 ChatWriteContext
+    确定性 apply 回内存 state,返回 update 文案列表(已含 directive_updates 前缀)。
+
+    sync 与 async 两条后处理路径**共用** —— async 早退前也必须调它。否则 GM 经
+    `{"op":"set/append/overwrite/question/...}` 写的 player.current_location / world.time /
+    memory.resources / memory.main_quest / relationships.* / 选项 / 推测全部丢失
+    (worker 进程 state_data={} 是 no-op,补不回来)。dispatcher 工具调用走的是流式内联
+    apply,不受影响,但 JSON op 是 GM 写核心每轮状态的主通道。
+    """
+    import secrets as _ctx_secrets
+
+    from state_write_context import (
+        ChatWriteContext,
+        clear_context as _clear_write_ctx,
+        set_context as _set_write_ctx,
+    )
+    _json_op_ctx = ChatWriteContext(
+        user_id=int(api_user.get("id")) if api_user else 0,
+        save_id=ctx.early_active_save_id or 0,
+        script_id=active_script_id(api_user),
+        trace_id=f"gm-jsop-{_ctx_secrets.token_urlsafe(6)}",
+        origin="llm_chat_json_op",
+    )
+    _ctx_token = _set_write_ctx(_json_op_ctx)
+    try:
+        # task 69:extractor 开启时让 state.py 跳过 regex 兜底
+        return ctx.directive_updates + state.apply_structured_updates(
+            response_with_ops, skip_regex_fallback=extractor_active,
+        )
+    finally:
+        _clear_write_ctx(_ctx_token)
 
 
 async def run_gm_phase(
@@ -827,7 +878,7 @@ async def run_gm_phase(
     async for event in _bridge_sync_generator_to_async(
         lambda: gm.respond_stream_with_tools(
             message_for_model, bundle["prompt"], state,
-            tools=unified_tools, max_iterations=8,
+            tools=unified_tools, max_iterations=_gm_max_iters(),
             max_tokens=_max_tokens,
             tool_call_router=gm_tool_router,
             stop_event=_gm_stop,
@@ -936,8 +987,69 @@ async def run_gm_phase(
             _POSTPROC_FALLBACK = False
 
         if not _POSTPROC_FALLBACK:
-            # 不等后处理,直接设 ctx._updates 让 phase 5 能正常落档
-            ctx._updates = ctx.directive_updates[:]
+            # ── async 模式:确定性后处理必须仍在主进程内联跑,不能随早退一起跳过 ──
+            # 早退只该省掉"费时 + 不依赖实时内存 state 的 LLM 任务"(acceptance verifier /
+            # black_swan,上面已 enqueue 给独立 worker)。但下面三项是确定性、<50ms、且必须
+            # 改写【实时内存 state】 —— worker 进程拿不到内存 state(payload state_data={} 是
+            # no-op),一旦随早退跳过就永久丢失:
+            #   1. apply_structured_updates —— GM 经 JSON op 写的 location/time/resources/
+            #      main_quest/relationships/选项/推测(GM 写每轮核心状态的主通道)
+            #   2. timeline_guard regex —— 时间跳跃禁词检测 + audit
+            #   3. cliche regex —— 套路比喻检测 notice
+            # 故此处内联补跑。相对 sync 路径的唯一退化:extractor(LLM 二次抽取,本就在
+            # worker 内 no-op)与 acceptance retry 重写(依赖内存 state + GM 实例)不在 async
+            # 跑 —— extractor 直接跳过(GM 自带 JSON op 已 apply),acceptance 退化为仅 worker
+            # 内审计、不 retry(下面 log 标注)。
+            log.info("[chat] async postproc: 内联跑确定性后处理(apply/guard),LLM 任务已入队;"
+                     "acceptance retry 退化为不重写(仅 worker 审计)")
+            try:
+                from agents.timeline_narrative_guard import (
+                    detect_time_jump_violations,
+                    record_violations_to_audit,
+                )
+                _tj_violations = await asyncio.to_thread(
+                    detect_time_jump_violations, response, state,
+                )
+                if _tj_violations:
+                    await asyncio.to_thread(record_violations_to_audit, state, _tj_violations)
+                    yield ("agent", {
+                        "phase": "timeline_guard",
+                        "message": f"GM 时间跳跃叙事检测到 {len(_tj_violations)} 处禁词(穿越/醒来/拨回 等过渡叙事)",
+                        "status": "warning",
+                        "elapsed_ms": 0,
+                        "violations": [
+                            {"label": v.get("pattern_label"), "match": v.get("match")}
+                            for v in _tj_violations
+                        ],
+                    })
+            except Exception as _tg_err:
+                log.warning(f"[chat] async timeline_guard 跳过: {_tg_err}")
+
+            try:
+                from agents.timeline_narrative_guard import detect_cliche_violations
+                _cliche = detect_cliche_violations(response)
+            except Exception:
+                _cliche = []
+            if _cliche:
+                yield ("cliche_notice", {
+                    "phrases": [v.get("match") for v in _cliche][:5],
+                    "labels": sorted({v.get("pattern_label") for v in _cliche}),
+                })
+
+            # 关键修复:GM JSON op 确定性写回(async 不跑 extractor → extractor_active=False
+            # → apply_structured_updates 保留 regex 兜底,把 GM 漏标的也尽量捞回)。
+            try:
+                ctx._updates = _apply_gm_json_ops(
+                    state=state,
+                    response_with_ops=response,
+                    api_user=api_user,
+                    active_script_id=active_script_id,
+                    ctx=ctx,
+                    extractor_active=False,
+                )
+            except Exception as _apply_err:
+                log.warning(f"[chat] async apply_structured_updates 失败,退回 directive_updates: {_apply_err}")
+                ctx._updates = ctx.directive_updates[:]
             return
     # ── 同步后处理路径 (sync 模式 or enqueue 失败降级) ─────────────────────
 
@@ -985,34 +1097,17 @@ async def run_gm_phase(
     response_with_ops = _post_results.get("response_with_ops") or response
     extractor_active = bool(_post_results.get("extractor_active"))
 
-    # task 87 Phase 6: 设置 chat write context,让 state.apply_state_write_typed 拿到
-    # user/save/trace,把 GM JSON op 直调 apply_state_write 路径转 dispatcher 工具调用。
-    import secrets as _ctx_secrets
-
-    from state_write_context import (
-        ChatWriteContext,
+    # task 87 Phase 6: 经 ChatWriteContext 把 GM JSON op 确定性 apply 回内存 state
+    # (apply_state_write_typed 拿到 user/save/trace → dispatcher 工具调用)。
+    # 与 async 早退路径共用 _apply_gm_json_ops,避免两处逻辑漂移。
+    updates = _apply_gm_json_ops(
+        state=state,
+        response_with_ops=response_with_ops,
+        api_user=api_user,
+        active_script_id=active_script_id,
+        ctx=ctx,
+        extractor_active=extractor_active,
     )
-    from state_write_context import (
-        clear_context as _clear_write_ctx,
-    )
-    from state_write_context import (
-        set_context as _set_write_ctx,
-    )
-    _json_op_ctx = ChatWriteContext(
-        user_id=int(api_user.get("id")) if api_user else 0,
-        save_id=ctx.early_active_save_id or 0,
-        script_id=active_script_id(api_user),
-        trace_id=f"gm-jsop-{_ctx_secrets.token_urlsafe(6)}",
-        origin="llm_chat_json_op",
-    )
-    _ctx_token = _set_write_ctx(_json_op_ctx)
-    try:
-        # task 69：extractor 开启时让 state.py 跳过 regex 兜底
-        updates = ctx.directive_updates + state.apply_structured_updates(
-            response_with_ops, skip_regex_fallback=extractor_active,
-        )
-    finally:
-        _clear_write_ctx(_ctx_token)
 
     # task 81 / 84 / iter#3: acceptance 自动验证 + retry once (硬 gate 化)
     #
@@ -1054,7 +1149,7 @@ async def run_gm_phase(
                     _retry_parts: list[str] = []
                     _retry_state_iter = gm.respond_stream_with_tools(
                         _retry_msg, bundle["prompt"], state,
-                        tools=unified_tools, max_iterations=4, max_tokens=_max_tokens,
+                        tools=unified_tools, max_iterations=max(4, _gm_max_iters() // 2), max_tokens=_max_tokens,
                         tool_call_router=gm_tool_router,
                     )
                     for _ev in _retry_state_iter:
@@ -1349,6 +1444,54 @@ async def persist_turn_phase(
     updates = getattr(ctx, "_updates", []) or []
 
     visible_response = strip_json_state_ops(response)
+
+    # harness 强约束(用户): GM 的提问/选项**必须结构化,绝不留在正文**。
+    # 这是确定性兜底 —— 不依赖 GM 听话:把正文尾部的问题/选项块抽进 pending_questions,
+    # 并从正文剥掉。本轮已有 GM 结构化 question op 时只清正文去重,不重复 push。
+    try:
+        from state.parsers import extract_trailing_choice
+        _body, _q, _opts = extract_trailing_choice(visible_response)
+        if len(_opts) >= 2:
+            _perm = state.data.get("permissions") or {}
+            _cur_turn = state.data.get("turn", 0)
+            _has_gm_q = any(
+                q.get("turn") == _cur_turn and str(q.get("source", "")).startswith("gm")
+                for q in (_perm.get("pending_questions") or [])
+            )
+            if not _has_gm_q:
+                state.add_pending_question(_q or "你接下来想怎么做?", source="gm:prose", options=_opts)
+            visible_response = _body
+    except Exception:
+        pass
+
+    # 沉浸感确定性兜底(用户头号反馈):剥掉结尾"旁白向玩家显式提问下一步"的句子
+    # ——只命中明确的决策反问(你接下来想怎么做 / 你打算如何应对 / 请玩家决定 等),
+    # 且必须是旁白行(不在引号内,绝不动角色台词)。不依赖 GM 听提示词。
+    try:
+        import re as _re_imm
+        _q_pat = _re_imm.compile(
+            r"(你|您)[^。！？\n]{0,16}(接下来|下一步|打算|准备|会|想|要不要|是否|如何|怎么)"
+            r"[^。\n]{0,18}(做|办|应对|行动|选择|决定|应付)?[?？]\s*$"
+        )
+        _plead_pat = _re_imm.compile(r"(请|轮到|该)\s*(你|玩家)[^。\n]{0,10}(决定|选择|定夺|行动|出招)")
+        _quote_chars = ("「", "」", "“", "”", "‘", "’", "\"", "『", "』")
+        _ll = visible_response.rstrip().split("\n")
+        _changed = False
+        while _ll:
+            _last = _ll[-1].strip()
+            if not _last:
+                _ll.pop(); continue
+            _in_quote = any(c in _last for c in _quote_chars)
+            if (not _in_quote) and (_q_pat.search(_last) or _plead_pat.search(_last)) and len(_last) <= 60:
+                _ll.pop(); _changed = True; continue
+            break
+        if _changed:
+            _new = "\n".join(_ll).rstrip()
+            if _new:  # 不要把整段删空(防极端情况)
+                visible_response = _new
+    except Exception:
+        pass
+
     # task 128: GM 返回空时不写 history (避免出现"GM 主代理"标题但内容空的诡异消息),
     # 改为 yield error 让用户清楚知道并能重试。常见原因:
     #   · LLM 触发 safety filter (Gemini 对暴力/儿童虐待场景敏感)

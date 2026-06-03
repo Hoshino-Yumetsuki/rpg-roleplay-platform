@@ -15,6 +15,30 @@ BRANCH_STATE_DIR = BASE / "platform_data" / "branch_states"
 MAIN_REF = "refs/heads/main"
 
 
+# ── 并发锁 ────────────────────────────────────────────────────────────────────
+
+def acquire_save_advisory_lock(db: Any, save_id: int, user_id: int | None) -> None:
+    """取与 record_runtime_turn / persist_runtime_state 同 key 的事务级 advisory lock。
+
+    分支写操作(continue_from / activate_node / activate_save / delete_subtree /
+    rollback_to_message)都会改 game_saves 活跃指针;若不持此锁,会与并发的回合提交
+    (record_runtime_turn)或 autosave(persist_runtime_state)互相覆盖指针 →
+    用户丢回合 / 刚做的回滚被并发回合冲掉(多 tab 实测可触发)。
+
+    key 表达式必须与 runtime.py 两处**逐字一致**(rpg_turn_{uid} + save_{save_id},
+    uid = user_id or save_id*7919),否则两把锁算出不同 id、互不排斥、形同虚设。
+    必须在读 game_saves 之前调用,保证 save.active_commit_id 在本事务内稳定。
+    """
+    try:
+        uid_for_lock = int(user_id or (save_id * 7919))
+        db.execute(
+            "select pg_advisory_xact_lock(hashtext(%s)::int, hashtext(%s)::int)",
+            (f"rpg_turn_{uid_for_lock}", f"save_{save_id}"),
+        )
+    except Exception:
+        pass
+
+
 # ── 文本工具 ──────────────────────────────────────────────────────────────────
 
 def compact(text: str, limit: int = 120) -> str:

@@ -13,20 +13,26 @@ ForeknowledgeMode = Literal["none", "partial", "omniscient"]
 
 
 # ── 进度过滤(决策3:已揭示集合) ─────────────────────────────────────────────
-def _reveal_clause(progress_chapter: int | None, mode: ForeknowledgeMode) -> tuple[str, list]:
+def _reveal_clause(progress_chapter: int | None, mode: ForeknowledgeMode,
+                   *, prefix: str = "") -> tuple[str, list]:
     """返回 (sql 片段, 参数列表)。控制玩家在当前进度+元知识下能看到哪些规范知识。
 
     none        : first_revealed_chapter <= progress  或  public_knowledge
     partial     : 上 + metadata.famous=true(穿越者模糊知道大事)
     omniscient  : 不过滤
     progress=None: 不过滤(管理/编辑器视角)
+
+    prefix: 列前缀(如 "p." 给 self-join 的别名表用),默认空串=裸列名。
+            retrieval.py 层级图复用本函数同时过滤 CTE 实体与 parent join,保单一真源。
     """
     if mode == "omniscient" or progress_chapter is None:
         return "true", []
-    base = "(first_revealed_chapter <= %s or public_knowledge)"
+    fr = f"{prefix}first_revealed_chapter"
+    pk = f"{prefix}public_knowledge"
+    base = f"({fr} <= %s or {pk})"
     params: list = [progress_chapter]
     if mode == "partial":
-        base = base[:-1] + " or (metadata->>'famous') = 'true')"
+        base = base[:-1] + f" or ({prefix}metadata->>'famous') = 'true')"
     return base, params
 
 

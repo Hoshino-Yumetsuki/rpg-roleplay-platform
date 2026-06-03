@@ -13,6 +13,7 @@ def retrieve_runtime_context(
     chapter_max: int | None = None,
     top_k: int = 3,
     user_id: int | None = None,
+    progress_chapter: int | None = None,
 ) -> str:
     """按当前用户的 runtime 拿剧本 chunks。
 
@@ -46,6 +47,7 @@ def retrieve_runtime_context(
             top_k=top_k,
             user_id=user_id,
             db=db,
+            progress_chapter=progress_chapter,
         )
 
 
@@ -58,6 +60,7 @@ def retrieve_script_context(
     top_k: int = 3,
     user_id: int | None = None,
     db=None,
+    progress_chapter: int | None = None,
 ) -> str:
     owns_connection = db is None
     if owns_connection:
@@ -112,13 +115,24 @@ def retrieve_script_context(
         # task 51/52: LightRAG 双层检索第 2 层 — entity 层向量召回。
         # query 提到 NPC 名 / 地名 / 设定词时,直接返回完整人物卡 + 世界书条目,
         # GM 拿到的不是"片段+猜",而是"角色档案+确定信息"。
-        # task 52: 必须传 chapter_min/chapter_max 限制召回范围,防止剧透 — 第 1 章
-        # 玩家向量召回不能拉第 391 章才出现的角色。
+        # task 52 + BUG-1: 必须传 chapter_max 限制召回范围,防止剧透 — 第 1 章玩家
+        # 向量召回不能拉第 391 章才出现的角色。
+        # 剧透天花板 = min(场景窗口 chapter_max, 玩家进度 progress_chapter):
+        #   - chapter_max 为 None(时间线未解析)时退到 progress(绝不放行全书);
+        #   - chapter_max 高于 progress(/set 跳跃等边界)时钳回 progress;
+        #   - progress_chapter 由 retrieve_context 每回合同步(BUG-3),且 spoiler-safe 默认 1。
+        if progress_chapter is not None:
+            _entity_ceiling = (
+                int(progress_chapter) if chapter_max is None
+                else min(int(chapter_max), int(progress_chapter))
+            )
+        else:
+            _entity_ceiling = chapter_max  # 无进度上下文(管理/编辑器视角)→ 维持原 chapter_max
         try:
             ents = _search_entities(
                 db, script_id, query,
                 chapter_min=chapter_min,
-                chapter_max=chapter_max,
+                chapter_max=_entity_ceiling,
                 top_k_cards=3, top_k_wb=3,
                 user_id=user_id,
             )

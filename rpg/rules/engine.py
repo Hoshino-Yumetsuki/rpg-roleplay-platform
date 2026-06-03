@@ -29,6 +29,9 @@ from .dnd5e.character import (
     find_inventory_item as _find_inventory_item,
 )
 from .dnd5e.character import (
+    grant_inventory_item as _grant_inventory_item,
+)
+from .dnd5e.character import (
     make_default_character,
 )
 from .dnd5e.character import (
@@ -105,6 +108,10 @@ class RulesEngine:
     # ── Inventory (canonical) ───────────────────────────────────
     def consume_inventory_item(self, character: dict, alias: str, qty: int = 1) -> dict:
         return _consume_inventory_item(character, alias, qty)
+
+    def grant_inventory_item(self, character: dict, item_id: str, name: str | None = None,
+                             qty: int = 1, kind: str = "misc") -> dict:
+        return _grant_inventory_item(character, item_id, name=name, qty=qty, kind=kind)
 
     def find_inventory_item(self, character: dict, alias: str) -> dict | None:
         return _find_inventory_item(character, alias)

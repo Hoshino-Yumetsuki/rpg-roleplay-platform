@@ -135,9 +135,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.warning("[startup] cleanup_stale_upload_chunks failed: %s", e)
 
+    # 5. Redis 跨进程事件总线 listener(多 worker 下 SSE 事件跨 worker 投递)。
+    #    Redis 未配置则 redis_listener() 立即返回,纯进程内模式不受影响。
+    _redis_listener_task = None
+    try:
+        import asyncio as _asyncio
+
+        import state_event_bus
+        _redis_listener_task = _asyncio.create_task(state_event_bus.redis_listener())
+        app.state._redis_listener_task = _redis_listener_task  # 持引用防 GC 提前回收
+    except Exception:
+        log.exception("[startup] redis event listener 启动失败(降级进程内)")
+
     yield
 
     # ── shutdown ──────────────────────────────────────────────────────────
+    if _redis_listener_task is not None:
+        try:
+            _redis_listener_task.cancel()
+        except Exception:
+            pass
     try:
         import mcp_broker
         mcp_broker.stop_health_loop()

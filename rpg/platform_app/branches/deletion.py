@@ -5,7 +5,12 @@ import time
 from typing import Any
 
 from platform_app import runtime as _runtime_module
-from platform_app.branches._helpers import MAIN_REF, _unlink_branch_state, commit_state
+from platform_app.branches._helpers import (
+    MAIN_REF,
+    _unlink_branch_state,
+    acquire_save_advisory_lock,
+    commit_state,
+)
 from platform_app.branches.commits import _commit_for_user
 from platform_app.branches.refs import (
     _find_or_create_ref_for_commit,
@@ -27,6 +32,9 @@ def delete_subtree(user_id: int, node_id: int) -> dict[str, Any]:
         node = round_start_node(db, node)
         if node["parent_id"] is None:
             raise ValueError("不能删除根节点")
+        # 与回合提交 / autosave 同 key 的锁:删子树可能改 game_saves 活跃指针(active 被删时回退到
+        # fallback),读 game_saves 之前取,防并发回合在我们读指针与写 fallback 之间提交被覆盖。
+        acquire_save_advisory_lock(db, node["save_id"], user_id)
         ids = collect_ids(db, node["id"])
         paths = [
             row["state_path"]
@@ -75,6 +83,9 @@ def rollback_to_message(
     runtime_payload: dict[str, Any] | None = None
 
     with connect() as db:
+        # 与回合提交 / autosave 同 key 的锁:回滚要把 game_saves 活跃指针软回退到历史 commit,
+        # 读 game_saves 之前取,防并发回合在我们读指针与写回退之间提交把回滚冲掉。
+        acquire_save_advisory_lock(db, save_id, user_id)
         save = db.execute(
             "select * from game_saves where id = %s and user_id = %s",
             (save_id, user_id),

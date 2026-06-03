@@ -147,7 +147,7 @@ def _t_mark_anchor_satisfied(user_id: int, args: dict) -> str:
             if anchor_key:
                 row = db.execute(
                     """
-                    select id, status, summary from save_anchor_states
+                    select id, status, summary, source_chapter from save_anchor_states
                     where save_id = %s and anchor_key = %s
                     """,
                     (save_id, anchor_key),
@@ -155,7 +155,7 @@ def _t_mark_anchor_satisfied(user_id: int, args: dict) -> str:
             else:
                 row = db.execute(
                     """
-                    select id, status, summary from save_anchor_states
+                    select id, status, summary, source_chapter from save_anchor_states
                     where save_id = %s and id = %s
                     """,
                     (save_id, int(anchor_id_raw)),
@@ -179,6 +179,16 @@ def _t_mark_anchor_satisfied(user_id: int, args: dict) -> str:
                 """,
                 (new_status, how, occurred_turn, drift, save_id, row["id"]),
             )
+            # BUG-3: 锚点满足 = 玩家已推进到该锚点所在原著章节 → 同步玩家进度
+            # (advance_progress 取 max 只增不减,幂等)。让 progress_chapter 真随剧情走,
+            # 防剧透集合(Phase D canon_repo._reveal_clause + retrieval 层级图)随之扩。
+            _src_ch = row.get("source_chapter")
+            if isinstance(_src_ch, int) and _src_ch >= 1:
+                try:
+                    from gm_serving.settings import advance_progress
+                    advance_progress(db, save_id, _src_ch)
+                except Exception:
+                    pass  # 进度同步失败不阻断锚点标记
         return json.dumps({
             "ok": True,
             "anchor_id": row["id"],
@@ -548,16 +558,18 @@ def _t_revoke_protagonist_pov(user_id: int, args: dict) -> str:
         with connect() as db:
             if not _own_save(db, save_id, user_id):
                 return f"失败 (权限): save {save_id} 不属于当前用户或不存在"
-            # 1. 把 variant_description 标过 "玩家以...代入 X" 的 anchor 重置 pending
-            #    (匹配 summary 含 "X(character)首次登场" + status='occurred'/'variant')
+            # 1. 把 claim 标记过的 anchor 重置 pending。
+            #    BUG 修复:原来用 `summary like '%X(character)首次登场%' AND variant_description like`,
+            #    但 claim 是按 (summary OR must_preserve like '%X 参与%') 标记的 —— 靠 must_preserve
+            #    命中(summary 无"首次登场")的锚点会被 claim 标 occurred 却永不被 revoke 重置,
+            #    POV 切回后原著事件永久吞失。改为只按 claim 自己写的 variant_description 签名
+            #    "代入 {name} 的 POV 位置"(claim 给所有标记锚点统一写入)精确反查,与 claim 镜像。
             rows = db.execute(
                 """select id, anchor_key, summary, status, variant_description
                    from save_anchor_states
                    where save_id=%s and status in ('occurred','variant')
-                     and summary like %s
-                     and (variant_description like %s or variant_description like %s)""",
-                (save_id, f"%{name}(character)首次登场%",
-                 f"%代入 {name}%", f"%代入「{name}」%"),
+                     and variant_description like %s""",
+                (save_id, f"%代入 {name} 的 POV 位置%"),
             ).fetchall() or []
             reverted = []
             for r in rows:

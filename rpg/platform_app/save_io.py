@@ -125,11 +125,43 @@ def _strip_id_and_save_id(row: dict[str, Any], extra_strip: tuple[str, ...] = ()
     return out
 
 
-def _build_insert(table: str, row: dict[str, Any], new_save_id: int) -> tuple[str, tuple]:
-    """根据 row 实际包含的列动态构造 INSERT,容忍前后端 schema 漂移。"""
+_COL_CACHE: dict[str, frozenset[str]] = {}
+
+
+def _table_columns(db: Any, table: str) -> frozenset[str]:
+    """返回 table 在 DB 里实际存在的列名集合(来自 information_schema,可信源),带进程内缓存。
+
+    安全关键:`_build_insert` 把列名直接拼进 SQL 字符串(列名无法参数化)。导入 payload 的
+    row 键来自用户上传的 JSON,若原样当列名拼接 → 列名 SQL 注入(可构造 INSERT...SELECT 跨表
+    窃取他人存档/凭证)。用本函数把列名**白名单到该表真实列**,目录列名本身可信,彻底堵注入,
+    同时保留"容忍 schema 漂移"(未知列静默丢弃)的原意。table 来自 `_STATE_TABLES` 硬白名单。
+    """
+    cached = _COL_CACHE.get(table)
+    if cached is not None:
+        return cached
+    rows = db.execute(
+        "select column_name from information_schema.columns "
+        "where table_schema = current_schema() and table_name = %s",
+        (table,),
+    ).fetchall()
+    cols = frozenset(r[0] for r in rows)
+    _COL_CACHE[table] = cols
+    return cols
+
+
+def _build_insert(
+    table: str, row: dict[str, Any], new_save_id: int, allowed_cols: frozenset[str],
+) -> tuple[str, tuple]:
+    """根据 row 实际包含的列动态构造 INSERT,容忍前后端 schema 漂移。
+
+    列名先按 allowed_cols(该表真实列,来自 DB 目录)过滤:非真实列直接丢弃,既防列名 SQL
+    注入,又对 schema 漂移健壮。allowed_cols 永不为空时才会带额外列(save_id 恒在)。
+    """
     cols = ["save_id"]
     vals: list[Any] = [new_save_id]
     for k, v in row.items():
+        if k not in allowed_cols or k == "save_id":
+            continue  # 未知/伪造列名一律丢弃(防注入 + schema 漂移容错)
         cols.append(k)
         # jsonb 列 — 凡是 dict/list 一律包 Jsonb
         if isinstance(v, (dict, list)):
@@ -158,9 +190,12 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     if not save_data:
         raise ValueError("payload.save 缺失")
 
-    new_title = (save_data.get("title") or "导入存档")
+    new_title = (save_data.get("title") or "导入存档")[:200]  # 限标题长度,防超长 title
     script_id_raw = save_data.get("script_id")
-    state_snapshot = save_data.get("state_snapshot") or {}
+    # 主 save 的 state_snapshot 也必须过大小校验(原仅 per-commit 校验,主 snapshot 漏检):
+    # application/json body 导入路径无 _MAX_SAVE_IMPORT_BYTES 上限,构造超大 save.state_snapshot
+    # 可绕过端点大小关 + 直插 game_saves 撑 DB/内存。与 per-commit 一致用 _check_json_size。
+    state_snapshot = _check_json_size(save_data.get("state_snapshot") or {}, "save.state_snapshot")
     warnings: list[str] = []
     if pv == 1:
         warnings.append("v1 存档包未含 anchor/kb/identity 状态表,建议在游戏内 /reseed 重建锚点")
@@ -255,6 +290,8 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             state_tables = payload.get("state_tables") or {}
             for table, allow_missing in _STATE_TABLES:
                 rows = state_tables.get(table) or []
+                # 该表真实列白名单(防列名 SQL 注入,见 _table_columns)。表不存在 → 空集 → 全丢。
+                allowed_cols = _table_columns(db, table)
                 count = 0
                 for raw_row in rows:
                     if not isinstance(raw_row, dict):
@@ -263,7 +300,7 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                     if not row:
                         continue
                     try:
-                        sql, vals = _build_insert(table, row, new_save_id)
+                        sql, vals = _build_insert(table, row, new_save_id, allowed_cols)
                         db.execute(sql, vals)
                         count += 1
                     except Exception as exc:

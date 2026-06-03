@@ -4,8 +4,54 @@ from __future__ import annotations
 import re
 
 
+_TRAILING_OPTION_LINE_RE = re.compile(
+    r"^\s{0,3}(?:[-*+]|\d{1,2}[.)、]|[A-Da-d][.)、])\s+(.+?)\s*$"
+)
+
+
 def _clean_item(text: str) -> str:
     return re.sub(r"\s+", " ", str(text).strip(" \n\t:：-—")).strip()
+
+
+def _clean_trailing_option_text(value: str) -> str:
+    text = (value or "").strip()
+    text = re.sub(r"^\[[ xX]\]\s*", "", text)
+    for marker in ("**", "__", "*", "_"):
+        if len(text) > len(marker) * 2 and text.startswith(marker) and text.endswith(marker):
+            text = text[len(marker):-len(marker)].strip()
+    text = re.sub(r"^[（(]?[A-Da-d][）).、]\s*", "", text)
+    return text.strip(" \t-—")
+
+
+def _extract_trailing_markdown_options(text: str) -> tuple[str, list[str]]:
+    """Move a trailing markdown action list out of prose and into pending choices."""
+    lines = (text or "").splitlines()
+    idx = len(lines) - 1
+    while idx >= 0 and not lines[idx].strip():
+        idx -= 1
+    end = idx + 1
+    if end <= 0:
+        return text, []
+
+    options_reversed: list[str] = []
+    while idx >= 0:
+        match = _TRAILING_OPTION_LINE_RE.match(lines[idx])
+        if not match:
+            break
+        option = _clean_trailing_option_text(match.group(1))
+        if not option:
+            break
+        options_reversed.append(option)
+        idx -= 1
+
+    if len(options_reversed) < 2:
+        return text, []
+
+    body_lines = lines[:idx + 1]
+    while body_lines and not body_lines[-1].strip():
+        body_lines.pop()
+    body = "\n".join(body_lines).rstrip()
+    return body, list(reversed(options_reversed))[:4]
 
 
 def _split_label(text: str) -> tuple[str, str]:
@@ -84,15 +130,27 @@ def _parse_question(value: str) -> tuple[str, list[str]]:
         if match:
             question = match.group(1)
             option_text = match.group(2)
+    if not option_text:
+        # Curator/GM often asks inline choices: "怎么办？(A) 观察 (B) 交谈".
+        # Treat the first label boundary as the start of options, so the UI can
+        # render buttons instead of a plain question blob.
+        inline = re.search(
+            r"\s*(?:\([A-Za-z0-9①-⑩]{1,3}\)|[A-Za-z0-9①-⑩]{1,3}[、,，:：.．)])\s+",
+            text,
+        )
+        if inline and inline.start() > 0:
+            question = text[:inline.start()]
+            option_text = text[inline.start():]
     if option_text:
         option_text = re.sub(r"^(?:选项|可选|choices?)[:：]\s*", "", option_text, flags=re.I)
     # GM 经常按 "A、option1、B、option2、C、option3" 输出(字母/数字 label + 顿号 + 描述)。
     # 这种 label 模式直接按 `、` split 会把 A/B/C 当作独立选项。
     # 检测 option_text 开头是不是 label,如果是按 label 边界 split。
-    label_re = re.compile(r"^[A-Za-z0-9①-⑩]{1,3}[、,，:：]")
+    label_boundary = r"(?:\([A-Za-z0-9①-⑩]{1,3}\)|[A-Za-z0-9①-⑩]{1,3}[、,，:：.．)])"
+    label_re = re.compile(rf"^{label_boundary}")
     if label_re.match(option_text):
         # label 模式:按 label 边界切,丢掉 label 本身
-        raw = re.split(r"(?:^|[、,，])\s*[A-Za-z0-9①-⑩]{1,3}[、,，:：]\s*", option_text)
+        raw = re.split(rf"(?:^|\s+|[、,，])\s*{label_boundary}\s*", option_text)
     else:
         raw = re.split(r"[、,，/]|(?:\s+or\s+)", option_text)
     options = [_clean_item(x) for x in raw if _clean_item(x)]

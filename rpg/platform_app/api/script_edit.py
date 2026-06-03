@@ -100,17 +100,25 @@ async def api_fork_script(request: Request, script_id: int, user=Depends(require
     commit_message = (body.get("message") or "fork").strip() or "fork"
 
     with connect() as db:
+        # IDOR 修复:fork 会把源剧本的全部正文/世界书/角色卡/锚点复制成归当前用户的副本,
+        # 等于"读取"。必须校验当前用户有读权限(owner 或订阅者),否则任意登录用户传别人
+        # 的私有 script_id 即可窃取整本未公开内容。门控与 _require_script(只读级)一致;
+        # 公开剧本的 fork 走另一端点 /api/scripts/public/{id}/fork。
         src = db.execute(
             """
             SELECT id, owner_id, title, description, source_path,
                    chapter_count, word_count, content_fingerprint,
                    head_commit_id
-            FROM scripts WHERE id = %s
+            FROM scripts WHERE id = %s AND (
+              owner_id = %s
+              OR id IN (SELECT script_id FROM user_script_subscriptions WHERE user_id = %s)
+            )
             """,
-            (script_id,),
+            (script_id, user["id"], user["id"]),
         ).fetchone()
         if not src:
-            return json_response({"ok": False, "error": "源剧本不存在"}, status_code=404)
+            # 不区分"不存在"与"无权",避免私有剧本 id 枚举探测
+            return json_response({"ok": False, "error": "源剧本不存在或无权访问"}, status_code=404)
 
         fork_title = title_override or f"[fork] {src['title']}"
         forked_at_commit = src["head_commit_id"]

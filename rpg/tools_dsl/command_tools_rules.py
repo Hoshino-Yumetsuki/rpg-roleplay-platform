@@ -12,6 +12,8 @@ command_tools_rules.py — task 87 Phase 2.3: 5E 模组规则工具表。
   · skill_check          技能检定
   · saving_throw         豁免检定
   · short_rest           短休
+  · grant_item           授予物品到背包(canonical inventory)
+  · pickup_loot          拾取当前房间 loot 进背包
   · consume_item         消耗物品
 
 所有工具 save 级,执行规则函数后会:
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from rules.seed_policy import coerce_external_seed
 from tools_dsl.command_dispatcher import ToolSpec, get_registry
 
 # 5E 模组工具默认 origin: UI / API / LLM 都可调,但战斗具体动作禁止 llm_chat
@@ -74,7 +77,7 @@ def _t_combat_start(state: Any, args: dict) -> str:
     if not enc_id:
         return "失败: encounter_id 为空"
     seed = args.get("seed")
-    seed_int = int(seed) if isinstance(seed, (int, float, str)) and str(seed).lstrip("-").isdigit() else None
+    seed_int = coerce_external_seed(seed)  # 外部/LLM 提供的 seed 默认忽略(防操纵掷骰)
     try:
         from rules_bridge import start_encounter_by_id
         res = start_encounter_by_id(state, enc_id, seed=seed_int)
@@ -101,7 +104,7 @@ def _t_combat_player_attack(state: Any, args: dict) -> str:
     target = (args.get("target_id") or "").strip()
     weapon = (args.get("weapon_id") or "shortsword").strip()
     seed = args.get("seed")
-    seed_int = int(seed) if isinstance(seed, (int, float, str)) and str(seed).lstrip("-").isdigit() else None
+    seed_int = coerce_external_seed(seed)  # 外部/LLM 提供的 seed 默认忽略(防操纵掷骰)
     if not target:
         return "失败: target_id 为空"
     try:
@@ -119,7 +122,7 @@ def _t_combat_enemy_attack(state: Any, args: dict) -> str:
     attacker = (args.get("attacker_id") or "").strip()
     target = (args.get("target_id") or "player").strip()
     seed = args.get("seed")
-    seed_int = int(seed) if isinstance(seed, (int, float, str)) and str(seed).lstrip("-").isdigit() else None
+    seed_int = coerce_external_seed(seed)  # 外部/LLM 提供的 seed 默认忽略(防操纵掷骰)
     if not attacker:
         return "失败: attacker_id 为空"
     try:
@@ -138,7 +141,7 @@ def _t_skill_check(state: Any, args: dict) -> str:
     if not skill or not isinstance(dc, (int, float)):
         return "失败: skill / dc 缺失"
     seed = args.get("seed")
-    seed_int = int(seed) if isinstance(seed, (int, float, str)) and str(seed).lstrip("-").isdigit() else None
+    seed_int = coerce_external_seed(seed)  # 外部/LLM 提供的 seed 默认忽略(防操纵掷骰)
     try:
         from rules_bridge import perform_skill_check
         res = perform_skill_check(state, skill=skill, dc=int(dc), seed=seed_int)
@@ -153,7 +156,7 @@ def _t_saving_throw(state: Any, args: dict) -> str:
     if not save or not isinstance(dc, (int, float)):
         return "失败: save / dc 缺失"
     seed = args.get("seed")
-    seed_int = int(seed) if isinstance(seed, (int, float, str)) and str(seed).lstrip("-").isdigit() else None
+    seed_int = coerce_external_seed(seed)  # 外部/LLM 提供的 seed 默认忽略(防操纵掷骰)
     try:
         from rules_bridge import perform_saving_throw
         res = perform_saving_throw(state, ability=save, dc=int(dc), seed=seed_int)
@@ -164,11 +167,47 @@ def _t_saving_throw(state: Any, args: dict) -> str:
 
 def _t_short_rest(state: Any, args: dict) -> str:
     seed = args.get("seed")
-    seed_int = int(seed) if isinstance(seed, (int, float, str)) and str(seed).lstrip("-").isdigit() else None
+    seed_int = coerce_external_seed(seed)  # 外部/LLM 提供的 seed 默认忽略(防操纵掷骰)
     try:
         from rules_bridge import short_rest
         res = short_rest(state, seed=seed_int)
         return f"短休完成: {res.get('summary') or '已恢复'}"
+    except Exception as exc:
+        return f"失败: {type(exc).__name__}: {exc}"
+
+
+def _t_grant_item(state: Any, args: dict) -> str:
+    item_id = (args.get("item_id") or "").strip()
+    name = args.get("name") or None
+    kind = (args.get("kind") or "misc").strip() or "misc"
+    qty = args.get("qty") or 1
+    if not item_id:
+        return "失败: item_id 为空"
+    try:
+        from rules_bridge import grant_item_action
+        res = grant_item_action(state, item_id=item_id, name=name, qty=int(qty), kind=kind,
+                                reason=str(args.get("reason") or ""))
+        if not res.get("ok"):
+            return f"失败: {res.get('error') or '未知错误'}"
+        facts = (res.get("result") or {}).get("gm_facts") or []
+        return facts[0] if facts else f"授予 {item_id} ×{qty} ✓"
+    except Exception as exc:
+        return f"失败: {type(exc).__name__}: {exc}"
+
+
+def _t_pickup_loot(state: Any, args: dict) -> str:
+    item_id = (args.get("item_id") or "").strip()
+    location_id = (args.get("location_id") or "").strip() or None
+    if not item_id:
+        return "失败: item_id 为空"
+    try:
+        from rules_bridge import pickup_loot_action
+        res = pickup_loot_action(state, item_id=item_id, location_id=location_id,
+                                 reason=str(args.get("reason") or ""))
+        if not res.get("ok"):
+            return f"失败: {res.get('error') or '未知错误'}"
+        facts = (res.get("result") or {}).get("gm_facts") or []
+        return facts[0] if facts else f"拾取 {item_id} ✓"
     except Exception as exc:
         return f"失败: {type(exc).__name__}: {exc}"
 
@@ -321,6 +360,48 @@ def register_rules_tools() -> None:
                 "required": [],
             },
             executor=_t_short_rest,
+            scope="save",
+            origins=_RULES_LLM_CHAT_ALLOWED_ORIGINS,
+        ),
+        ToolSpec(
+            name="grant_item",
+            description=(
+                "向玩家背包授予物品(canonical inventory)。GM 叙事玩家『获得 X』时必须调用本工具，"
+                "不要直接写 memory.resources —— 那只是派生展示层，写进去玩家用不了。"
+                "item_id 用稳定英文 id(如 antidote / silver_key)，name 给中文显示名，"
+                "kind ∈ {weapon,gear,consumable,key_item,artifact,misc}。"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string"},
+                    "name": {"type": "string", "description": "中文/显示名"},
+                    "qty": {"type": "integer", "default": 1, "minimum": 1},
+                    "kind": {"type": "string", "default": "misc"},
+                    "reason": {"type": "string"},
+                },
+                "required": [],  # handler 自行校验并返回"item_id 为空"友好消息
+            },
+            executor=_t_grant_item,
+            scope="save",
+            origins=_RULES_LLM_CHAT_ALLOWED_ORIGINS,
+        ),
+        ToolSpec(
+            name="pickup_loot",
+            description=(
+                "把玩家当前房间的 loot 项拾取进背包。item_id 必须是当前房间 loot 里真实存在的 id。"
+                "只能拾取玩家所在房间的物品；拾取后该 loot 不再可重复拾取。"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string"},
+                    "location_id": {"type": "string", "description": "可选: 校验必须等于当前房间"},
+                    "reason": {"type": "string"},
+                },
+                "required": [],  # handler 自行校验并返回"item_id 为空"友好消息
+            },
+            executor=_t_pickup_loot,
             scope="save",
             origins=_RULES_LLM_CHAT_ALLOWED_ORIGINS,
         ),

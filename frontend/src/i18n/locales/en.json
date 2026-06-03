@@ -15,7 +15,8 @@
     "refresh": "Refresh",
     "unknown": "Unknown",
     "open": "Open",
-    "error": "Error"
+    "error": "Error",
+    "load_more": "Load more"
   },
   "settings": {
     "title": "Settings",
@@ -455,7 +456,12 @@
       "save_ok": "Saved",
       "save_fail": "Save failed",
       "keep_key": "Leave blank to keep current key",
-      "base_url_relay": "Base URL (relay/proxy override)"
+      "base_url_relay": "Base URL (relay/proxy override)",
+      "base_url": "Base URL",
+      "sa": {
+        "unavailable_title": "Platform-hosted model unavailable",
+        "unavailable_desc": "Platform-hosted agent / embedding models are only available to select accounts. Please use your own API key."
+      }
     },
     "account": {
       "title": "Account",
@@ -1182,7 +1188,11 @@
       "pipeline_resumed": "Knowledge pipeline resumed",
       "pipeline_resume_fail": "Resume failed",
       "import_ok_needs_api": "Script #{{id}} · {{title}} created. Configure an API key to continue character cards/worldbook/timeline.",
-      "api_fail": "Import API returned failure"
+      "api_fail": "Import API returned failure",
+      "embedder_error_title": "Embedding configuration may have an issue",
+      "embedder_not_configured_body": "After import, without a configured embedding (RAG) model the vector index cannot be built — RAG semantic recall degrades to keyword matching, hurting in-game character/worldbook accuracy.\nWe recommend configuring an API key that supports the /embeddings endpoint (e.g. OpenAI, Deepseek Embedding, Cohere) under Settings → RAG / Embedding model before importing.",
+      "embedder_not_configured_title": "No RAG / embedding model configured (optional, but recommended)",
+      "go_rag_settings": "Configure RAG model"
     },
     "editor": {
       "tab_overview": "Overview",
@@ -1243,7 +1253,23 @@
       "merge_msg": "Merge chapter {{a}} and chapter {{b}}?",
       "merge_btn": "Merge",
       "split_title": "Split Chapter",
-      "split_label": "Split at which character position?"
+      "split_label": "Split at which character position?",
+      "embed_breakdown_title": "Vector index (by type)",
+      "embed_breakdown_desc": "Vector index split by content type; can be selectively re-embedded.",
+      "embed_kind_chunks": "Chapter chunks",
+      "embed_kind_cards": "NPC cards",
+      "embed_kind_worldbook": "Worldbook entries",
+      "embed_kind_canon": "Knowledge base entities",
+      "embed_kind_desc": "pgvector embedding_vec column",
+      "anchors_desc": "script_timeline_anchors, built from chapter_facts story-time labels, zero LLM",
+      "canon_desc": "kb_canon_entities — normalized character/org/location entities extracted by the LLM; distinct from NPC cards.",
+      "canon_editor_todo": "kb_canon_entities table editor: see /api/scripts/{id}/canon — table view lands in a later phase. Currently usable",
+      "cards_desc": "Playable NPC cards, distinct from knowledge-base entities",
+      "embed_warn_chunks_missing": "Chapter embeddings not built; RAG falls back to keyword",
+      "tab_canon": "KB entities",
+      "tab_modules": "Modules",
+      "wb_from_canon": "Derive from KB entities (free)",
+      "wb_llm_rich": "LLM re-extract & enrich"
     },
     "review": {
       "eyebrow": "KB Review · Extraction Results",
@@ -1532,7 +1558,8 @@
         "toast_batch_enabled": "Entries enabled",
         "toast_batch_disabled": "Entries disabled",
         "toast_forked": "Forked — copy created",
-        "toast_fork_fail": "Fork failed"
+        "toast_fork_fail": "Fork failed",
+        "col_detail": "Detail"
       }
     }
   },
@@ -1837,7 +1864,7 @@
     "identity": {
       "intro": "The identity card is a positioning overlay on top of the character card (undercover / exiled noble / shelter refugee …) — unrelated to name or appearance, independent from the player origin setting below. Optional — leave blank to play as the selected character directly.",
       "no_identity": "No identity card — will play as \"{{name}}\" directly",
-      "no_identity_required": "Soul / Dual-soul / Full-native origins need an identity card as your LOCAL identity — attach one above, or switch \"Player origin\" below to \"Body transmigration\" (whole self arrives, no local identity needed).",
+      "no_identity_required": "No identity card is attached. The save will start directly from the selected character.",
       "badge_ai": "AI",
       "badge_manual": "Manual",
       "btn_clear": "Clear",
@@ -1867,7 +1894,7 @@
       "origin_native_mapping": "Character card → yourself   Identity card → your social position in this world",
       "origin_native_hint": "No foreign soul — you are this character. The GM strictly enforces world-canon and will push back on actions that break the character's established nature.",
       "identity_known_label": "Identity Awareness",
-      "identity_known_hint": "Only applies when origin ≠ Body Transfer. Affects your knowledge of your own social position at game start.",
+      "identity_known_hint": "Only applies when an identity card is attached and origin ≠ Body Transfer. Affects your knowledge of that identity at game start.",
       "identity_known_true_label": "Aware",
       "identity_known_true_desc": "You know your identity from the start — social ties, secrets, and positioning are clear.",
       "identity_known_false_label": "Unaware",
@@ -2088,7 +2115,8 @@
       "pending_stat": "Pending ",
       "occurred_stat": " · Occurred ",
       "variant_stat": " · Variant ",
-      "superseded_stat": " · Bypassed "
+      "superseded_stat": " · Bypassed ",
+      "convergence_label": "Converged {{done}}/{{total}}"
     },
     "context": {
       "title": "Context This Round",
@@ -2376,6 +2404,10 @@
       "parse_fail": "JSON parse error: {{msg}}",
       "preview_label": "Parse Preview",
       "preview_stats": "{{dialogues}} dialogue examples · {{tags}} tags",
+      "ai_split_label": "Tidy fields with AI",
+      "ai_split_hint": "Use when auto-split looks off. Uses quota.",
+      "ai_split_model_label": "Tidy-up model",
+      "ai_split_model_note": "The LLM used to sort a free-text profile into structured fields. Changes save to your Settings → Models → AI tidy card fields preference (default gemini-3.5-flash); same picker as the script-import extraction model.",
       "first_mes_label": "Opening Message",
       "footer_hint": "POST /api/v1/characters/import · Edit in your card library after import",
       "btn_cancel": "Cancel",
@@ -2487,6 +2519,92 @@
       "no_npc_cards": "No NPC cards in your scripts yet.",
       "no_npc_hint": "Click \"New NPC\" to create one, or go to Scripts / Import to upload a script with character profiles.",
       "no_settings": "No profile yet — switch to Character Settings to fill it in."
+    }
+  },
+  "modules": {
+    "matrix": {
+      "title": "Module Matrix",
+      "desc": "Current state of all derived data for this script. Each module can be rebuilt independently."
+    },
+    "status": {
+      "ready": "Ready",
+      "partial": "Partial",
+      "missing": "Not built",
+      "running": "Running…",
+      "stale": "Needs rebuild",
+      "unknown": "Unknown"
+    },
+    "tag": {
+      "llm": "LLM",
+      "zero_llm": "Zero LLM",
+      "mixed": "Optional LLM"
+    },
+    "action": {
+      "build": "Build",
+      "rebuild": "Rebuild",
+      "view_detail": "View details"
+    },
+    "field": {
+      "count": "Count",
+      "status": "Status",
+      "last_rebuilt": "Last rebuilt",
+      "last_job": "Last job"
+    },
+    "banner": {
+      "failed": "Rebuild failed",
+      "failed_detail": "Job ID available in backend logs",
+      "running": "Rebuilding"
+    },
+    "estimate": {
+      "title": "Rebuild estimate",
+      "loading": "Estimating…",
+      "fail": "Unable to estimate",
+      "tokens": "Tokens",
+      "cost": "Estimated cost",
+      "model": "Model",
+      "affects": "Affected tables",
+      "prereqs": "Prerequisites",
+      "prereq_block_header": "Prerequisites not met",
+      "prereq_block_body": "Please rebuild the missing modules above first.",
+      "confirm_zero": "Confirm rebuild (free)",
+      "confirm_llm": "Confirm rebuild (uses LLM)"
+    },
+    "toast": {
+      "dispatched": "Rebuild job dispatched",
+      "dispatch_fail": "Dispatch failed",
+      "rebuild_done": "Rebuild complete"
+    },
+    "chunks": {
+      "title": "Chapter chunks",
+      "desc": "Whole book split into passages and indexed — the smallest unit for RAG retrieval"
+    },
+    "chapter-facts": {
+      "title": "Chapter summaries",
+      "desc": "Per-chapter LLM summary + story-time labels"
+    },
+    "chapter_facts": {
+      "title": "Chapter summaries",
+      "desc": "Per-chapter LLM summary + story-time labels"
+    },
+    "canon": {
+      "title": "Knowledge base entities",
+      "desc": "Character / faction / location / item / concept entities extracted by the LLM"
+    },
+    "cards": {
+      "title": "NPC cards",
+      "desc": "Editable NPC profile cards (used by the GM)"
+    },
+    "worldbook": {
+      "title": "Worldbook",
+      "desc": "Collection of worldbuilding entries, persistent reference in GM context"
+    },
+    "anchors": {
+      "title": "Timeline anchors",
+      "desc": "Script timeline aggregated by story_time_label"
+    },
+    "embeddings": {
+      "title": "Vector index",
+      "desc": "pgvector embeddings, used for RAG semantic recall"
     }
   }
 }

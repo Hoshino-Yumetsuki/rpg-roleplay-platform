@@ -425,14 +425,16 @@ def _run_pipeline(job_id: str, user_id: int, script_id: int, options: dict[str, 
         try_acquire_job_lock = None  # type: ignore[assignment]
         release_job_lock = None  # type: ignore[assignment]
 
-    ctl = JobController(job_id)
-    ctl.update(status="running", stages=[{"id": s[0], "label": s[1], "status": "pending"} for s in STAGES])
-    init_db()
-    with connect() as db:
-        db.execute("update import_jobs set started_at = now() where job_id = %s", (job_id,))
-
+    # try 上提到 acquire() 之后第一句:JobController/init_db/connect 任一抛异常
+    # 都必须经 finally 释放 semaphore,否则信号量永久 -1,两次后所有导入死锁在 acquire()。
     stages_progress = []
     try:
+        ctl = JobController(job_id)
+        ctl.update(status="running", stages=[{"id": s[0], "label": s[1], "status": "pending"} for s in STAGES])
+        init_db()
+        with connect() as db:
+            db.execute("update import_jobs set started_at = now() where job_id = %s", (job_id,))
+
         # ── 阶段 1: chunks ────────────────────────────────
         if ctl.is_cancelled():
             return _finalize_cancelled(ctl)

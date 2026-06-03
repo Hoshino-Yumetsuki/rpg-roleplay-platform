@@ -5,17 +5,34 @@
       "desc": "剧本所有派生数据的当前状态。每个模块可独立重做。"
     },
     "status": {
-      "ready":   "就绪",
+      "ready": "就绪",
       "partial": "部分完成",
       "missing": "未生成",
       "running": "运行中…",
-      "stale":   "需要重建",
+      "stale": "需要重建",
       "unknown": "未知"
     },
-    "tag": { "llm": "LLM", "zero_llm": "零 LLM", "mixed": "可选 LLM" },
-    "action": { "build": "生成", "rebuild": "重做", "view_detail": "查看明细" },
-    "field":  { "count": "条数", "status": "状态", "last_rebuilt": "上次重做", "last_job": "上次任务" },
-    "banner": { "failed": "重做失败", "failed_detail": "后端日志可查任务 ID", "running": "正在重做" },
+    "tag": {
+      "llm": "LLM",
+      "zero_llm": "零 LLM",
+      "mixed": "可选 LLM"
+    },
+    "action": {
+      "build": "生成",
+      "rebuild": "重做",
+      "view_detail": "查看明细"
+    },
+    "field": {
+      "count": "条数",
+      "status": "状态",
+      "last_rebuilt": "上次重做",
+      "last_job": "上次任务"
+    },
+    "banner": {
+      "failed": "重做失败",
+      "failed_detail": "后端日志可查任务 ID",
+      "running": "正在重做"
+    },
     "estimate": {
       "title": "重做估算",
       "loading": "估算中…",
@@ -35,14 +52,38 @@
       "dispatch_fail": "派发失败",
       "rebuild_done": "重做完成"
     },
-    "chunks":        { "title": "章节切片", "desc": "全书按段切片入库,RAG 检索的最小单位" },
-    "chapter-facts": { "title": "章节摘要", "desc": "每章 LLM 摘要 + 故事时间标签" },
-    "chapter_facts": { "title": "章节摘要", "desc": "每章 LLM 摘要 + 故事时间标签" },
-    "canon":         { "title": "知识库人物", "desc": "LLM 抽出的人物/势力/地点/物品/概念实体" },
-    "cards":         { "title": "NPC 角色卡", "desc": "可编辑的 NPC 设定卡(GM 用)" },
-    "worldbook":     { "title": "世界书", "desc": "世界观条目集,GM 上下文常驻参考" },
-    "anchors":       { "title": "时间线锚点", "desc": "按 story_time_label 聚合的剧本时间线" },
-    "embeddings":    { "title": "向量索引", "desc": "pgvector 嵌入,RAG 语义召回用" }
+    "chunks": {
+      "title": "章节切片",
+      "desc": "全书按段切片入库,RAG 检索的最小单位"
+    },
+    "chapter-facts": {
+      "title": "章节摘要",
+      "desc": "每章 LLM 摘要 + 故事时间标签"
+    },
+    "chapter_facts": {
+      "title": "章节摘要",
+      "desc": "每章 LLM 摘要 + 故事时间标签"
+    },
+    "canon": {
+      "title": "知识库人物",
+      "desc": "LLM 抽出的人物/势力/地点/物品/概念实体"
+    },
+    "cards": {
+      "title": "NPC 角色卡",
+      "desc": "可编辑的 NPC 设定卡(GM 用)"
+    },
+    "worldbook": {
+      "title": "世界书",
+      "desc": "世界观条目集,GM 上下文常驻参考"
+    },
+    "anchors": {
+      "title": "时间线锚点",
+      "desc": "按 story_time_label 聚合的剧本时间线"
+    },
+    "embeddings": {
+      "title": "向量索引",
+      "desc": "pgvector 嵌入,RAG 语义召回用"
+    }
   },
   "common": {
     "save": "保存",
@@ -60,7 +101,8 @@
     "refresh": "刷新",
     "unknown": "未知",
     "open": "打开",
-    "error": "错误"
+    "error": "错误",
+    "load_more": "加载更多"
   },
   "settings": {
     "title": "设置",
@@ -500,7 +542,12 @@
       "save_ok": "已保存",
       "save_fail": "保存失败",
       "keep_key": "留空保留原 key",
-      "base_url_relay": "Base URL（中转站可改）"
+      "base_url_relay": "Base URL（中转站可改）",
+      "base_url": "Base URL",
+      "sa": {
+        "unavailable_title": "平台托管模型暂不可用",
+        "unavailable_desc": "平台托管的 Agent / 向量模型仅对部分账户开放,请改用你自己的 API Key。"
+      }
     },
     "account": {
       "title": "账号",
@@ -1227,7 +1274,11 @@
       "pipeline_resumed": "知识流水线已继续",
       "pipeline_resume_fail": "继续失败",
       "import_ok_needs_api": "已建立剧本 #{{id}} · {{title}} · 需要配置 API Key 后继续人物卡/世界书/时间线",
-      "api_fail": "导入接口返回失败"
+      "api_fail": "导入接口返回失败",
+      "embedder_error_title": "向量嵌入配置可能有问题",
+      "embedder_not_configured_body": "导入完成后，如果没有配置向量嵌入模型（RAG 模型），将无法建立向量索引——RAG 语义召回会退化为关键字匹配，影响游戏中人物/世界书的精准度。\n建议在「设置 → RAG / 向量模型」配置一个支持 /embeddings 接口的 API Key（如 OpenAI、Deepseek Embedding、Cohere 等），然后再导入。",
+      "embedder_not_configured_title": "未配置 RAG / 向量嵌入模型（可选，但建议配置）",
+      "go_rag_settings": "去设置 RAG 模型"
     },
     "editor": {
       "embed_breakdown_title": "向量索引(按类型)",
@@ -1295,7 +1346,16 @@
       "merge_msg": "合并第 {{a}} 章和第 {{b}} 章?",
       "merge_btn": "合并",
       "split_title": "拆分本章",
-      "split_label": "从该章第几字处拆分?"
+      "split_label": "从该章第几字处拆分?",
+      "anchors_desc": "script_timeline_anchors,从 chapter_facts 的故事时间标签构建,零 LLM",
+      "canon_desc": "kb_canon_entities — LLM 抽出的人物/组织/地点等规范化条目;NPC 角色卡是另一码事。",
+      "canon_editor_todo": "kb_canon_entities 表格编辑器:见 /api/scripts/{id}/canon — 表格视图在另一 phase 落地。当前可用",
+      "cards_desc": "NPC 角色卡(可玩),与知识库人物条目不同",
+      "embed_warn_chunks_missing": "章节向量未建,RAG 退化到关键字",
+      "tab_canon": "知识库人物",
+      "tab_modules": "模块",
+      "wb_from_canon": "从知识库人物反推(免费)",
+      "wb_llm_rich": "LLM 重提富化"
     },
     "review": {
       "eyebrow": "KB 复核 · 提取结果",
@@ -1890,7 +1950,7 @@
     "identity": {
       "intro": "身份卡是叠加在角色卡之上的「定位 overlay」（卧底 / 流亡贵族 / 避难所逃亡者 …），和具体姓名外貌无关，与下方「玩家出身」设定独立。此项可不选 —— 不挂身份卡时，直接使用所选角色开局。",
       "no_identity": "当前未挂身份卡 —— 直接使用「{{name}}」开局",
-      "no_identity_required": "「魂穿 / 一体双魂 / 彻底扮演」需要一张身份卡作为你的【本地身份】—— 请在上方挂一张，或把下方「玩家出身」改为「肉穿」（连人带魂整体外来，无需本地身份）。",
+      "no_identity_required": "当前未挂身份卡，将直接使用所选角色开局。",
       "badge_ai": "AI 生成",
       "badge_manual": "手动",
       "btn_clear": "清除",
@@ -1920,7 +1980,7 @@
       "origin_native_mapping": "角色卡 → 你本人　身份卡 → 你在世界中的社会定位",
       "origin_native_hint": "无外来灵魂，你就是这个角色本身。GM 严格守世界观，会阻拦不符合角色设定的行为。",
       "identity_known_label": "是否知道身份卡",
-      "identity_known_hint": "仅当出身 ≠ 肉穿时有效。影响你开局时对自身社会位置的认知。",
+      "identity_known_hint": "仅在已挂身份卡且出身 ≠ 肉穿时有效。影响你开局时对这张身份卡的认知。",
       "identity_known_true_label": "知道",
       "identity_known_true_desc": "开局即清楚身份，知道自己的社会关系、秘密与定位。",
       "identity_known_false_label": "不知道",
@@ -2141,7 +2201,8 @@
       "pending_stat": "待发生 ",
       "occurred_stat": " · 已发生 ",
       "variant_stat": " · 变体 ",
-      "superseded_stat": " · 绕过 "
+      "superseded_stat": " · 绕过 ",
+      "convergence_label": "收束 {{done}}/{{total}}"
     },
     "context": {
       "title": "本轮上下文",
@@ -2429,6 +2490,10 @@
       "parse_fail": "JSON 解析失败：{{msg}}",
       "preview_label": "解析预览",
       "preview_stats": "{{dialogues}} 段对话示例 · {{tags}} 个标签",
+      "ai_split_label": "用 AI 整理字段",
+      "ai_split_hint": "自动拆分不理想时用,消耗额度。",
+      "ai_split_model_label": "整理用模型",
+      "ai_split_model_note": "把自由文本档案整理成结构化字段所用的 LLM。改这里会存到你的「设置 → 模型 → AI 整理卡字段」偏好(默认 gemini-3.5-flash);与导入剧本的提取模型同一套选择器。",
       "first_mes_label": "开场白",
       "footer_hint": "POST /api/v1/characters/import · 导入后可在用户角色卡库编辑",
       "btn_cancel": "取消",

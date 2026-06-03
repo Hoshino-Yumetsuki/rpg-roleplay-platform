@@ -155,19 +155,39 @@ async def _process_one(conn: psycopg.Connection, row: dict[str, Any]) -> None:
             )
         else:
             backoff_sec = 2 ** attempts * 10
+            # paramstyle: 全位置占位符。原写法把命名 %(backoff)s 塞进 SQL 字符串字面量
+            # 又传 dict,psycopg3 对"位置 %s + mapping 参数"直接抛错 → 退避 UPDATE 每次必崩,
+            # 异常冒泡掀翻 consume 主循环 → 整个 worker 进程挂掉。改 make_interval 绑定。
             conn.execute(
                 "UPDATE chat_postproc_tasks SET status='pending', attempts=%s, "
-                "scheduled_at=now() + interval '%(backoff)s seconds' WHERE id=%s",
-                {"attempts": attempts, "backoff": backoff_sec, "id": task_id},
+                "scheduled_at=now() + make_interval(secs => %s) WHERE id=%s",
+                (attempts, backoff_sec, task_id),
             )
+
+
+def _reap_stuck_running(conn: psycopg.Connection) -> None:
+    """回收僵死任务:被置 running 后 worker 崩溃/被 kill,该行永卡 running,
+    而消费查询只捞 pending/failed → 永不重投、静默丢失(用户反馈"丢事件"的后处理侧)。
+    把 running 超过 5 分钟的行视为僵死,降级回 pending(attempts 已自增,仍受 MAX_ATTEMPTS 收口)。"""
+    try:
+        n = conn.execute(
+            "UPDATE chat_postproc_tasks SET status='pending' "
+            "WHERE status='running' AND started_at < now() - interval '5 minutes'"
+        ).rowcount
+        if n:
+            log.warning("[postproc] reaped %d stuck-running task(s) back to pending", n)
+    except Exception:
+        log.exception("[postproc] reap stuck-running failed")
 
 
 async def consume(conn: psycopg.Connection) -> None:
     """主循环:LISTEN/NOTIFY + 兜底 30s poll。autocommit 连接,每次 DML 单句提交。"""
     conn.execute("LISTEN chat_postproc_new")
     log.info("[postproc] worker ready, LISTEN chat_postproc_new")
+    _reap_stuck_running(conn)  # 启动即回收上次崩溃残留的 running
 
     while True:
+        _reap_stuck_running(conn)
         rows = conn.execute(
             "SELECT id, user_id, save_id, commit_id, task_kind, payload, attempts "
             "FROM chat_postproc_tasks "
@@ -188,7 +208,11 @@ async def consume(conn: psycopg.Connection) -> None:
             continue
 
         for row in rows:
-            await _process_one(conn, row)
+            # 单任务异常隔离:绝不让一行的失败冒泡掀翻整个 worker 进程
+            try:
+                await _process_one(conn, row)
+            except Exception:
+                log.exception("[postproc] _process_one crashed for id=%s, skipping", row.get("id"))
 
 
 # ---------------------------------------------------------------------------

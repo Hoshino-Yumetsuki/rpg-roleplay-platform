@@ -136,37 +136,111 @@ _ITEM_ALIASES: dict[str, str] = {
     # Shortbow
     "shortbow": "shortbow", "short bow": "shortbow",
     "短弓": "shortbow", "弓": "shortbow",
+    # Longsword / Longbow（与短剑/短弓区分，供"多把同类武器共存"消歧）
+    "longsword": "longsword", "long sword": "longsword", "长剑": "longsword",
+    "longbow": "longbow", "long bow": "longbow", "长弓": "longbow",
+    # Antidote（解毒剂，与药剂/药水区分）
+    "antidote": "antidote", "解毒剂": "antidote", "解毒药": "antidote",
 }
 
 
 def normalize_item_alias(alias: str) -> str:
-    """把任意玩家文本里的物品别名映射到 canonical item id。无匹配返回空串。"""
+    """把任意玩家文本里的物品别名映射到 canonical item id。无匹配返回空串。
+
+    Bug 3：原实现做双向子串匹配（alias_key in key OR key in alias_key），
+    叠加单字别名（剑/弓）会误命中——"长剑" 含子串 "剑" → 错配到 shortsword，
+    反向 "key in alias_key" 又让玩家文本片段命中更长的别名。
+    现规则：
+      1. 精确相等优先（dict 命中）。单字别名只能在这一步精确命中。
+      2. 仅前向子串：≥2 字的已知别名整体出现在玩家文本里才算匹配，
+         取最长匹配，避免短别名抢占（"长剑" 不再被 "剑" 吞掉）。
+    """
     if not alias:
         return ""
     key = str(alias).strip().lower()
+    if not key:
+        return ""
     if key in _ITEM_ALIASES:
         return _ITEM_ALIASES[key]
-    # 部分匹配：玩家文本片段含已知别名
+    best_canonical = ""
+    best_len = 0
     for alias_key, canonical in _ITEM_ALIASES.items():
-        if alias_key in key or key in alias_key:
-            return canonical
-    return ""
+        if len(alias_key) < 2:
+            continue  # 单字别名只精确匹配，不参与子串
+        if alias_key in key and len(alias_key) > best_len:
+            best_canonical = canonical
+            best_len = len(alias_key)
+    return best_canonical
 
 
 def find_inventory_item(character: dict, alias: str) -> dict | None:
-    """根据 alias 找 inventory 项。先按 canonical id 找，再 fallback 到名称模糊匹配。"""
+    """根据 alias 找 inventory 项。
+    顺序：canonical id 命中 → name 精确 → name 前向子串（别名整体出现在物品名里，≥2 字）。
+
+    Bug 3：去掉反向 `name_low in alias_low`（"药"/"剑" 等短物品名会被长别名吞掉），
+    且单字 alias 不做子串匹配，避免多把同类物品共存时误命中第一条。
+    """
     inventory = (character or {}).get("inventory") or []
-    canonical = normalize_item_alias(alias) or alias.lower()
+    raw_low = str(alias or "").strip().lower()
+    canonical = normalize_item_alias(alias) or raw_low
+    # 1. canonical id 命中
     for item in inventory:
         if str(item.get("id", "")).lower() == canonical:
             return item
-    # name 模糊匹配
-    alias_low = (alias or "").lower()
+    # 2. name 精确（忽略大小写）
     for item in inventory:
-        name_low = str(item.get("name", "")).lower()
-        if name_low == alias_low or alias_low in name_low or name_low in alias_low:
+        if str(item.get("name", "")).lower() == raw_low:
             return item
+    # 3. name 前向子串：alias 作为整体出现在物品名里（要求 ≥2 字防单字误命中）
+    if len(raw_low) >= 2:
+        for item in inventory:
+            name_low = str(item.get("name", "")).lower()
+            if name_low and raw_low in name_low:
+                return item
     return None
+
+
+def grant_inventory_item(character: dict, item_id: str, name: str | None = None,
+                         qty: int = 1, kind: str = "misc") -> dict:
+    """向 player_character.inventory 授予物品（canonical 唯一真相源的"加"操作）。
+
+    与 consume_inventory_item 对称：
+      - 按 item_id（非 name）判重：已存在 → qty 累加；否则新建条目。
+      - qty <= 0 拒绝（与 consume 的下限校验一致）。
+      - 新建时补 name（缺省回退 item_id）/ kind；已存在时不覆盖原有 name/kind，
+        仅在原条目缺失时补全。
+
+    返回 {ok, item_id, item_name, qty_before, qty_after, granted, created, error}。
+    """
+    qty = int(qty or 0)
+    if qty <= 0:
+        return {"ok": False, "error": "qty 必须 > 0", "item_id": item_id or "",
+                "qty_before": 0, "qty_after": 0, "granted": 0, "created": False}
+    item_id = str(item_id or "").strip()
+    if not item_id:
+        return {"ok": False, "error": "缺少 item_id",
+                "item_id": "", "qty_before": 0, "qty_after": 0, "granted": 0, "created": False}
+    inventory = character.setdefault("inventory", [])
+    id_low = item_id.lower()
+    for item in inventory:
+        if str(item.get("id", "")).lower() == id_low:
+            qty_before = int(item.get("qty", 0) or 0)
+            item["qty"] = qty_before + qty
+            if name and not item.get("name"):
+                item["name"] = name
+            if kind and not item.get("kind"):
+                item["kind"] = kind
+            return {
+                "ok": True, "item_id": item.get("id"), "item_name": item.get("name"),
+                "qty_before": qty_before, "qty_after": item["qty"], "granted": qty,
+                "created": False, "error": "",
+            }
+    new_item = {"id": item_id, "name": name or item_id, "qty": qty, "kind": kind or "misc"}
+    inventory.append(new_item)
+    return {
+        "ok": True, "item_id": item_id, "item_name": new_item["name"],
+        "qty_before": 0, "qty_after": qty, "granted": qty, "created": True, "error": "",
+    }
 
 
 def consume_inventory_item(character: dict, alias: str, qty: int = 1) -> dict:

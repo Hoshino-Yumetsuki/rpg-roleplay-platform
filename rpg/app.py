@@ -42,6 +42,7 @@ from core.logging import get_logger, setup_default_logging
 from core.startup import configure_app, lifespan
 from model_registry import (
     delete_model,  # noqa: F401
+    load_catalog_for_user,
     load_model_catalog,
     select_model,  # noqa: F401
     selected_model,
@@ -764,6 +765,26 @@ def _ensure_loaded(api_user: dict[str, Any] | None = None, *, ensure_gm: bool = 
                 else:
                     model = selected_model()
                     _gm_model_id, _gm_api_id = model["real_name"], model["api_id"]
+            # BYOK 守卫(关键):解析出的 provider 用户实际不可用(stale gm.api_id 偏好
+            # 或全局默认落到 vertex_ai,但用户没传 SA / 没配该 provider key)→ 回退到
+            # 用户配过 key 的第一个模型。否则主 GM 构造即抛"未找到 SA",用户根本玩不了。
+            if api_user and (api_user.get("user_id") or api_user.get("id")):
+                try:
+                    _uid_g = int(api_user.get("user_id") or api_user.get("id"))
+                    from core.llm_backend import first_user_model as _fum
+                    _ud = _fum(_uid_g)
+                    if _ud and _gm_api_id and _gm_api_id != _ud[0]:
+                        from platform_app.user_credentials import get_credential as _gc
+                        if _gm_api_id == "vertex_ai":
+                            from core.vertex_sa import has_user_sa as _hsa
+                            _ok = _hsa(_uid_g)
+                        else:
+                            _ok = bool(_gc(_uid_g, _gm_api_id))
+                        if not _ok:
+                            _gm_api_id, _gm_model_id = _ud
+                            log.info(f"[ensure_loaded] BYOK 守卫:{uid} 模型回退到 {_gm_api_id}/{_gm_model_id}(原解析不可用)")
+                except Exception as _ge:
+                    log.warning(f"[ensure_loaded] BYOK 守卫异常(忽略): {_ge}")
             _lru_set(_gm_by_user, uid, GameMaster(
                 api_id=_gm_api_id,
                 model=_gm_model_id,
@@ -862,7 +883,10 @@ def _backup_save(reason: str) -> str | None:
 
 def _payload(api_user: dict[str, Any] | None = None) -> dict[str, Any]:
     state = _ensure_loaded(api_user, ensure_gm=False)
-    model_catalog = load_model_catalog()
+    # 安全:模型选择器走每用户视图(全局菜单 + 该用户私有 overlay),
+    # 否则一个用户同步的 provider/模型会泄露进所有人的选择器。
+    _uid = int(api_user["id"]) if api_user and api_user.get("id") else None
+    model_catalog = load_catalog_for_user(_uid)
     model = selected_model(model_catalog)
     is_admin = bool(api_user and api_user.get("role") == "admin")
     payload = state.status_payload()
@@ -889,7 +913,8 @@ def _payload(api_user: dict[str, Any] | None = None) -> dict[str, Any]:
     if is_admin:
         payload["app"]["save_file"] = str(SAVE_FILE)
     # catalog 按角色脱敏（普通用户拿不到 credential_ref/credential_env/base_url）
-    payload["models"] = _redact_catalog(model_catalog, is_admin)
+    # has_credential 按当前用户算 → 前端游戏选择器只显示用户配过 key 的 provider
+    payload["models"] = _redact_catalog(model_catalog, is_admin, user_id=_uid)
     payload["tools"] = _redact_tools(tool_payload(), is_admin)
     # task 10：把当前激活存档的 id/title 直接挂在 /api/state 顶层 + state 字段里，
     # Game Console 左侧栏拿来显示「当前存档」，避免回退到 hard-coded mock id=11。
@@ -916,15 +941,49 @@ def _payload(api_user: dict[str, Any] | None = None) -> dict[str, Any]:
     return payload
 
 
-def _redact_catalog(catalog: dict[str, Any], is_admin: bool) -> dict[str, Any]:
+def _user_credentialed_api_ids(user_id: int | None) -> set[str]:
+    """该用户已配置且启用的 provider api_id 集合(BYOK)。
+    vertex_ai 的"凭证"是上传的 SA JSON,单独检测。"""
+    ids: set[str] = set()
+    if not user_id:
+        return ids
+    try:
+        from model_registry import normalize_api_id
+        from platform_app.user_credentials import list_credentials
+        for it in (list_credentials(int(user_id)).get("items") or []):
+            if it.get("has_credential") and it.get("enabled"):
+                ids.add(normalize_api_id(it.get("api_id")))
+    except Exception:
+        pass
+    try:
+        from core.vertex_sa import has_user_sa
+        if has_user_sa(int(user_id)):
+            ids.add("vertex_ai")
+    except Exception:
+        pass
+    return ids
+
+
+def _redact_catalog(catalog: dict[str, Any], is_admin: bool, user_id: int | None = None) -> dict[str, Any]:
     """普通用户拿不到 credential_ref / credential_env / base_url（部署形状信息）。
     所有角色都能看到 has_credential 字段（布尔），便于前端过滤掉没配 key 的 API。
+
+    has_credential 按**当前用户**算(BYOK):用户自己配过该 provider 的 key 才为 true。
+    游戏内模型选择器据此只显示用户能用的 provider,不再把全局菜单整个摊开。
+    服务器模式必须传 user_id;本地匿名模式回退到 env/SA 文件存在性。
     """
     import copy
     import model_probe
+    from model_registry import normalize_api_id
+    from core.config import require_auth as _require_auth
     result = copy.deepcopy(catalog)
+    require_auth = _require_auth()
+    cred_ids = _user_credentialed_api_ids(user_id) if require_auth else set()
     for api in result.get("apis", []):
-        api["has_credential"] = model_probe._credential_present(api)
+        if require_auth:
+            api["has_credential"] = normalize_api_id(api.get("id")) in cred_ids
+        else:
+            api["has_credential"] = model_probe._credential_present(api)
         if not is_admin:
             api.pop("credential_ref", None)
             api.pop("credential_env", None)
@@ -1359,7 +1418,16 @@ from rules_bridge import (
     enter_room as _rb_enter_room,
 )
 from rules_bridge import (
+    grant_item_action as _rb_grant_item_action,
+)
+from rules_bridge import (
     parse_consume_intent as _rb_parse_consume_intent,
+)
+from rules_bridge import (
+    parse_pickup_intent as _rb_parse_pickup_intent,
+)
+from rules_bridge import (
+    pickup_loot_action as _rb_pickup_loot_action,
 )
 from rules_bridge import (
     perform_saving_throw as _rb_saving_throw,
@@ -1385,7 +1453,10 @@ from rules_bridge import (
 
 
 def _coerce_rule_seed(seed: Any) -> int | None:
-    return int(seed) if isinstance(seed, (int, float, str)) and str(seed).lstrip("-").isdigit() else None
+    # 安全:玩家 REST body 的 seed 不可信,默认忽略(防穷举 seed 刷暴击/必胜)。
+    # 仅测试/显式 RPG_ALLOW_CLIENT_SEED 时接受。见 rules.seed_policy。
+    from rules.seed_policy import coerce_external_seed
+    return coerce_external_seed(seed)
 
 
 def _canonicalize_exit_target(state: GameState, target: str) -> tuple[str, str]:
@@ -1534,6 +1605,24 @@ def _execute_rules_action(state: GameState, body: dict[str, Any]) -> dict[str, A
             qty = 1
         out = _rb_consume_item_action(state, item_id=item_id, qty=qty,
                                        reason=str(body.get("reason") or ""))
+    elif kind == "grant_item":
+        item_id = str(body.get("item_id") or body.get("item") or body.get("alias") or "")
+        try:
+            qty = int(body.get("qty") or 1)
+        except (TypeError, ValueError):
+            qty = 1
+        out = _rb_grant_item_action(
+            state, item_id=item_id, name=body.get("name"), qty=qty,
+            kind=str(body.get("item_kind") or body.get("kind_hint") or "misc"),
+            reason=str(body.get("reason") or ""),
+        )
+    elif kind == "pickup_loot":
+        item_id = str(body.get("item_id") or body.get("item") or body.get("alias") or "")
+        out = _rb_pickup_loot_action(
+            state, item_id=item_id,
+            location_id=str(body.get("location_id") or "") or None,
+            reason=str(body.get("reason") or ""),
+        )
     elif kind == "move":
         loc = str(body.get("to") or body.get("target") or body.get("move_to") or "")
         canonical, reason = _canonicalize_exit_target(state, loc)
@@ -1578,6 +1667,10 @@ def _chat_rule_candidates(
             action.get("target") or action.get("target_id"),
             action.get("move_to") or action.get("to"),
             action.get("trap_id"),
+            # 同回合消耗多个不同物品(如"点火把+喝药剂")时,item_id 必须进去重 key,
+            # 否则两个 consume_item 的其余字段都是 None → key 坍缩 → 第二个物品被静默丢弃。
+            # 非消耗动作 item_id 恒 None,不影响其去重行为。
+            action.get("item_id"),
         )
         if key in seen:
             return
@@ -1594,6 +1687,14 @@ def _chat_rule_candidates(
             "kind": "consume_item",
             "item_id": intent["item_id"],
             "qty": intent["qty"],
+            "reason": f"backend parser: {intent['matched']!r}",
+        })
+    # 拾取意图：确定性从玩家文本解析"捡起当前房间 loot"，不依赖 LLM。
+    # 与 consume 对称——"捡起暗红矿核" / "拿走药剂" 都从这里入，走 pickup_loot。
+    for intent in _rb_parse_pickup_intent(user_input, state):
+        add({
+            "kind": "pickup_loot",
+            "item_id": intent["item_id"],
             "reason": f"backend parser: {intent['matched']!r}",
         })
     for action in curator_actions or []:
@@ -1616,7 +1717,8 @@ def _apply_chat_rule_candidates(state: GameState, actions: list[dict[str, Any]] 
     if not scene.get("module_id"):
         return []
 
-    allowed = {"skill_check", "saving_throw", "trap_check", "attack", "short_rest", "move", "consume_item"}
+    allowed = {"skill_check", "saving_throw", "trap_check", "attack", "short_rest",
+               "move", "consume_item", "pickup_loot"}
     # 一种 kind 最多跑一次 — 同一回合不允许双重 attack / 双重 skill_check 等。
     # 但 skill_check + move 可以同回合跑（玩家描述含调查 + 移动）。
     consumed_kinds: set[str] = set()
@@ -1626,13 +1728,22 @@ def _apply_chat_rule_candidates(state: GameState, actions: list[dict[str, Any]] 
             continue
         action = dict(raw)
         kind = action.get("kind")
-        if kind not in allowed or kind in consumed_kinds:
+        if kind not in allowed:
+            continue
+        # 每种 kind 每回合至多一次(防双重 attack / skill_check);但 consume_item 例外 ——
+        # 同回合可消耗多个不同物品,按 item_id 而非 kind 去重(否则第二个物品被跳过、不生效)。
+        # pickup_loot 同理:同回合可拾取多个不同 loot,也按 item_id 去重。
+        if kind == "pickup_loot":
+            dedup_key = f"pickup_loot:{action.get('item_id')}"
+        else:
+            dedup_key = f"consume_item:{action.get('item_id')}" if kind == "consume_item" else kind
+        if dedup_key in consumed_kinds:
             continue
         out = _execute_rules_action(state, action)
         # 不管 ok / not ok 都记录：失败的也要传给 GM 让它明白发生了什么
         results.append({"action": action, "out": out})
         if out.get("ok"):
-            consumed_kinds.add(kind)
+            consumed_kinds.add(dedup_key)
         # 允许继续找下一种 kind 的候选；只对成功的 kind 占位
     return results
 
@@ -1885,6 +1996,24 @@ def _resolve_console_assistant_backend(api_user: dict[str, Any] | None):
             model = selected_model()
             api_id = api_id or model.get("api_id")
             model_real = model_real or model.get("real_name")
+    # BYOK 守卫(同主 GM):解析出的 provider 用户不可用(stale 偏好/默认落 vertex 但没 SA)
+    # → 回退到用户配过 key 的第一个模型,避免控制台助手构造即失败。
+    if api_user and api_user.get("id"):
+        try:
+            _uid_c = int(api_user["id"])
+            from core.llm_backend import first_user_model as _fum_c
+            _ud_c = _fum_c(_uid_c)
+            if _ud_c and api_id and api_id != _ud_c[0]:
+                from platform_app.user_credentials import get_credential as _gc_c
+                if api_id == "vertex_ai":
+                    from core.vertex_sa import has_user_sa as _hsa_c
+                    _ok_c = _hsa_c(_uid_c)
+                else:
+                    _ok_c = bool(_gc_c(_uid_c, api_id))
+                if not _ok_c:
+                    api_id, model_real = _ud_c
+        except Exception:
+            pass
     # 用 GameMaster 构造 backend, 再借用其 ._backend
     gm = GameMaster(
         api_id=str(api_id) if api_id is not None else api_id,

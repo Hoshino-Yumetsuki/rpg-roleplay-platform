@@ -533,8 +533,12 @@ class ApplyOpsMixin:
                     if item and item not in target:
                         target.append(item)
         elif kind == "relationship":
-            name = path.split(".", 1)[1]
-            self.update_relationship(name, value)
+            name = path.split(".", 1)[1].strip()
+            # 空名守卫:`/set relationships.=X`(force 路径绕过 dispatcher)会让 name=""
+            # 写入一条空 key 关系,注入成"· ：X"无主体噪声。与 set_relationship 工具的
+            # `if not ch` 守卫对齐,空名直接跳过。
+            if name:
+                self.update_relationship(name, value)
         elif kind == "user_variable":
             key = path.split(".", 2)[2]
             self.set_user_variable(key, value, source=source)

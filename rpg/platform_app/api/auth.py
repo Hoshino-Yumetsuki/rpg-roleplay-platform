@@ -71,6 +71,20 @@ async def api_register(request: Request):
             ip=ip,
             ua=ua,
         )
+        # 本地/自托管模式:register 已自动完成注册并登录(免邮箱验证)→ 设 session cookie
+        # 并返回与 verify-email 同 shape,前端据此直接进入而非停在验证码页。
+        if result.get("auto_verified") and result.get("session_token") and result.get("user"):
+            _user = result["user"]
+            try:
+                workspace.ensure_default(_user["id"])
+            except Exception:
+                pass
+            response = json_response({
+                "ok": True, "auto_verified": True,
+                "user": public_user(_user), "platform": platform_for(_user),
+            })
+            _set_session_cookie(response, request, result["session_token"])
+            return response
         return json_response(result)
     except ValueError as exc:
         _auth._record_login_fail(ip, normalized_username)

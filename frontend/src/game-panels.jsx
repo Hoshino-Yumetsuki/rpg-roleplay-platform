@@ -1019,7 +1019,7 @@ function WorldlineAnchorsSection({ saveId }) {
                       )}
                     </div>
                     <div className="gp-anchor-phase" style={{color: "var(--muted-2)", fontSize: 11}}>
-                      {t('game.timeline.drift_pressure', { drift: ph.avg_drift.toFixed(2), pressure: Math.round(pressure * 100) })}
+                      {t('game.timeline.drift_pressure', { drift: Number(ph.avg_drift || 0).toFixed(2), pressure: Math.round(pressure * 100) })}
                       {expanded ? " · ▲" : " · ▼"}
                     </div>
                   </div>

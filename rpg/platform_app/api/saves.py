@@ -110,7 +110,15 @@ async def api_save_import(request: Request, user=Depends(require_user)):
             except (UnicodeDecodeError, _json.JSONDecodeError) as exc:
                 raise HTTPException(status_code=400, detail=f"JSON 解析失败: {exc}") from exc
         else:
-            body = await request.json()
+            # JSON body 路径也要受大小约束(multipart 已有 _MAX_SAVE_IMPORT_BYTES 关,
+            # 这条原来直接 request.json() 无上限 → 超大 body 撑内存)。先按 raw 长度卡再解析。
+            raw_body = await request.body()
+            if len(raw_body) > _MAX_SAVE_IMPORT_BYTES:
+                raise HTTPException(status_code=400, detail=f"文件过大 (>{_MAX_SAVE_IMPORT_BYTES // 1024 // 1024}MB)")
+            try:
+                body = _json.loads(raw_body.decode("utf-8"))
+            except (UnicodeDecodeError, _json.JSONDecodeError) as exc:
+                raise HTTPException(status_code=400, detail=f"JSON 解析失败: {exc}") from exc
             payload = body.get("payload") if isinstance(body, dict) and isinstance(body.get("payload"), dict) else body
         if not isinstance(payload, dict):
             return json_response({"ok": False, "error": "payload 必须是对象"}, status_code=400)
@@ -176,20 +184,13 @@ async def api_create_save(request: Request, user=Depends(require_user)):
         player_origin = "soul"
     if player_origin and player_origin not in ("soul", "body", "dual", "native"):
         player_origin = None
-    # identity_known: 开局是否知道身份卡(知道/不知道),与出身正交;肉穿(body)无身份卡 → 忽略。
+    # identity_known: 开局是否知道身份卡(知道/不知道)。没有挂身份卡时没有可感知对象,忽略。
     _ik = body.get("identity_known")
     if _ik is None and isinstance(identity, dict):
         _ik = identity.get("identity_known")
     identity_known = _ik if isinstance(_ik, bool) else None
-    if player_origin == "body":
+    if player_origin == "body" or not identity:
         identity_known = None
-    # gate:非肉穿出身(魂穿/一体双魂/彻底扮演)依赖一个【本地身份】= 身份卡;没挂就不成立。
-    # 前端已禁用创建按钮,这里后端兜底防 API 直接绕过。肉穿(body)整体外来、无需本地身份。
-    if player_origin in ("soul", "dual", "native") and not identity:
-        return json_response(
-            {"ok": False, "error": "「魂穿 / 一体双魂 / 彻底扮演」需要先挂一张身份卡作为本地身份;或把出身改为「肉穿」。"},
-            status_code=400,
-        )
     try:
         save = workspace.create_save(
             user["id"], script_id, body.get("title", ""),

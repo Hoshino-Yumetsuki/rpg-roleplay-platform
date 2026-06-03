@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import queue
 import threading
 from typing import Any
 
@@ -12,6 +11,23 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from routes._deps_fastapi import get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, GenericOkResponse, OkResponse, StateResponse
 from schemas.game import ChatEstimateRequest, ChatRequest, NewGameRequest
+from state.parsers import _extract_trailing_markdown_options
+
+import logging as _logging
+import secrets as _secrets
+
+_log = _logging.getLogger(__name__)
+
+
+def _client_safe_error(exc: Exception) -> str:
+    """把未预期异常转成对客户端安全的泛化文案 + error_id。
+
+    str(exc) 可能含 DB 表名/连接串、文件路径、第三方 SDK 内部细节(乃至凭据上下文),
+    绝不能直透进 SSE 给玩家。原始异常带 error_id 写服务端日志,客户端只拿 id 便于排障对账。
+    """
+    error_id = _secrets.token_hex(4)
+    _log.exception("[chat] unhandled stream error (error_id=%s)", error_id)
+    return f"本轮处理出错,请重试(错误码 {error_id})"
 
 
 async def _bridge_sync_generator_to_async(gen_factory, stop_event: threading.Event | None = None):
@@ -23,30 +39,37 @@ async def _bridge_sync_generator_to_async(gen_factory, stop_event: threading.Eve
     """
     if stop_event is None:
         stop_event = threading.Event()
-    q: queue.Queue = queue.Queue()
+    loop = asyncio.get_running_loop()
+    # asyncio.Queue + call_soon_threadsafe:工作线程产出的 item 投递回 event loop,
+    # async 端 `await q.get()` 真正挂起协程,不忙等。
+    # 旧实现用 `await asyncio.sleep(0)` 轮询 → 每条并发流 spin 紧循环烧满 CPU、
+    # 饿死 event loop(新请求分配延迟 + SSE 事件被挤掉 = 并发阻碍/丢事件根因)。
+    q: asyncio.Queue = asyncio.Queue()
     SENTINEL = object()
+
+    def _put(item) -> None:
+        # 从工作线程安全地把 item 投递回 event loop 线程
+        try:
+            loop.call_soon_threadsafe(q.put_nowait, item)
+        except RuntimeError:
+            # loop 已关闭(进程收尾):忽略,runner 下一轮靠 stop_event 早退
+            pass
 
     def _runner():
         try:
             for item in gen_factory():
                 if stop_event.is_set():
                     break
-                q.put(item)
+                _put(item)
         except Exception as exc:
-            q.put(exc)
+            _put(exc)
         finally:
-            q.put(SENTINEL)
+            _put(SENTINEL)
 
-    loop = asyncio.get_running_loop()
     fut = loop.run_in_executor(None, _runner)
     try:
         while True:
-            # 轮询 queue,避免 blocking get 占用 event loop
-            try:
-                item = q.get_nowait()
-            except queue.Empty:
-                await asyncio.sleep(0)
-                continue
+            item = await q.get()
             if item is SENTINEL:
                 break
             if isinstance(item, Exception):
@@ -170,6 +193,8 @@ async def api_opening(
         _persist_runtime_checkpoint,
         _resolve_persist_target,
         _sse,
+        platform_branches,
+        platform_knowledge,
         retrieve_context,
     )
     state = _ensure_loaded(api_user)
@@ -225,18 +250,36 @@ async def api_opening(
                 yield _sse("token", {"text": chunk})
             opening = text
             yield _sse("stage", {"phase": "done", "label": ""})
-            state.data["history"].append({"role": "assistant", "content": opening})
+            opening_for_history, opening_options = _extract_trailing_markdown_options(opening)
+            state.data["history"].append({"role": "assistant", "content": opening_for_history})
             # 让开场也走结构化解析,把【询问玩家】+JSON ops 解析进 pending_questions / state
+            before_questions = len(((state.data.get("permissions") or {}).get("pending_questions") or []))
             try:
-                state.apply_structured_updates(opening)
+                state.apply_structured_updates(opening_for_history)
             except Exception:
                 import logging as _logging
                 _logging.getLogger(__name__).warning("opening apply_structured_updates failed", exc_info=True)
+            after_questions = len(((state.data.get("permissions") or {}).get("pending_questions") or []))
+            if opening_options and after_questions == before_questions:
+                state.add_pending_question("你想怎么行动？", source="gm:opening_options", options=opening_options)
             state.save()
-            _persist_runtime_checkpoint(state, api_user)
+            try:
+                persist_user_id, active_save_id = _resolve_persist_target(api_user)
+                if api_user and persist_user_id and active_save_id:
+                    platform_branches.record_runtime_turn(
+                        "",
+                        opening_for_history,
+                        user_id=api_user["id"],
+                        state_data=state.data,
+                    )
+                    platform_knowledge.ensure_game_session(persist_user_id, active_save_id, state.data)
+                else:
+                    _persist_runtime_checkpoint(state, api_user)
+            except Exception:
+                _persist_runtime_checkpoint(state, api_user)
             yield _sse("done", {"status": _payload(api_user)})
         except Exception as exc:
-            yield _sse("error", {"message": str(exc), "partial": text})
+            yield _sse("error", {"message": _client_safe_error(exc), "partial": text})
             yield _sse("done", {"interrupted": True, "status": _payload(api_user)})
 
     return StreamingResponse(stream(), media_type="text/event-stream")
@@ -457,6 +500,15 @@ async def api_chat(
     # 老的 Game Console.html 发 text，新的 game-app.jsx 也偶尔走 message。
     # 后端必须两边兼容，否则用户输入直接被 "空消息" error 吞掉。
     message = (body_dict.get("message") or body_dict.get("text") or "").strip()
+    # 输入上限:nginx client_max_body_size=50m 是外层兜底,但 app 层缺单条消息上限 →
+    # 超长消息会进上下文撑爆 LLM(困惑的 context overflow)并膨胀 history/DB。给清晰 400。
+    # 32KB 对正常角色扮演输入极宽裕(约万余汉字)。
+    _MAX_CHAT_MSG_CHARS = 32000
+    if len(message) > _MAX_CHAT_MSG_CHARS:
+        return StreamingResponse(
+            iter([_sse("error", {"message": f"消息过长({len(message)} 字符,上限 {_MAX_CHAT_MSG_CHARS});请拆分后发送"})]),
+            media_type="text/event-stream",
+        )
     attachments = _save_attachments(body_dict.get("attachments") or [], user_id=api_user["id"] if api_user else None)
     message_for_model = _message_with_attachments(message, attachments)
     if not message_for_model.strip():
@@ -663,7 +715,7 @@ async def api_chat(
                 error=str(exc),
                 duration_ms=int((time.time() - _chat_start_time) * 1000),
             )
-            yield _sse("error", {"message": str(exc), "partial": pipeline_ctx.response or response})
+            yield _sse("error", {"message": _client_safe_error(exc), "partial": pipeline_ctx.response or response})
             yield _sse("done", {"interrupted": True, "status": _payload(api_user)})
 
     return StreamingResponse(stream(), media_type="text/event-stream")

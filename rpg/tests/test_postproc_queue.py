@@ -1,9 +1,12 @@
 """test_postproc_queue.py — W1 容量优化: postproc_queue 单元测试。
 
 覆盖:
-- enqueue_postproc → 3 tasks (extractor/phase_digest/verifier) 写 DB
-- is_bs_enabled=True → 4 tasks
+- enqueue_postproc → 1 task (acceptance_verifier) 写 DB
+  (extractor/phase_digest 不入队:worker 拿不到实时内存 state,二者在 worker 内是 no-op;
+   它们的状态依赖后处理由 GM 阶段内联 apply_structured_updates 承担,见 chat_pipeline)
+- is_bs_enabled=True → 2 tasks (+black_swan)
 - NOTIFY 失败时 enqueue 仍完成(静默警告)
+- async 模式下 GM JSON op 仍被内联 apply(确定性后处理不随早退跳过)
 - 重试逻辑: attempts++ + backoff scheduled_at
 - 3 次失败 → status=failed, error_message 记录
 - SKIP LOCKED: 2 个并发 worker 不抢同一行
@@ -42,8 +45,12 @@ class TestEnqueuePostproc(unittest.TestCase):
         from platform_app.postproc_queue import enqueue_postproc
         self.enqueue = enqueue_postproc
 
-    def test_enqueues_three_tasks_by_default(self):
-        """is_bs_enabled=False → 3 tasks (extractor, phase_digest, acceptance_verifier)。"""
+    def test_enqueues_one_task_by_default(self):
+        """is_bs_enabled=False → 1 task (acceptance_verifier)。
+
+        extractor/phase_digest 刻意不入队 —— worker 进程拿不到实时内存 state
+        (payload state_data={}),二者在 worker 内是 no-op,白烧 LLM。它们的状态
+        依赖后处理由 GM 阶段内联 apply_structured_updates 承担。"""
         db = _make_db()
         n = self.enqueue(
             db,
@@ -51,13 +58,13 @@ class TestEnqueuePostproc(unittest.TestCase):
             player_input="hello", gm_output="GM response",
             api_user={"id": 1}, is_bs_enabled=False,
         )
-        self.assertEqual(n, 3)
-        # INSERT 调 3 次
+        self.assertEqual(n, 1)
+        # INSERT 调 1 次
         insert_calls = [c for c in db.execute.call_args_list if "INSERT" in str(c)]
-        self.assertEqual(len(insert_calls), 3)
+        self.assertEqual(len(insert_calls), 1)
 
-    def test_enqueues_four_tasks_with_black_swan(self):
-        """is_bs_enabled=True → 4 tasks (+black_swan)。"""
+    def test_enqueues_two_tasks_with_black_swan(self):
+        """is_bs_enabled=True → 2 tasks (acceptance_verifier + black_swan)。"""
         db = _make_db()
         n = self.enqueue(
             db,
@@ -65,7 +72,7 @@ class TestEnqueuePostproc(unittest.TestCase):
             player_input="hello", gm_output="GM response",
             api_user={"id": 1}, is_bs_enabled=True,
         )
-        self.assertEqual(n, 4)
+        self.assertEqual(n, 2)
 
     def test_notify_failure_does_not_raise(self):
         """NOTIFY 失败时 enqueue 仍返回正常值,不抛出。"""
@@ -85,7 +92,7 @@ class TestEnqueuePostproc(unittest.TestCase):
             player_input="hi", gm_output="resp",
             api_user={"id": 1}, is_bs_enabled=False,
         )
-        self.assertEqual(n, 3)
+        self.assertEqual(n, 1)
 
     def test_task_kinds_correct(self):
         """入队的 task_kind 必须是预定义种类。"""
@@ -274,58 +281,112 @@ class TestChatPipelineFireAndForget(unittest.TestCase):
         ctx.context_run_id = None
         return ctx
 
-    def test_async_mode_sets_ctx_updates_without_waiting(self):
-        """RPG_POSTPROC_MODE=async → ctx._updates 被设置(不等后处理)。"""
-        import asyncio
-        import chat_pipeline as _cp
-
-        ctx = self._make_pipeline_ctx()
-
-        # 注入 enqueue_postproc mock
-        mock_enqueue = MagicMock(return_value=3)
-        mock_connect_cm = MagicMock()
-        mock_connect_cm.__enter__ = MagicMock(return_value=MagicMock())
-        mock_connect_cm.__exit__ = MagicMock(return_value=False)
-        mock_connect = MagicMock(return_value=mock_connect_cm)
-
-        # 强制 async 模式
-        orig_mode = _cp._POSTPROC_MODE
-        _cp._POSTPROC_MODE = "async"
-        try:
-            with patch("platform_app.db.connect", mock_connect):
-                with patch("platform_app.postproc_queue.enqueue_postproc", mock_enqueue):
-                    # 模拟 GM stream 已完成,直接触发后处理逻辑
-                    # 这里直接测试 _POSTPROC_MODE 分支逻辑,不跑完整 SSE
-                    response = "GM 输出测试"
-                    ctx.response = response
-                    is_bs = lambda u: False
-                    try:
-                        from platform_app.db import connect as _conn
-                        from platform_app.postproc_queue import enqueue_postproc as _enq
-                        with _conn() as _db:
-                            _enq(
-                                _db,
-                                user_id=ctx.persist_user_id or 1,
-                                save_id=ctx.active_save_id or 42,
-                                commit_id=None,
-                                player_input=ctx.message_for_model,
-                                gm_output=response,
-                                api_user=ctx.api_user,
-                                is_bs_enabled=is_bs(ctx.api_user),
-                            )
-                            ctx._updates = ctx.directive_updates[:]
-                    except Exception:
-                        ctx._updates = []
-            # 核心断言: _updates 已设
-            self.assertTrue(hasattr(ctx, "_updates"))
-        finally:
-            _cp._POSTPROC_MODE = orig_mode
-
     def test_sync_mode_calls_run_post_gm_parallel(self):
         """RPG_POSTPROC_MODE=sync → _run_post_gm_parallel 被调用(旧行为)。"""
         import chat_pipeline as _cp
         # 验证 _POSTPROC_MODE != 'sync' 时分支代码存在
         self.assertIn("_POSTPROC_MODE", dir(_cp))
+
+
+# ---------------------------------------------------------------------------
+# async 早退 不能丢 GM 确定性状态写回 (核心回归)
+# ---------------------------------------------------------------------------
+
+class TestAsyncModeAppliesJsonOps(unittest.IsolatedAsyncioTestCase):
+    """回归:RPG_POSTPROC_MODE=async 下,GM 经 JSON op 写的核心每轮状态仍被内联
+    apply_structured_updates 落回内存 state。
+
+    修复前:async 分支 enqueue 后直接 `ctx._updates = directive_updates[:]; return`,
+    跳过 apply_structured_updates → GM 的 {"op":"set/append/..."}(location/time/
+    resources/relationships/选项/推测)全部丢失,而 worker 进程 state_data={} 是
+    no-op 补不回来。dispatcher 工具调用走流式内联 apply 不受影响,但 JSON op 是 GM
+    写每轮核心状态的主通道,丢了等于"几乎全丢"。"""
+
+    async def test_async_mode_inlines_apply_structured_updates(self):
+        import copy
+        import threading
+
+        import chat_pipeline as _cp
+        from chat_pipeline import PipelineContext, run_gm_phase
+        from state import DEFAULT_STATE, GameState
+
+        state = GameState(copy.deepcopy(DEFAULT_STATE))
+        state.update_time("三日后子夜", source="player_set")
+        state.update_location("雾港灯塔")
+
+        gm_text = (
+            "你推开灯塔的门,海风灌入,木梯在脚下嘎吱作响。\n"
+            "```json\n"
+            '[{"op":"set","path":"player.current_location","value":"灯塔顶层"},'
+            '{"op":"set","path":"world.time","value":"次日清晨"},'
+            '{"op":"append","path":"memory.resources","value":"黄铜怀表"}]\n'
+            "```"
+        )
+
+        gm = MagicMock()
+        # respond_stream_with_tools 是同步 generator;每次调用返回新迭代器
+        gm.respond_stream_with_tools.side_effect = (
+            lambda *a, **k: iter([{"type": "text", "text": gm_text}])
+        )
+
+        ctx = PipelineContext(
+            api_user={"id": 1},
+            state=state,
+            gm=gm,
+            sub_gm=MagicMock(),
+            message_for_model="推门进去",
+            run_id=1,
+            stop_event=threading.Event(),
+            chat_start_time=0.0,
+        )
+        ctx.persist_user_id = 1
+        ctx.active_save_id = 42
+        ctx.early_active_save_id = 0  # =0 → 跳过 Phase D 的 DB 注入
+        ctx.directive_updates = []
+        ctx.agent_result = {"curator_plan": {}}
+        ctx.bundle = {"prompt": "", "debug": {}}
+        ctx.context_run_id = None
+
+        mock_enqueue = MagicMock(return_value=1)
+        cm = MagicMock()
+        cm.__enter__ = MagicMock(return_value=MagicMock())
+        cm.__exit__ = MagicMock(return_value=False)
+
+        orig_mode = _cp._POSTPROC_MODE
+        _cp._POSTPROC_MODE = "async"
+        try:
+            with patch("platform_app.postproc_queue.enqueue_postproc", mock_enqueue), \
+                 patch("platform_app.db.connect", MagicMock(return_value=cm)):
+                events = []
+                async for ev in run_gm_phase(
+                    ctx,
+                    payload_fn=lambda u: {},
+                    persist_chat_turn=MagicMock(),
+                    mark_context_run=MagicMock(),
+                    current_run_id_fn=lambda u: 1,
+                    is_stop_requested_global=lambda u, rid: False,
+                    is_extractor_enabled=lambda u: False,
+                    is_black_swan_enabled=lambda u: False,
+                    acceptance_verifier_mode=lambda u: "rule",
+                    verify_acceptance=lambda *a, **k: [],
+                    active_script_id=lambda u: None,
+                    chat_max_tokens=lambda u: 800,
+                ):
+                    events.append(ev)
+        finally:
+            _cp._POSTPROC_MODE = orig_mode
+
+        # 核心:JSON op 已 apply 回内存 state(修复前 async 早退会全丢)
+        self.assertEqual(state.data["player"]["current_location"], "灯塔顶层")
+        self.assertEqual(state.data["world"]["time"], "次日清晨")
+        self.assertIn("黄铜怀表", state.data.get("memory", {}).get("resources", []))
+        # ctx._updates 反映这些写入(不再只是 directive_updates 的空拷贝)
+        self.assertTrue(
+            any("player.current_location" in u for u in (ctx._updates or [])),
+            f"ctx._updates 未含 location 写回: {ctx._updates}",
+        )
+        # 费时 LLM 任务仍走异步入队(async 容量优化路径未被破坏)
+        mock_enqueue.assert_called_once()
 
 
 if __name__ == "__main__":

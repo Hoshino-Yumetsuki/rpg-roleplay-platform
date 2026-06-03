@@ -5,7 +5,7 @@ import secrets
 from typing import Any
 
 from platform_app import runtime as _runtime_module
-from platform_app.branches._helpers import commit_state
+from platform_app.branches._helpers import acquire_save_advisory_lock, commit_state
 from platform_app.branches.commits import _commit_for_user
 from platform_app.branches.refs import (
     _find_or_create_ref_for_commit,
@@ -31,6 +31,8 @@ def continue_from(user_id: int, node_id: int) -> dict[str, Any]:
             raise ValueError("无权访问该分支节点")
 
         save_id = node["save_id"]
+        # 与回合提交 / autosave 同 key 的锁:防并发覆盖 game_saves 活跃指针(读指针前取)。
+        acquire_save_advisory_lock(db, save_id, user_id)
         state_snapshot = commit_state(node)
         state_path = node["state_path"]
         ref = _upsert_ref(
@@ -64,6 +66,8 @@ def activate_node(user_id: int, node_id: int) -> dict[str, Any]:
         node = _commit_for_user(db, user_id, node_id)
         if not node:
             raise ValueError("无权访问该分支节点")
+        # 与回合提交 / autosave 同 key 的锁:防并发覆盖 game_saves 活跃指针(写指针前取)。
+        acquire_save_advisory_lock(db, node["save_id"], user_id)
         ref = _find_or_create_ref_for_commit(db, user_id, node)
         _set_save_active(db, node["save_id"], node["id"], ref["id"])
         _write_checkout(db, user_id, node["save_id"], ref["id"], node["id"])
@@ -86,6 +90,8 @@ def activate_save(user_id: int, save_id: int) -> dict[str, Any]:
     """task 30：切到目标 save 的当前激活分支（或没有就 root），并真的切换 user_runtime。"""
     init_db()
     with connect() as db:
+        # 与回合提交 / autosave 同 key 的锁:在读 game_saves 活跃指针之前取,防并发覆盖。
+        acquire_save_advisory_lock(db, save_id, user_id)
         save = db.execute(
             "select * from game_saves where id = %s and user_id = %s",
             (save_id, user_id),

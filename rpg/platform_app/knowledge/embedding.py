@@ -35,6 +35,11 @@ EMBED_DIM = 768
 # 中文 chunk 平均 ~200 token,100 项已经超过 20K → 400 INVALID_ARGUMENT。
 # 减到 30 项 × ~600 char ≈ 9000 tokens,留足 50% buffer 处理长 chunk。
 BATCH_SIZE = 30
+# 单批 embedding 连续失败上限:provider 永久故障(坏 key/配额耗尽/模型下线)时
+# _embed_batch 始终返 None,原 while True 会 30s 一次无限重试 → daemon 线程永 spin、
+# _EMBED_QUEUE_RUNNING flag 永 True(该 script 再不能重 embed)。超限即 raise,由
+# _embed_chunks_loop 的 try/finally 优雅收尾(清 flag + 线程退出);chunks 留 null 待重试。
+_MAX_EMBED_BATCH_RETRIES = 5
 # 每个 chunk 文本上限(char),配合 batch_size 控制总 token。
 # Vertex 中文 ~1 char/0.5 token,2400 char ≈ 1200 token;30 × 1200 = 36000 仍超。
 # 改成 1200 char/chunk ≈ 600 token;30 × 600 = 18000 安全。
@@ -495,6 +500,7 @@ def _embed_chunks_loop_inner(script_id: int, user_id: int) -> None:
     except Exception as exc:
         log.warning("[embedding] failed to bind embed meta to script %s: %s", script_id, exc)
 
+    _consecutive_fails = 0
     while True:
         with connect() as db:
             # 拉一批未 embed 的(只拉 id+content,内存友好)
@@ -510,12 +516,35 @@ def _embed_chunks_loop_inner(script_id: int, user_id: int) -> None:
         texts = [r["content"][:PER_CHUNK_CHAR_LIMIT] for r in rows]  # 见模块顶 PER_CHUNK_CHAR_LIMIT 注释
         vecs = _embed_batch(texts, user_id=user_id)
         if vecs is None:
-            log.warning("[embedding] batch failed, sleeping 30s then retry")
+            _consecutive_fails += 1
+            if _consecutive_fails >= _MAX_EMBED_BATCH_RETRIES:
+                # 连续失败达上限:大概率 provider 永久故障(坏 key/配额/模型下线)。
+                # 抛出 → _embed_chunks_loop 优雅收尾(清 flag、线程退出),不再无限 spin。
+                raise RuntimeError(
+                    f"embedding batch 连续失败 {_consecutive_fails} 次,放弃 script {script_id}"
+                    f"(剩余 chunk 留 null 待修复 provider 后重试)"
+                )
+            log.warning("[embedding] batch failed (%d/%d), sleeping 30s then retry",
+                        _consecutive_fails, _MAX_EMBED_BATCH_RETRIES)
             time.sleep(30)
             continue
+        _consecutive_fails = 0  # 成功一批即重置连续失败计数(仅对持续性故障熔断)
         if len(vecs) != len(rows):
-            log.warning("[embedding] vec count mismatch: got %d expected %d", len(vecs), len(rows))
-            break
+            # 行数不匹配(供应商异常)。原来直接 break → 整个 script 剩余 chunk 永不 embed
+            # 且静默(RAG 召回残缺)。改为:写入可匹配的前 N 对(保证推进),再继续下一批;
+            # 0 匹配才放弃(避免死循环)。
+            _n = min(len(vecs), len(rows))
+            log.error("[embedding] vec count mismatch: got %d expected %d (script_id=%s) — 写入前 %d 对后继续",
+                      len(vecs), len(rows), script_id, _n)
+            if _n == 0:
+                break
+            with connect() as db:
+                for r, v in zip(rows[:_n], vecs[:_n]):
+                    db.execute(
+                        "update document_chunks set embedding_vec = %s::vector, embedded_at = now() where id = %s",
+                        (_vec_literal(v), r["id"]),
+                    )
+            continue
 
         with connect() as db:
             for r, v in zip(rows, vecs):
@@ -525,51 +554,12 @@ def _embed_chunks_loop_inner(script_id: int, user_id: int) -> None:
                 )
         log.info("[embedding] chunks +%d (script_id=%s)", len(rows), script_id)
 
-    # task 52: entity 层 embed 之前,先回填 first_chapter / last_seen_chapter。
-    # 这样下游 _search_entities 能按时间线硬过滤,GM 不会被召回未来章节的角色/词条。
-    # 算法:全文 LIKE 搜 script_chapters.content,聚合 MIN/MAX chapter_index。
-    # 一次性 SQL,~O(N × chapter_count),866 章场景下 ~200ms。
-    #
-    # P0 修:character_cards 表没 first_chapter/last_seen_chapter 列时(v41+ 还
-    # 没加这两列?),整段 SQL 抛 "column does not exist" 导致 cards/wb embed
-    # 永远跑不到。包 try/except,backfill 失败不阻断后续 embedding。
-    try:
-        with connect() as db:
-            db.execute(
-                """
-                with char_first_last as (
-                  select cc.id as cc_id,
-                         min(sc.chapter_index) as first_ch,
-                         max(sc.chapter_index) as last_ch
-                  from character_cards cc
-                  join script_chapters sc on sc.script_id = cc.script_id
-                  where cc.script_id = %s
-                    and cc.card_type = 'npc'           -- v28: 章节边界回填只对 NPC 行
-                    and sc.content like '%%' || cc.name || '%%'
-                  group by cc.id
-                )
-                update character_cards cc
-                set first_chapter = cfl.first_ch,
-                    last_seen_chapter = cfl.last_ch
-                from char_first_last cfl
-                where cc.id = cfl.cc_id
-                  and cc.first_chapter is null
-                  and cc.card_type = 'npc'
-                """,
-                (script_id,),
-            )
-            db.execute(
-                "update worldbook_entries set first_chapter = 1 "
-                "where script_id = %s and first_chapter is null",
-                (script_id,),
-            )
-            log.info("[embedding] task 52: backfilled chapter boundaries for script %s", script_id)
-    except Exception as exc:
-        log.warning(
-            "[embedding] chapter-boundary backfill skipped for script %s: %s "
-            "(missing first_chapter/last_seen_chapter columns — see migrations)",
-            script_id, exc,
-        )
+    # BUG-1: 旧 task 52 在此用全文 LIKE 回填 character_cards/worldbook_entries 的
+    # first_chapter / last_seen_chapter —— 但那两列全库从未建过,整段 SQL 恒抛
+    # "column does not exist",被 try/except 静默吞,从未生效过。
+    # 进度过滤已统一到 first_revealed_chapter:character_cards 由 extraction/resolve 写
+    # (v28 _sync upsert),worldbook_entries 由 migration v53 补列 + 从 metadata.chapter_min
+    # 回填。_search_entities 直接读 first_revealed_chapter,无需此回填。故移除死代码避免误导。
 
     # entity 层:character_cards
     with connect() as db:

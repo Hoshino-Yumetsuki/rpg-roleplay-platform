@@ -593,7 +593,13 @@ function LoginApp() {
         });
         const j = await r.json();
         if (!j.ok) throw new Error(j.error || t('auth.register_fail'));
-        // 两步流程：进入验证码步骤
+        // 本地/自托管模式：后端已自动完成注册并登录(免邮箱验证)→ 直接进入,不走验证码页
+        if (j.auto_verified) {
+          setNotice(t('auth.login_ok'));
+          setTimeout(() => location.replace(__resolveNextOrDefault()), 200);
+          return;
+        }
+        // server 模式两步流程：进入验证码步骤
         setPendingEmail(j.email_mask || body.email || '');
         setPendingEmailRaw(body.email || '');
         setVerifyCode('');

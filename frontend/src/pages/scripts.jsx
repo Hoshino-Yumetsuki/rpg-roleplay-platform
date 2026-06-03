@@ -123,7 +123,7 @@ function ScriptPreviewModal({ open, busy, data, rule, onClose, onRetryRule, onCo
                         {!p.ok && <span className="pill warn" style={{marginLeft: 8, fontSize: 10.5}}><span className="dot warn" /> {p.hint}</span>}
                       </td>
                       <td className="muted">{p.volume}</td>
-                      <td className="mono" style={{textAlign: "right"}}>{p.words.toLocaleString()}</td>
+                      <td className="mono" style={{textAlign: "right"}}>{Number(p.words || 0).toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>

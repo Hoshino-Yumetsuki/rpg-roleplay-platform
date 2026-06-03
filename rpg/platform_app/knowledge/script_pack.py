@@ -800,8 +800,8 @@ def import_script_pack(zip_bytes: bytes, user_id: int) -> dict[str, Any]:
         else:
             # v1 包 — 缺世界树/锚点/digest,给出补救路径提示
             warnings.append(
-                "v1 pack imported (缺 kb_canon_entities/timeline_anchors/phase_digests/worldlines)。"
-                "运行 /api/scripts/{id}/knowledge/sync 重建,否则 GM retrieval 上下文会残缺。"
+                f"v1 pack imported into script {new_script_id} (缺 kb_canon_entities/timeline_anchors/phase_digests/worldlines)。"
+                f"运行 /api/scripts/{new_script_id}/knowledge/sync 重建,否则 GM retrieval 上下文会残缺。"
             )
 
     # 6. overrides — must be after outer `with connect()` commits the scripts row

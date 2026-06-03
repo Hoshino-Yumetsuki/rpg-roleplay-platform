@@ -287,8 +287,10 @@ async def api_rules_encounter_start(
     state = _ensure_loaded(api_user)
     from tools_dsl.ui_dispatch_helper import dispatch_ui_tool
     args: dict = {"encounter_id": encounter_id}
-    if seed is not None and str(seed).lstrip("-").isdigit():
-        args["seed"] = int(seed)
+    from rules.seed_policy import coerce_external_seed
+    _seed_int = coerce_external_seed(seed)  # 外部 seed 默认忽略(防玩家操纵掷骰)
+    if _seed_int is not None:
+        args["seed"] = _seed_int
     d_result = dispatch_ui_tool(
         tool_name="combat_start", args=args,
         user_id=int(api_user.get("id")) if api_user else 0,
@@ -360,8 +362,10 @@ async def api_rules_encounter_enemy(
     state = _ensure_loaded(api_user)
     from tools_dsl.ui_dispatch_helper import dispatch_ui_tool
     args: dict = {"attacker_id": attacker_id, "target_id": target_id}
-    if seed is not None and str(seed).lstrip("-").isdigit():
-        args["seed"] = int(seed)
+    from rules.seed_policy import coerce_external_seed
+    _seed_int = coerce_external_seed(seed)  # 外部 seed 默认忽略(防玩家操纵掷骰)
+    if _seed_int is not None:
+        args["seed"] = _seed_int
     d_result = dispatch_ui_tool(
         tool_name="combat_enemy_attack", args=args,
         user_id=int(api_user.get("id")) if api_user else 0,

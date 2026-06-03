@@ -35,8 +35,11 @@ origin 白名单:
 from __future__ import annotations
 
 import asyncio
+import queue as _queue
 import secrets
+import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -192,6 +195,8 @@ class DispatchError(Exception):
 
 MAX_TRACE_DEPTH = 3
 MAX_CALLS_PER_USER_PER_SECOND = 20
+# _trace_seen 去重表 LRU 上限:只需覆盖在途 trace(单回合内完成),1024 远超任何并发量
+MAX_TRACE_SEEN = 1024
 AUDIT_LOG_LIMIT = 200
 RECENT_AUDIT_LIMIT = 1000
 
@@ -222,7 +227,10 @@ class ToolDispatcher:
         # 限流: per user_id 最近 1 秒内调用数
         self._rate_buckets: dict[int, list[float]] = {}
         # trace 内去重: trace_id → set of (tool, args_json)
-        self._trace_seen: dict[str, set[tuple[str, str]]] = {}
+        # LRU 有界:trace_id 按回合唯一且永不主动清理,plain dict 会随累计回合数无限增长
+        # (dispatcher 是进程级单例 → 真实内存泄漏)。用 OrderedDict + MAX_TRACE_SEEN 上限,
+        # 只保留最近 N 个 trace 的去重集(远超任何在途 trace —— 一个 trace 在单回合内完成)。
+        self._trace_seen: OrderedDict[str, set[tuple[str, str]]] = OrderedDict()
         # 滚动审计缓冲: 按 user_id 分桶, 防止单例化后跨用户信息泄漏
         self._recent_audit: dict[int, list[dict[str, Any]]] = {}
 
@@ -328,7 +336,13 @@ class ToolDispatcher:
         # 9) trace 内去重 (同 trace 同 tool+args 只执行一次)
         if env.trace_id:
             sig = (env.tool, _stable_json(env.args))
-            seen = self._trace_seen.setdefault(env.trace_id, set())
+            seen = self._trace_seen.get(env.trace_id)
+            if seen is None:
+                seen = set()
+                self._trace_seen[env.trace_id] = seen
+            self._trace_seen.move_to_end(env.trace_id)  # LRU:活跃 trace 推到末尾,不会被淘汰
+            while len(self._trace_seen) > MAX_TRACE_SEEN:
+                self._trace_seen.popitem(last=False)  # 淘汰最久未用的 trace 去重集,防无界增长
             if sig in seen:
                 raise DispatchError(
                     "trace_duplicate",
@@ -485,11 +499,10 @@ def _persist_invocation_async(env: ToolCallEnvelope, *, ok: bool,
                               error: str | None, error_kind: str | None) -> None:
     """fire-and-forget 写 tool_invocations 表。
 
-    线程池里跑 INSERT,主路径不阻塞。失败 silent — 仅 log.debug,不阻断 chat。
+    有界队列 + 固定 drain worker 跑 INSERT,主路径不阻塞。失败 silent — 仅 log.debug。
     """
     import json as _json
     import logging
-    import threading
 
     log = logging.getLogger(__name__)
 
@@ -529,7 +542,49 @@ def _persist_invocation_async(env: ToolCallEnvelope, *, ok: bool,
         except Exception as exc:  # noqa: BLE001
             log.debug("[telemetry] persist tool_invocations failed: %s", exc)
 
-    threading.Thread(target=_do_insert, daemon=True).start()
+    _submit_telemetry(_do_insert)
+
+
+# ── 遥测写入:有界队列 + 固定 drain worker ─────────────────────────────────────
+# 原实现每次工具调用 threading.Thread().start():高负载下(多用户 × 每回合多工具调用)
+# 线程爆炸,且这些线程与主请求争抢同一 DB 连接池(25/worker)→ 可耗尽连接池阻塞游戏请求。
+# 改为固定 2 个 drain worker 从有界队列消费:并发遥测连接 ≤2,队列满则丢弃(遥测是
+# best-effort),永不阻塞 chat 主路径,也不让积压无界增长(DB 慢/down 时)。
+_TELEMETRY_QUEUE: "_queue.Queue | None" = None
+_TELEMETRY_LOCK = threading.Lock()
+_TELEMETRY_WORKERS = 2
+_TELEMETRY_QUEUE_MAX = 2000
+
+
+def _telemetry_drain(q: "_queue.Queue") -> None:
+    while True:
+        fn = q.get()
+        try:
+            fn()
+        except Exception:
+            pass
+        finally:
+            q.task_done()
+
+
+def _submit_telemetry(fn: Callable[[], None]) -> None:
+    global _TELEMETRY_QUEUE
+    q = _TELEMETRY_QUEUE
+    if q is None:
+        with _TELEMETRY_LOCK:
+            if _TELEMETRY_QUEUE is None:
+                _TELEMETRY_QUEUE = _queue.Queue(maxsize=_TELEMETRY_QUEUE_MAX)
+                for i in range(_TELEMETRY_WORKERS):
+                    threading.Thread(
+                        target=_telemetry_drain, args=(_TELEMETRY_QUEUE,),
+                        daemon=True, name=f"tool-telemetry-{i}",
+                    ).start()
+            q = _TELEMETRY_QUEUE
+    try:
+        q.put_nowait(fn)
+    except _queue.Full:
+        # 积压(DB 持续慢/down)→ 丢弃该遥测,绝不阻塞或拖垮主路径
+        pass
 
 
 def _stable_json(obj: Any) -> str:
