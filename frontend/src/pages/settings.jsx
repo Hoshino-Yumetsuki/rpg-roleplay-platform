@@ -7,6 +7,7 @@ import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL,
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
 import { ConfirmModal, SettingsToggle, useAutoSave, usePlatformData, useReactiveUser, publishUser, fmtN, ResizableSplit } from '../platform-app.jsx';
+import AgentModelPicker from '../components/AgentModelPicker.jsx';
 import { getCaps as _getCapsImported } from '../components/catalog-helpers.js';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSContainer from '@cloudscape-design/components/container';
@@ -268,35 +269,16 @@ function ExtractorSection() {
           {enabled ? t('settings.extractor.enable_on') : t('settings.extractor.enable_off')}
         </CSToggle>
       </SetRow>
-      <SetRow label={t('settings.extractor.api')} description={t('settings.extractor.api_desc')}>
-        <SetSelect
-          disabled={!enabled}
-          value={apiId}
-          options={apiOptions.map(o => ({ value: o.id, label: o.name }))}
-          onChange={(val) => { setApiId(val); save("api_id", val); }}
+      {/* 统一共享组件:与「按模块分配模型」的提取器、scripts 导入流、cards 的 card_import
+          同一实现(Provider+Model + 未配 key 警告 + 写 extractor.* prefs)。 */}
+      <SetRow label={t('settings.extractor.api')} description={t('settings.extractor.model_desc')}>
+        <AgentModelPicker
+          prefPrefix="extractor"
+          preferProvider="deepseek"
+          defaultModel="gemini-3.5-flash"
+          variant="bare"
+          configHash="settings-models"
         />
-      </SetRow>
-      <SetRow label={t('settings.extractor.model')} description={t('settings.extractor.model_desc')}>
-        {modelList.length === 0 ? (
-          <CSInput
-            disabled={!enabled}
-            value={modelRealName}
-            placeholder="gemini-3.5-flash"
-            onChange={({ detail }) => { setModelRealName(detail.value); save("model_real_name", detail.value); }}
-          />
-        ) : (
-          <SetSelect
-            disabled={!enabled}
-            value={modelRealName}
-            options={[
-              ...(!modelList.some(m => (m.real_name || m.id) === modelRealName)
-                ? [{ value: modelRealName, label: `${modelRealName}${t('settings.extractor.model_not_in_list')}` }]
-                : []),
-              ...modelList.map(m => ({ value: m.real_name || m.id, label: m.display_name || m.real_name || m.id })),
-            ]}
-            onChange={(val) => { setModelRealName(val); save("model_real_name", val); }}
-          />
-        )}
       </SetRow>
     </SetGroup>
   );
@@ -2484,8 +2466,12 @@ function ModuleModelsSection() {
     { id: "console",       label: "控制台助手",             shape: "dict", overrideKey: "console_assistant_model_override", tip: "侧栏控制台助手专用模型;空 = 跟主 GM。" },
     { id: "extractor",     label: "叙事提取器",             shape: "flat", apiKey: "extractor.api_id",              modelKey: "extractor.model_real_name",              tip: "GM 叙事二次解析抽 ops (两步式 GM 第二步)。" },
     { id: "card_gen",      label: "角色卡生成器",           shape: "flat", apiKey: "character_card_generator.api_id", modelKey: "character_card_generator.model_real_name", tip: "侧栏创意工具:生成 / 微调角色卡。" },
+    { id: "card_import",   label: "AI 整理卡字段",          shape: "flat", apiKey: "card_import.api_id",            modelKey: "card_import.model_real_name",            tip: "导入酒馆卡时,用 LLM 把一整段自由文本档案整理成结构化字段(身份/背景/外貌/性格等)。仅在导入勾选「用 AI 整理字段」时调用;空 = 跟主 GM。" },
     { id: "critic",        label: "一致性评分",             shape: "flat", apiKey: "critic.api_id",                 modelKey: "critic.model_real_name",                 tip: "角色卡生成的一致性评分子代理 (0-1 阈值 0.6)。" },
     { id: "verifier",      label: "接受条件验证",           shape: "flat", apiKey: "acceptance_verifier.api_id",    modelKey: "acceptance_verifier.model_real_name",    tip: "GM 输出是否满足 curator 设置的 acceptance 条件。" },
+    { id: "phase_digest",  label: "阶段浓缩 (compact)",     shape: "flat", apiKey: "phase_digest.api_id",           modelKey: "phase_digest.model_real_name",           tip: "长局历史按阶段浓缩成摘要(compact),供 GM 记忆远期剧情;空 = 系统默认。" },
+    { id: "black_swan",    label: "黑天鹅事件代理",         shape: "flat", apiKey: "black_swan_agent.api_id",        modelKey: "black_swan_agent.model_real_name",       tip: "主动触发世界突发事件的子代理;空 = 系统默认。" },
+    { id: "agent",         label: "通用子代理兜底",         shape: "flat", apiKey: "agent.api_id",                   modelKey: "agent.model_real_name",                  tip: "未单独配置模型的其它子代理统一兜底用它;空 = 跟主 GM / 系统默认。" },
     { id: "embedder",      label: "向量嵌入 (RAG)",         shape: "flat", apiKey: "embed.api_id",                  modelKey: "embed.model_real_name",                  capsFilter: ["embedding"], allowInherit: false, defaultApiId: "vertex_ai", defaultModelId: "text-embedding-004", credentialApiId: "AgentPlatform", tip: "向量嵌入模型，用于 RAG 召回 + 拆书后的语义检索。系统默认 Vertex text-embedding-004，需要在「API 密钥」配 Vertex SA JSON 才能用。可改成其他 embedding 模型。" },
   ];
 

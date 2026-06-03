@@ -58,6 +58,45 @@ def default_api_for(api_id: str | None) -> dict[str, Any] | None:
     target = normalize_api_id(api_id)
     return next((copy.deepcopy(api) for api in DEFAULT_MODEL_CATALOG["apis"] if normalize_api_id(api.get("id")) == target), None)
 
+
+# 已知下线/退役模型黑名单:provider 归一化 id -> 该 provider 下已被服务商下线的
+# model id/real_name 集合。这些模型调用时返回 404 NOT_FOUND,但可能残留在历史
+# 存储 catalog(DB model_entries)或用户 overlay(user_model_entries)里。盲取
+# "第一个 enabled 模型"(core.llm_backend.first_user_model 的兜底)会撞上它们,
+# 导致身份卡生成 / phase compact 等子代理对无偏好用户一律失败。在加载/迁移与
+# overlay 合成层统一剔除 —— 对未来其它下线模型同样健壮,无需逐个改存储数据。
+# key 为 "" 表示对所有 provider 生效。
+KNOWN_OFFLINE_MODELS: dict[str, set[str]] = {
+    # 已被 Google 下线的 Vertex 模型,调用返 404 NOT_FOUND:
+    # - gemini-1.5-pro-002:早期 1.5 快照,早已下线。
+    # - gemini-2.5-flash-preview-04-17 / gemini-2.5-pro-exp-03-25:带日期的 preview/exp
+    #   临时快照,GA 名(gemini-2.5-flash / gemini-2.5-pro)上线后即停服。
+    "vertex_ai": {
+        "gemini-1.5-pro-002",
+        "gemini-2.5-flash-preview-04-17",
+        "gemini-2.5-pro-exp-03-25",
+    },
+}
+
+
+def _is_offline_model(api_id: str | None, model: dict[str, Any]) -> bool:
+    aid = normalize_api_id(api_id)
+    tokens = {str(model.get("id") or "").strip(), str(model.get("real_name") or "").strip()}
+    tokens.discard("")
+    if not tokens:
+        return False
+    for scope in (aid, ""):
+        dead = KNOWN_OFFLINE_MODELS.get(scope)
+        if dead and (tokens & dead):
+            return True
+    return False
+
+
+def _filter_offline_models(models: Any, api_id: str | None) -> list[dict[str, Any]]:
+    """剔除已知下线模型。返回清理后的列表(只保留 dict 条目)。"""
+    return [m for m in (models or []) if isinstance(m, dict) and not _is_offline_model(api_id, m)]
+
+
 DEFAULT_MODEL_CATALOG: dict[str, Any] = {
     "schema_version": 1,
     "selected": {
@@ -284,8 +323,14 @@ def apply_user_overlay(catalog: dict[str, Any], user_id: int | None) -> dict[str
     for raw_api_id, models in overlay.items():
         api_id = normalize_api_id(raw_api_id)
         existing = by_id.get(api_id)
+        cleaned = _filter_offline_models(list(models or []), api_id)
         if existing is not None:
-            existing["models"] = list(models)
+            # 用户同步清单覆盖全局 provider 的 models。但若清单里全是下线模型
+            # (如用户 1 的 vertex overlay 仅含 gemini-1.5-pro-002),清理后为空时
+            # **不**用空清单覆盖全局好模型,保留全局菜单 —— 否则该用户该 provider 视图
+            # 变空,first_user_model 兜底无可用模型可回退。
+            if cleaned:
+                existing["models"] = cleaned
             continue
         # 自建中转站:只有当用户确实配过该 provider 的凭证(带 base_url)才合成,
         # 避免悬空条目。base_url 来自用户凭证(per-user,已做 SSRF 校验)。
@@ -300,7 +345,7 @@ def apply_user_overlay(catalog: dict[str, Any], user_id: int | None) -> dict[str
             "credential_ref": "",
             "credential_env": "",
             "base_url": base_url,
-            "models": list(models),
+            "models": cleaned,
             "_custom": True,
         })
     return result
@@ -489,6 +534,13 @@ def _migrate_catalog(data: dict[str, Any]) -> dict[str, Any]:
             catalog["selected"] = selected
     catalog["schema_version"] = 1
     _backfill_model_capabilities(catalog)
+    for api in catalog.get("apis", []):
+        models = api.get("models") or []
+        filtered = _filter_offline_models(models, api.get("id"))
+        # 只在还能留下至少一个模型时剔除;若某 provider 全是下线模型则保留原列表,
+        # 避免空 models 撑爆 first_enabled_model([])(degenerate,生产不会发生)。
+        if filtered or not models:
+            api["models"] = filtered
     selected = selected_model_without_migration(catalog)
     catalog["selected"] = {
         "api_id": selected["api_id"],

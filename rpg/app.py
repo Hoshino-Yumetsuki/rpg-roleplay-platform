@@ -881,6 +881,41 @@ def _backup_save(reason: str) -> str | None:
     return str(backup)
 
 
+def _session_model_app_view(model_catalog: dict[str, Any], sess: tuple | None) -> dict[str, Any] | None:
+    """把 per-save session_model (model_real_name, api_id) 解析成 app.* 展示 dict,
+    形状与 selected_model() 一致。解析不到(模型/API 不在该用户 catalog)返回 None
+    → 调用方回退全局默认展示。session_model 存的是 real_name(见 routes/models.select),
+    故按 real_name 或 id 匹配。"""
+    if not sess:
+        return None
+    try:
+        sm_model, sm_api = sess
+        if not sm_model or not sm_api:
+            return None
+        from model_registry import find_api as _find_api
+        api = _find_api(model_catalog, sm_api)
+        if not api:
+            return None
+        m = next(
+            (mm for mm in api.get("models", [])
+             if mm.get("real_name") == sm_model or mm.get("id") == sm_model),
+            None,
+        )
+        if not m:
+            return None
+        return {
+            "api_id": api["id"],
+            "api_display_name": api.get("display_name") or api["id"],
+            "api_kind": api.get("kind") or api["id"],
+            "model_id": m["id"],
+            "real_name": m.get("real_name") or m["id"],
+            "display_name": m.get("display_name") or m.get("real_name") or m["id"],
+            "capabilities": list(m.get("capabilities") or []),
+        }
+    except Exception:
+        return None
+
+
 def _payload(api_user: dict[str, Any] | None = None) -> dict[str, Any]:
     state = _ensure_loaded(api_user, ensure_gm=False)
     # 安全:模型选择器走每用户视图(全局菜单 + 该用户私有 overlay),
@@ -888,6 +923,17 @@ def _payload(api_user: dict[str, Any] | None = None) -> dict[str, Any]:
     _uid = int(api_user["id"]) if api_user and api_user.get("id") else None
     model_catalog = load_catalog_for_user(_uid)
     model = selected_model(model_catalog)
+    # 修复(游戏内切模型显示回退默认):若当前存档设了 per-save session_model(游戏内 ModelPicker
+    # 手动切换),app.* 必须反映它。否则 /api/state 永远回报全局默认 → 前端 Composer 的当前模型
+    # 标签 + picker 高亮(selectedKey = app.api_id::app.model_real_name)永远显示默认,用户以为
+    # 切换没保存。GM 实际已按优先级用 session_model(_ensure_loaded),此前仅展示层一直错。
+    try:
+        _sess = state.get_session_model()  # (model_id/real_name, api_id) 或 None
+    except Exception:
+        _sess = None
+    _sess_view = _session_model_app_view(model_catalog, _sess)
+    if _sess_view:
+        model = _sess_view
     is_admin = bool(api_user and api_user.get("role") == "admin")
     payload = state.status_payload()
     # 当前模型的 context window（tokens），由 platform_app.usage.context_window_for
