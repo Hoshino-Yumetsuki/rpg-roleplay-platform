@@ -52,11 +52,6 @@ WORKDIR /app/rpg
 
 EXPOSE 7860
 
-# 健康检查:/api/health 无需鉴权,始终检查 DB 连通性
-HEALTHCHECK --interval=15s --timeout=12s --start-period=40s --retries=3 \
-    CMD curl -sf http://localhost:7860/api/health || exit 1
-
-# Docker stop → SIGTERM → uvicorn 优雅 drain
 STOPSIGNAL SIGTERM
 
 # 单 worker(单进程 asyncio)。本应用持有进程内状态——SSE 事件总线
