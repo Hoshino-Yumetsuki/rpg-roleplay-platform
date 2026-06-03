@@ -127,7 +127,7 @@ function LeftRail({ collapsed, onToggle, state, runState, onNew, onSave, onSwitc
         {/* task 37：CSS 已把 a 改成 inline-flex 占满 foot，icon 的 verticalAlign/marginRight
             可以删掉，避免和 flex align-items 打架（之前是这个让 SVG 视觉外溢、点击命中
             落到父 div，触发 'gc-rail-foot intercepts pointer events'）。 */}
-        <a href="Platform.html" className="muted" data-tip="返回平台主页" style={{ fontSize: 12, borderBottom: "0" }}>
+        <a href="/platform/" className="muted" data-tip="返回平台主页" style={{ fontSize: 12, borderBottom: "0" }}>
           <Icon name="home" size={12} />
           返回主页
         </a>

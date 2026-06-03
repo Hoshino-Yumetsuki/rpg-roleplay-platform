@@ -1,21 +1,18 @@
-// Game Console 页面入口 — Vite ESM 版
-import '../web-vitals-rum.js';
+// Game Console 路由块 — 由 main.jsx 懒加载,挂载于 /console。
+// 共享基础设施(web-vitals / api-client / a11y / i18n)已由 main.jsx 预加载,此处不重复;
+// 仅保留 console 专属的 side-effect 模块。
 import React from 'react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import * as ReactDOM from 'react-dom/client';
 
 // 基础设施 side-effect 模块
 import '../mock-data.js';
-import '../api-client.js';
 // 运行环境采集 — 反馈抽屉提交时附带最近 20 个错误 + 10 个失败 API 给管理员排查
 import '../runtime-telemetry.js';
 import '../data-loader.js';
 import '../state-event-bridge.js';
 import '../worldbook-status-toast.js';
 import '../ui-atlas.js';
-import '../a11y-tooltip-labels.js';   // data-tip → aria-label 镜像(屏幕阅读器)
 import '../console-assistant-navigation.jsx';
-import '../i18n/index.js';   // 初始化 i18next + 接 interfaceLang
 
 // 反馈抽屉使用 Cloudscape 组件；游戏页也必须加载同一套暗色主题。
 import '@cloudscape-design/global-styles/index.css';
@@ -33,6 +30,7 @@ import ModelPicker from '../components/ModelPicker.jsx';
 import AdultSplash from '../components/AdultSplash.jsx';
 import { ErrorBoundary } from '../components/ErrorBoundary.jsx';
 import { FeedbackDrawerRoot } from '../components/FeedbackDrawer.jsx';
+import { appNavigate } from '../router.js';
 const SPLASH_VERSION = 'v1.0-2026-05-31';
 
 // density preset + narrative font init（等价原 HTML 非 babel inline script）
@@ -215,7 +213,7 @@ function GCWelcomeModal({ open, onClose }) {
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button
-            onClick={() => { onClose(); window.open('/settings-models', '_blank'); }}
+            onClick={() => { onClose(); window.open('/platform/settings/models', '_blank'); }}
             style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid var(--line-strong)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}
           >去配 API Key</button>
           <button
@@ -1302,7 +1300,7 @@ function App() {
         collapsed={railCollapsed}
         onToggle={() => setRailCollapsed((c) => !c)}
         state={game} runState={runState}
-        onNew={() => { if (!confirm('新建存档需要选择剧本与角色,将跳到平台『存档目录』走正规创建流。\n\n确认跳转?')) return; window.open('/saves', '_blank'); }}
+        onNew={() => { if (!confirm('新建存档需要选择剧本与角色,将跳到平台『存档目录』走正规创建流。\n\n确认跳转?')) return; window.open('/platform/saves', '_blank'); }}
         onSave={async () => { try { await window.api.game.saveGame(); window.__apiToast?.('已保存', { kind: 'ok' }); } catch (e) { window.__apiToast?.('保存失败', { kind: 'danger', detail: e?.message }); } }}
         onSwitchSave={async (sid) => { setMobileNav(false); try { if (runRef.current.sse || runState.running) stopRun(); await window.api.saves.activate(sid); reloadState(); } catch (e) { window.__apiToast?.('切换失败', { kind: 'danger', detail: e?.message }); } }}
         onMemoryMode={async (mode) => { setGame((g) => ({ ...g, memory: { ...(g.memory || {}), mode } })); try { await window.api.game.memoryMode(mode); } catch (_) {} }}
@@ -1400,7 +1398,7 @@ function App() {
                 <div style={{ marginBottom: 8 }}>无法加载存档，请检查网络或刷新页面。</div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                   <button className="btn ghost" onClick={() => { setRetryFailed(false); reloadState().then(ok => { if (!ok) setRetryFailed(true); }); reloadSaves(); }}>重试</button>
-                  <button className="btn ghost" onClick={() => { location.href = '/saves'; }}>返回存档列表</button>
+                  <button className="btn ghost" onClick={() => { location.href = '/platform/saves'; }}>返回存档列表</button>
                 </div>
               </div>
             </div>
@@ -1478,35 +1476,28 @@ function App() {
   );
 }
 
-const __mount = () => {
-  ReactDOM.createRoot(document.getElementById('root')).render(
+// Game Console 路由块导出 — React Router 在 /console 挂载本组件。
+export default function GameConsoleRoute() {
+  useEffect(() => {
+    // 鉴权 gate(原 __gateThenMount):在线但未登录 → 跳登录,带 next 回跳目标。
+    const offline = new URLSearchParams(location.search).has('offline');
+    const gate = (info) => {
+      if (info && info.online && !info.authed && !offline) {
+        const next = encodeURIComponent(location.pathname + location.search + location.hash);
+        appNavigate('/login?next=' + next, { replace: true });
+      }
+    };
+    if (window.RPG_DATA_READY) {
+      window.RPG_DATA_READY.then(gate).catch(() => {});
+    }
+  }, []);
+
+  return (
     <ErrorBoundary>
       <App />
       {/* 反馈抽屉根节点 — 监听 window.__openFeedback 全局事件,
-          游戏控制台的顶栏按钮 + Game console-assistant-navigation 都能触发 */}
+          游戏控制台的顶栏按钮 + console-assistant-navigation 都能触发 */}
       <FeedbackDrawerRoot />
     </ErrorBoundary>
   );
-  // 通知 HTML splash 淡出 + 移除节点(交给 CSS transition + setTimeout)
-  try {
-    document.body.classList.add('rpg-mounted');
-    setTimeout(() => {
-      const sp = document.getElementById('rpg-game-splash');
-      if (sp && sp.parentNode) sp.parentNode.removeChild(sp);
-    }, 300);
-  } catch (_) {}
-};
-const __gateThenMount = (info) => {
-  const offline = new URLSearchParams(location.search).has('offline');
-  if (info && info.online && !info.authed && !offline) {
-    const next = encodeURIComponent(location.pathname + location.search + location.hash);
-    location.replace('Login.html?next=' + next);
-    return;
-  }
-  __mount();
-};
-if (window.RPG_DATA_READY) {
-  window.RPG_DATA_READY.then(__gateThenMount);
-} else {
-  __mount();
 }

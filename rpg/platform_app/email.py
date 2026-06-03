@@ -98,7 +98,7 @@ def _render_email(
     secondary_html: str = "",
     footer_html: str = "",
 ) -> str:
-    support_url = f"{_public_base_url()}/Login.html"
+    support_url = f"{_public_base_url()}/login"
     return f"""<!doctype html>
 <html>
 <head>
@@ -281,7 +281,7 @@ def send_login_code_email(to: str, code: str, lang: str = "zh-CN") -> None:
 
 def build_password_reset_email(to: str, token: str, lang: str = "zh-CN") -> tuple[str, str, str]:
     is_zh = lang.lower().startswith("zh")
-    link = f"{_public_base_url()}/Login.html#reset?token={token}"
+    link = f"{_public_base_url()}/login#reset?token={token}"
     subject = "重置你的密码 / Reset your password" if is_zh else "Reset your password — Stellatrix RPG"
     text = (
         f"点击以下链接重置你的 Stellatrix RPG 密码（30 分钟内有效）：\n{link}\n\n"

@@ -6,7 +6,7 @@ import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL,
 import { useTranslation } from 'react-i18next';
 import { Icon } from './game-icons.jsx';
 import { useResizable, ResizeHandle } from './responsive.jsx';
-import { plNavigate } from './router.js';
+import { plNavigate, appNavigate, plHardNavigate } from './router.js';
 import { MODELS_DATA } from './pages/settings.jsx';
 // ESM 重构遗漏修复:ContinuePicker / NewGameModal 的真实现在 pages/saves.jsx,
 // platform-app 之前留了返回 null 的 stub 遮蔽它们 → "继续游戏"/"新建存档" 全失效。
@@ -1595,7 +1595,7 @@ function MeUserSettings() {
       await window.api.account.deactivate();
       window.__apiToast?.("账号已停用", { kind: "ok" });
       setConfirmDeact(false);
-      setTimeout(() => location.replace("Login.html"), 800);
+      setTimeout(() => plHardNavigate("/login"), 800);
     } catch (e) {
       window.__apiToast?.("停用失败", { kind: "danger", detail: e?.message });
       setBusyDeact(false);
@@ -1608,7 +1608,7 @@ function MeUserSettings() {
       await window.api.account.deleteAccount({});
       window.__apiToast?.("账号已删除", { kind: "ok" });
       setConfirmDelete(false);
-      setTimeout(() => location.replace("Login.html"), 800);
+      setTimeout(() => plHardNavigate("/login"), 800);
     } catch (e) {
       window.__apiToast?.("删除失败", { kind: "danger", detail: e?.message });
       setBusyDelete(false);
@@ -2187,7 +2187,7 @@ function ModulesPage() {
       if (!data || !data.ok) throw new Error(data?.detail || data?.error || "launch_module 失败");
       window.__apiToast?.(`已开始：${moduleName}（独立存档 #${data.save_id}）`, { kind: "ok" });
       try { window.dispatchEvent(new CustomEvent("rpg-saves-updated")); } catch (_) {}
-      window.location.href = "Game Console.html#rules";
+      window.location.href = "/console#rules";
     } catch (e) {
       setErrorMsg(String(e?.message || e));
       window.__apiToast?.("启动模组失败", { kind: "danger", detail: String(e?.message || e) });
@@ -3697,14 +3697,14 @@ function AuthPage() {
   const __nextOrDefault = () => {
     try {
       const raw = new URLSearchParams(location.search).get("next") || "";
-      if (!raw) return "Platform.html";
+      if (!raw) return "/platform/";
       // 拒绝包含控制字符的输入
-      if (/[\r\n\0]/.test(raw)) return "Platform.html";
+      if (/[\r\n\0]/.test(raw)) return "/platform/";
       // 严格验证：解析后必须同源，才允许跳转
       const u = new URL(raw, location.href);
-      if (u.origin !== location.origin) return "Platform.html";
+      if (u.origin !== location.origin) return "/platform/";
       return u.pathname + u.search + u.hash;
-    } catch (_) { return "Platform.html"; }
+    } catch (_) { return "/platform/"; }
   };
 
   // If already logged in → 跳目标页（next 或 Platform）
@@ -3942,7 +3942,7 @@ function AdminGuard({ children }) {
           当前账号角色为 <strong style={{ color: 'var(--text,#ebe7df)' }}>{role}</strong>。如需权限请联系管理员。
         </div>
         <div style={{ marginTop: 22 }}>
-          <a href="/profile" onClick={(e) => { e.preventDefault(); plNavigate('profile'); }}
+          <a href="/platform/" onClick={(e) => { e.preventDefault(); plNavigate('profile'); }}
             style={{ color: 'var(--accent,#c96442)', textDecoration: 'none', fontSize: 13.5 }}>← 返回主页</a>
         </div>
       </div>
@@ -4089,7 +4089,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
         return;
       }
       // about:blank 无法解析相对 URL,必须用绝对地址
-      const gameUrl = new URL("Game Console.html", window.location.href).href;
+      const gameUrl = new URL("/console", window.location.href).href;
       if (gameWin) gameWin.location.href = gameUrl;
       else window.open(gameUrl, "_blank");
     };
@@ -4148,7 +4148,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
   const onUserMenu = ({ detail }) => {
     const id = detail.id;
     if (id === 'signout') {
-      (async () => { try { await window.api?.auth?.logout?.(); } catch (_) {} location.replace('Login.html'); })();
+      (async () => { try { await window.api?.auth?.logout?.(); } catch (_) {} plHardNavigate('/login'); })();
     } else if (id === 'feedback') {
       setFeedbackOpen(true);
     } else if (id === 'help') {

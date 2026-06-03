@@ -2,7 +2,7 @@
   "ci": {
     "collect": {
       "staticDistDir": "./dist",
-      "url": ["http://localhost/Overview.html", "http://localhost/Platform.html", "http://localhost/Game%20Console.html"],
+      "url": ["http://localhost/index.html"],
       "numberOfRuns": 1
     },
     "assert": {

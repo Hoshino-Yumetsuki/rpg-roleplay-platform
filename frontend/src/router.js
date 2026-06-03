@@ -1,48 +1,95 @@
-// router.js —— Platform 单页应用的轻量 History 路由(取代 hash 路由)。
+// router.js —— SPA 路径 ↔ Platform page id 映射 + 跨区导航桥。
 //
-// 设计:
-//   · 干净 URL:page id `settings` ↔ 路径 `/settings`;首页 `profile` ↔ `/`。
-//   · plNavigate(id) = pushState + 派发 `pl-navigate` 事件;PlatformApp 同时监听
-//     popstate(浏览器前进/后退)与 pl-navigate(任意组件编程跳转)→ 统一更新 page。
-//   · 兼容旧链接:命中 `Platform.html#x` / 残留 hash 时,从 hash 抢救 page id,
-//     首屏 replaceState 规范化成干净路径(老书签/外链不破)。
-//   · query(?script=…)按需透传:plNavigate 默认丢弃旧 query,需要时显式传 search。
+// 全站现在是单页应用(单 index.html + React Router)。三个区:
+//   · /login            登录
+//   · /platform/<...>   多用户创作工作台(本文件负责其内部 page id ↔ 路径映射)
+//   · /console          RPG 游戏控制台
 //
-// 后端必须为这些路径做 history-fallback(返回 Platform.html),否则深链/刷新 404。
+// Platform 内部仍用「page id」描述子页(profile / settings-models / saves-branches …);
+// 这里把 page id 双向映射到 /platform 下的干净路径:
+//   · 首段命名空间用「首个连字符 → 斜杠」规则,保证可逆:
+//       settings-models       ↔ /platform/settings/models
+//       admin-dmca-takedowns  ↔ /platform/admin/dmca-takedowns  (只换第一个连字符)
+//       saves-branches        ↔ /platform/saves/branches
+//   · 无连字符的 id 直接作为单段:profile ↔ /platform/(首页)、scripts ↔ /platform/scripts
+//
+// 导航:
+//   · plNavigate(id)   —— platform 内部跳转:走 React Router(URL)+ 派发 pl-navigate(组件 page 状态)
+//   · appNavigate(path)—— 跨区跳转(/login、/console、/platform/...):走 React Router,触发懒加载切块
+//   · plHardNavigate   —— 整页导航(登出等需要清空所有运行时状态的场景)
+//
+// 后端 _SPAStaticFiles 对「无扩展名、非 /api」路径回退 index.html,深链/刷新不 404。
 
 export const PL_HASH_ALIASES = { branches: 'saves-branches', 'settings-deploy': 'admin-deploy' };
 
-// page id → 路径。
-// 注意:主页用 /profile 而非裸 /。生产 Cloudflare 有「裸 / → /Login.html」上游规则,
-// 若 SPA 落到 / 会被 CF 弹回登录页(登录后跳 / 会死循环)。用 /profile 绕开。
-export function plPageToPath(id) {
-  return '/' + (id || 'profile');
+const PLATFORM_BASE = '/platform';
+
+// React Router 的 navigate(由 main.jsx 在挂载后注入);未注入时退回 history API / location。
+let __routerNavigate = null;
+export function setRouterNavigate(fn) { __routerNavigate = fn; }
+
+// page id → 路径段(首个连字符换成斜杠)
+function idToSeg(id) {
+  const i = id.indexOf('-');
+  return i === -1 ? id : id.slice(0, i) + '/' + id.slice(i + 1);
+}
+// 路径段 → page id(首个斜杠换回连字符)
+function segToId(seg) {
+  const i = seg.indexOf('/');
+  return i === -1 ? seg : seg.slice(0, i) + '-' + seg.slice(i + 1);
 }
 
-// 当前 URL → page id(无效返回 null;空/根/入口文件名 → 'profile')
+// page id → 完整路径。首页 profile 规范化为 /platform/。
+export function plPageToPath(id) {
+  const pid = id || 'profile';
+  if (pid === 'profile') return PLATFORM_BASE + '/';
+  return PLATFORM_BASE + '/' + idToSeg(pid);
+}
+
+// 当前 URL → page id(无效返回 null;/platform 根 / 入口 → 'profile')。
 export function plPathToPage(validIds) {
   let raw = '';
-  try { raw = decodeURIComponent((location.pathname || '/').replace(/^\/+/, '').replace(/\/+$/, '')); }
-  catch (_) { raw = (location.pathname || '/').replace(/^\/+/, '').replace(/\/+$/, ''); }
-  // 旧 Platform.html#x 直达 / 残留 hash → 从 hash 抢救
-  if ((!raw || raw === 'Platform.html' || raw === 'index.html') && location.hash) {
+  try { raw = decodeURIComponent(location.pathname || '/'); }
+  catch (_) { raw = location.pathname || '/'; }
+  raw = raw.replace(/^\/+/, '').replace(/\/+$/, '');   // 去首尾斜杠
+  raw = raw.replace(/^platform(\/|$)/, '');            // 去掉 platform 段前缀
+  // 旧 Platform.html#x 深链 / 残留 hash → 从 hash 抢救
+  if ((!raw || raw === 'platform') && location.hash) {
     raw = location.hash.replace(/^#/, '').split('?')[0];
   }
-  raw = PL_HASH_ALIASES[raw] || raw;
-  if (!raw || raw === 'Platform.html' || raw === 'index.html') return 'profile';
-  if (validIds && !validIds.includes(raw)) return null;
-  return raw;
+  if (!raw || raw === 'platform') return 'profile';
+  let id = segToId(raw);
+  id = PL_HASH_ALIASES[id] || id;
+  if (validIds && !validIds.includes(id)) return null;
+  return id;
 }
 
-// 编程跳转:写 URL + 通知 PlatformApp。search 形如 '?script=12'(可选)。
+// Platform 内部编程跳转:写 URL(React Router)+ 通知 PlatformApp。search 形如 '?script=12'(可选)。
 export function plNavigate(id, opts = {}) {
   const { replace = false, search = '' } = opts;
   const url = plPageToPath(id) + (search || '');
-  try { history[replace ? 'replaceState' : 'pushState'](null, '', url); } catch (_) {}
+  if (__routerNavigate) {
+    __routerNavigate(url, { replace });
+  } else {
+    try { history[replace ? 'replaceState' : 'pushState'](null, '', url); } catch (_) {}
+  }
   try { window.dispatchEvent(new CustomEvent('pl-navigate', { detail: id })); } catch (_) {}
 }
 
-// 跨文档跳转(进入 Game Console 等独立文档时用):整页导航到干净路径。
+// 跨区导航(/login、/console、/platform/...):走 React Router 触发懒加载切块。
+export function appNavigate(path, opts = {}) {
+  const { replace = false } = opts;
+  if (__routerNavigate) {
+    __routerNavigate(path, { replace });
+    return;
+  }
+  try {
+    if (replace) location.replace(path);
+    else location.assign(path);
+  } catch (_) { location.href = path; }
+}
+
+// 整页导航:登出 / 会话过期等需要彻底清空运行时(React state、在途 SSE)的场景。
 export function plHardNavigate(path) {
   location.href = path;
 }

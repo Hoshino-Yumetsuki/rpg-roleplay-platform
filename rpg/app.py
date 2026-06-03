@@ -479,11 +479,10 @@ from starlette.exceptions import HTTPException as _StarletteHTTPException
 
 class _SPAStaticFiles(_StaticFiles):
     """SPA History 路由回退。
-    Platform 是单页应用,干净 URL(/settings、/saves、/cards 等)对应不存在的静态文件;
-    dist 里也没有 index.html。Starlette StaticFiles(html=True) 不会为任意不存在路径回退,
-    直接深链/刷新就会 404。这里把这类「无扩展名、非 /api」的 404 兜回 Platform.html(SPA 壳),
-    由前端 router.js 按 location.pathname 解析出对应页面。
-    保留:真实文件(Login.html / Game Console.html / /assets/*)正常直出;
+    前端是单页应用(单 index.html + React Router),干净 URL(/login、/platform/*、/console
+    等)对应不存在的静态文件。这里把这类「无扩展名、非 /api」的 404 兜回 index.html(SPA 壳),
+    由前端 React Router 按 location.pathname 解析出对应路由(/ → /platform/)。
+    保留:真实文件(/assets/* 等)正常直出;
     带扩展名的缺失资源(/assets/x.js)仍 404(不返回 HTML,避免 JS/CSS 被误当页面);
     /api/* 不兜底(交给 API 层返回 JSON 404)。"""
 
@@ -495,7 +494,7 @@ class _SPAStaticFiles(_StaticFiles):
                 last = path.rsplit("/", 1)[-1]
                 is_root = path in ("", ".", "/")
                 if not path.startswith("api/") and (is_root or "." not in last):
-                    return await super().get_response("Platform.html", scope)
+                    return await super().get_response("index.html", scope)
             raise
 
 
@@ -505,7 +504,7 @@ _FRONTEND_ROOT = _Path(__file__).resolve().parent.parent / "frontend"
 # dist 不存在(未 npm run build)时回退源码目录,仅配合 vite dev server (:5173) 用。
 _FRONTEND_DIR = _FRONTEND_ROOT / "dist" if (_FRONTEND_ROOT / "dist").is_dir() else _FRONTEND_ROOT
 if _FRONTEND_DIR.is_dir():
-    # SPA history-fallback:/ 与所有干净路径 → Platform.html(见 _SPAStaticFiles)。
+    # SPA history-fallback:/ 与所有干净路径(/login、/platform/*、/console) → index.html(见 _SPAStaticFiles)。
     app.mount("/", _SPAStaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")
 
 # 注：init_db 已移到 core.startup.lifespan startup 段（lazy import 避免循环依赖）。
@@ -2105,5 +2104,5 @@ if __name__ == "__main__":
     import uvicorn
 
     print(f"[API] {APP_TITLE} RPG backend: http://{HOST}:{PORT}")
-    print("[UI]  React frontend served separately via Vite (默认 http://127.0.0.1:5173/Platform.html)")
+    print("[UI]  React frontend served separately via Vite (默认 http://127.0.0.1:5173/platform/)")
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")

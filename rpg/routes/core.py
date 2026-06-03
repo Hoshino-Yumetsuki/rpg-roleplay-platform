@@ -21,14 +21,15 @@ router = APIRouter()
 
 @router.get("/")
 async def index() -> JSONResponse:
-    """Backend root。前端由 frontend/ React 应用提供（Vite dev server 或静态部署）。"""
+    """Backend root。前端是单页应用(单 index.html + React Router),由 frontend/ 提供
+    (Vite dev server :5173,或同源静态部署)。生产中本路由被 StaticFiles mount 遮蔽。"""
     from app import APP_TITLE
     return JSONResponse({
         "ok": True,
         "service": f"{APP_TITLE} RPG backend",
         "frontend": {
-            "platform": "Platform.html (Vite dev: http://127.0.0.1:5173/Platform.html)",
-            "game_console": "Game Console.html (Vite dev: http://127.0.0.1:5173/Game%20Console.html)",
+            "spa": "index.html (Vite dev: http://127.0.0.1:5173/)",
+            "routes": ["/login", "/platform/", "/console"],
         },
         "docs": "/docs",
     })

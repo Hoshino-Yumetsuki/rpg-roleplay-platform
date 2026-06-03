@@ -16,7 +16,7 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-const __DEFAULT_NEXT = 'Platform.html';
+const __DEFAULT_NEXT = '/platform/';
 
 function __resolveNextOrDefault() {
   try {
@@ -247,7 +247,7 @@ function LoginApp() {
           setErr('');
           // 清掉 magic 参数防回退按钮重放
           try { history.replaceState(null, '', location.pathname); } catch (_) {}
-          setTimeout(() => { location.href = (j.needs_profile ? '/profile-setup' : '/profile'); }, 500);
+          setTimeout(() => { location.href = '/platform/'; }, 500);
         } else if (j.ok && j.next === 'otp') {
           // 旧版后端兼容(部署期回退)
           setMagicEmail(j.email || emailParam);

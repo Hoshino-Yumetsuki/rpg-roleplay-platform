@@ -994,7 +994,7 @@ function ContinuePicker({ open, save, focusedNodeId, onClose }) {
       window.__apiToast?.(t('saves.toast.branch_activate_fail'), { kind: "danger", detail: e?.message, duration: 3000 });
       return;  // 不要带着旧 runtime 进去
     }
-    location.href = "Game Console.html";
+    location.href = "/console";
   };
 
   // STEP 1: Save selection

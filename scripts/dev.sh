@@ -76,7 +76,7 @@ check_backend() {
 check_frontend() {
   local pid; pid="$(_pid_on_port "$FRONTEND_PORT")"
   [ -z "$pid" ] && { echo "  $(_bad) frontend :$FRONTEND_PORT 未运行"; return 1; }
-  local code; code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$FRONTEND_PORT/Platform.html" 2>/dev/null)
+  local code; code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$FRONTEND_PORT/platform/" 2>/dev/null)
   if [ "$code" = "200" ]; then
     echo "  $(_ok) frontend :$FRONTEND_PORT (pid=$pid, Platform.html HTTP $code)"
   else
@@ -152,7 +152,7 @@ start_frontend() {
   # vite 冷启动比 python http.server 慢 (要做 deps 预编译),给 20s
   local i; for i in $(seq 1 40); do
     sleep 0.5
-    local code; code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$FRONTEND_PORT/Platform.html" 2>/dev/null)
+    local code; code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$FRONTEND_PORT/platform/" 2>/dev/null)
     [ "$code" = "200" ] && { echo "  $(_ok) frontend ready in ~${i}*0.5s (改 jsx/css 自动 HMR)"; return 0; }
   done
   echo "  $(_bad) frontend 20s 内没起来,看 $FRONTEND_LOG"
@@ -168,7 +168,7 @@ cmd_status() {
   check_frontend || true
   echo ""
   echo "  日志: $LOG_DIR/{backend.log, frontend.log}"
-  echo "  入口: http://127.0.0.1:$FRONTEND_PORT/Platform.html"
+  echo "  入口: http://127.0.0.1:$FRONTEND_PORT/platform/"
 }
 
 cmd_start() {
@@ -177,7 +177,7 @@ cmd_start() {
   start_backend  || exit 1
   start_frontend || exit 1
   echo ""
-  echo "$(_ok) 全部就绪 →  http://127.0.0.1:$FRONTEND_PORT/Platform.html"
+  echo "$(_ok) 全部就绪 →  http://127.0.0.1:$FRONTEND_PORT/platform/"
   echo ""
   echo "  $(_color 36 "·") 改 rpg/*.py    → uvicorn 自动重启 (1-3s)"
   echo "  $(_color 36 "·") 改 frontend/   → vite HMR 自动热更新 (无需刷新)"

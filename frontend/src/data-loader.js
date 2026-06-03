@@ -284,7 +284,7 @@ function injectDemoBanner() {
     span.appendChild(document.createTextNode("：当前显示的存档 / 角色 / 剧本均为内置示例，不会落库。登录后可创建自己的真实数据。"));
 
     const link = document.createElement("a");
-    link.href = "Login.html";
+    link.href = "/login";
     link.textContent = "立即登录";
     link.style.cssText = "color:#ffd591;text-decoration:underline;font-weight:600;";
 
@@ -321,7 +321,7 @@ async function bootstrap() {
   // 让 mount 脚本可同步读到登录态（不必 await 整个 ready Promise）
   window.RPG_AUTH = { authed, online: true };
   // task 45：未登录 / Login 页除外的所有页面都给横幅
-  if (!authed && !/Login\.html/.test(location.pathname)) {
+  if (!authed && location.pathname !== "/login") {
     injectDemoBanner();
   }
   // Novel / runSteps remain on baseline until backend exposes them.

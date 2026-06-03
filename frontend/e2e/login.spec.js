@@ -12,7 +12,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Login page', () => {
   test('loads the login page', async ({ page }) => {
-    await page.goto('/Login.html');
+    await page.goto('/login');
     // The page should load without errors
     await expect(page).toHaveTitle(/.*/);
     // The page should contain a form or login-related content
@@ -21,7 +21,7 @@ test.describe('Login page', () => {
   });
 
   test('displays schema-driven form fields', async ({ page }) => {
-    await page.goto('/Login.html');
+    await page.goto('/login');
     // Wait for the auth schema to load (the LoginApp component fetches
     // /api/v1/auth/schema on mount and renders fields dynamically)
     // If backend is up, we should see username/password fields
@@ -48,7 +48,7 @@ test.describe('Login page', () => {
       }
     });
 
-    await page.goto('/Login.html');
+    await page.goto('/login');
     await page.waitForLoadState('networkidle').catch(() => {});
 
     // Filter out expected network errors (backend not running)

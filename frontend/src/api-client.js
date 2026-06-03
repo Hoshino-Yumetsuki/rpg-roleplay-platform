@@ -83,12 +83,12 @@
 
       // 401 — session expired; redirect once, then still throw so caller knows.
       if (res.status === 401) {
-        if (_AUTH_REDIRECT_ARMED && !location.pathname.endsWith("Login.html")) {
+        if (_AUTH_REDIRECT_ARMED && location.pathname !== "/login") {
           _AUTH_REDIRECT_ARMED = false;
           try {
             window.dispatchEvent(new CustomEvent("rpg-auth-expired"));
           } catch (_) {}
-          location.replace("Login.html?next=" + encodeURIComponent(location.pathname + location.search + location.hash));
+          location.replace("/login?next=" + encodeURIComponent(location.pathname + location.search + location.hash));
         }
         // Fall through: throw ApiError so callers that catch can handle it too.
       }

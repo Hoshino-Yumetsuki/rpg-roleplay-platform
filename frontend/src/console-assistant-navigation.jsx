@@ -26,6 +26,9 @@
 // ESM 模块只执行一次,不需要幂等 guard
 window.__cap_navigation_installed = true;
 
+// ---------- 路由桥 ----------
+import { plNavigate, appNavigate, plPageToPath } from "./router.js";
+
 // ---------- 全局 dirty 表 ----------
 if (!(window.__cap_dirty_pages instanceof Map)) {
   window.__cap_dirty_pages = new Map();
@@ -263,28 +266,18 @@ function cssEscape(s) {
 
 // ---------- 触发页面跳转 ----------
 function navigateTo(pageId) {
-  // task 110: 跨 SPA 跳转到 Game Console (独立 HTML)
+  // 跨区跳转到 Game Console
   if (pageId === "__GAME_CONSOLE__") {
-    try {
-      location.href = "Game Console.html";
-      return true;
-    } catch (_) { return false; }
+    try { appNavigate("/console"); return true; } catch (_) { return false; }
   }
-  const isPlatform = /Platform\.html/i.test(location.pathname)
-    || (document.body && document.body.getAttribute("data-screen-label") === "Platform");
-  if (isPlatform) {
-    try { history.replaceState(null, "", "#" + pageId); } catch (_) {}
-    try { window.dispatchEvent(new HashChangeEvent("hashchange")); } catch (_) {
-      // 老浏览器兜底
-      const ev = document.createEvent("Event");
-      ev.initEvent("hashchange", true, false);
-      window.dispatchEvent(ev);
-    }
-    return true;
+  const onPlatform = location.pathname.startsWith("/platform");
+  if (onPlatform) {
+    // 平台内部:走 React Router + pl-navigate(PlatformApp 监听 → 更新 page)
+    try { plNavigate(pageId); return true; } catch (_) { return false; }
   }
-  // Game Console: 跨页跳到 Platform
+  // 在 Game Console:跨区到平台页 → 新标签页打开,保留游戏标签
   try {
-    window.open("/" + pageId, "_blank");
+    window.open(plPageToPath(pageId), "_blank");
     return true;
   } catch (_) { return false; }
 }

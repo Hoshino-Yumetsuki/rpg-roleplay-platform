@@ -59,7 +59,7 @@ cd rpg-roleplay-platform
 ./scripts/setup.sh        # venv + 依赖 + 建库 + .env + 迁移，然后启动
 ```
 
-`setup.sh` 幂等（可重复跑）：建 venv 装依赖、建 `rpg` 库/角色 + 扩展、写 `rpg/.env`、跑迁移，再起后端（`:7860`）+ 前端（`:5173`）。跑完打开 <http://localhost:5173/Login.html>；加 `--no-start` 只安装不启动。建库和 `vector` 扩展需要 Postgres **超级用户**（本地默认装即是；Linux 服务器上先以 `postgres` 预建角色/库/扩展再重跑）。
+`setup.sh` 幂等（可重复跑）：建 venv 装依赖、建 `rpg` 库/角色 + 扩展、写 `rpg/.env`、跑迁移，再起后端（`:7860`）+ 前端（`:5173`）。跑完打开 <http://localhost:5173/login>；加 `--no-start` 只安装不启动。建库和 `vector` 扩展需要 Postgres **超级用户**（本地默认装即是；Linux 服务器上先以 `postgres` 预建角色/库/扩展再重跑）。
 
 ### 手动安装
 
@@ -101,10 +101,10 @@ $EDITOR .env           # 填 DATABASE_URL、RPG_MASTER_KEY、RESEND_API_KEY 等
 cd ../frontend && npm install && npm run dev
 
 # 8. 打开登录页（这是多页 Vite 构建，不是 SPA）
-open http://localhost:5173/Login.html
+open http://localhost:5173/login
 ```
 
-进 Login 注册账号, 然后跳到 `Platform.html`（剧本库 / 角色卡 / 设置）或 `Game Console.html`（实际游戏画面）。
+进 Login 注册账号, 然后跳到 `/platform/`（剧本库 / 角色卡 / 设置）或 `/console`（实际游戏画面）。
 
 > **生产部署**: 见 `deploy/` 下的 Docker / 裸机部署模板。
 
@@ -113,7 +113,7 @@ open http://localhost:5173/Login.html
 ```
 ┌─ browser ──────────────────────────────────────────────────┐
 │  React 18 + Vite + JS (ESM multi-page)                     │
-│  Login.html · Platform.html · Game Console.html            │
+│  Single Vite SPA · /login · /platform · /console           │
 │  Cloudscape Design System · api-client.js · i18n           │
 └───────────────────────────────┬────────────────────────────┘
                                 │ fetch / SSE
@@ -229,7 +229,7 @@ FastAPI 后端，~30+ 个路由模块 / agents / state mixin，~1k pytest 用例
 │   └── tests/                 # pytest 用例
 │
 ├── frontend/                  # React 18 + Vite（多页 ESM）
-│   ├── Login.html · Platform.html · Game Console.html
+│   ├── index.html (single SPA) · /login · /platform · /console
 │   └── src/
 │       ├── pages/             # settings/scripts/cards/saves/admin
 │       ├── components/        # HelpDrawer/AdultSplash/FeedbackDrawer

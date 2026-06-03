@@ -5,48 +5,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="api-base" content="" />
   <meta name="api-prefix" content="/api/v1" />
-  <title>RPG Roleplay · 平台</title>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <title>RPG Roleplay</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
-  <link rel="stylesheet" href="src/tokens.css?v=20260531-warm9" />
-  <link rel="stylesheet" href="src/platform.css?v=20260527-pop1" />
-  <link rel="stylesheet" href="src/motion.css" />
-  <link rel="stylesheet" href="src/ui/kit.css?v=20260530-aw1" />
-
-  <!-- Vite: CDN UMD 脚本已移除，改由 @vitejs/plugin-react 处理 JSX + React -->
+  <!-- 全站共享样式 — 原先散落在 Login/Platform/Game Console 三个 HTML 的 <link> 合并到此处。
+       SPA 单壳一次加载,各路由块再按需 import Cloudscape 等组件样式。 -->
+  <link rel="stylesheet" href="/src/tokens.css" />
+  <link rel="stylesheet" href="/src/platform.css" />
+  <link rel="stylesheet" href="/src/motion.css" />
+  <link rel="stylesheet" href="/src/ui/kit.css" />
+  <link rel="stylesheet" href="/src/game-console.css" />
 </head>
-<body data-screen-label="Platform">
-  <!-- 首屏 splash:JS bundle 下载期间避免白屏,body.platform-mounted 后 fade-out -->
+<body>
+  <!-- 首屏 splash:JS bundle / 懒加载路由块下载期间避免白屏,React 挂载后由 main.jsx 移除。 -->
   <style>
-    #platform-splash {
+    #app-splash {
       position: fixed; inset: 0; display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       background: var(--bg, #121110); color: var(--text, #c8c2b7);
       font-family: 'Noto Sans SC', system-ui, sans-serif;
       z-index: 1; transition: opacity .25s ease-out;
     }
-    #platform-splash .spinner {
+    #app-splash .spinner {
       width: 38px; height: 38px;
       border: 3px solid rgba(201, 100, 66, .25);
       border-top-color: var(--accent, #c96442);
       border-radius: 50%;
-      animation: plt-spin .85s linear infinite;
+      animation: app-spin .85s linear infinite;
       margin-bottom: 18px;
     }
-    #platform-splash .label { font-size: 14px; opacity: .72; letter-spacing: .04em; }
-    @keyframes plt-spin { to { transform: rotate(360deg); } }
-    body.platform-mounted #platform-splash { opacity: 0; pointer-events: none; }
+    #app-splash .label { font-size: 14px; opacity: .72; letter-spacing: .04em; }
+    @keyframes app-spin { to { transform: rotate(360deg); } }
+    body.app-mounted #app-splash { opacity: 0; pointer-events: none; }
   </style>
-  <div id="platform-splash">
+  <div id="app-splash">
     <div class="spinner" aria-hidden="true"></div>
     <div class="label">加载中…</div>
   </div>
 
   <div id="root"></div>
 
-  <!-- Vite ESM 入口：替代原先多条 text/babel 脚本，按顺序 import 所有依赖并挂载 React 根 -->
-  <script type="module" src="src/entries/platform.jsx"></script>
+  <!-- 唯一 ESM 入口:React Router 按路径懒加载 login / platform / console 路由块。 -->
+  <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

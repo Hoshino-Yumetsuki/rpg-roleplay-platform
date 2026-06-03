@@ -1,13 +1,11 @@
-// Platform 页面入口 — Vite ESM 版
-import '../web-vitals-rum.js';
+// Platform 路由块 — 由 main.jsx 懒加载,挂载于 /platform/*。
+// 共享基础设施(web-vitals / api-client / a11y / i18n)已由 main.jsx 预加载,此处不重复;
+// 仅保留 platform 专属的 side-effect 模块。
 import React from 'react';
 import { useState, useEffect } from 'react';
-import * as ReactDOM from 'react-dom/client';
 
-// 基础设施 side-effect 模块(设置 window.api / window.MOCK_* / SSE bridge 等)
+// 基础设施 side-effect 模块(设置 window.MOCK_* / SSE bridge 等)
 import '../mock-data.js';
-import '../api-client.js';
-import '../a11y-tooltip-labels.js';   // data-tip → aria-label 镜像(屏幕阅读器)
 // 运行环境采集 — 反馈抽屉提交时附带最近 20 个错误 + 10 个失败 API 给管理员排查
 import '../runtime-telemetry.js';
 import '../data-loader.js';
@@ -15,7 +13,6 @@ import '../state-event-bridge.js';
 import '../worldbook-status-toast.js';
 import '../ui-atlas.js';
 import '../console-assistant-navigation.jsx';
-import '../i18n/index.js';   // 初始化 i18next + 接 interfaceLang
 
 // Cloudscape 设计系统 + 暖色主题(UI 底座)
 import '@cloudscape-design/global-styles/index.css';
@@ -34,11 +31,10 @@ import { ScriptsPage } from '../pages/scripts.jsx';
 import { CardsPage } from '../pages/cards.jsx';
 import { SettingsPage } from '../pages/settings.jsx';
 import { FeedbackPage } from '../pages/feedback.jsx';
-import { plPathToPage, plNavigate, plPageToPath } from '../router.js';
+import { plPathToPage, plNavigate, plPageToPath, appNavigate } from '../router.js';
 
 // AGE-02: splash gate
 import AdultSplash from '../components/AdultSplash.jsx';
-import { ErrorBoundary } from '../components/ErrorBoundary.jsx';
 const SPLASH_VERSION = 'v1.0-2026-05-31';
 
 // ── 挂载 ──
@@ -198,34 +194,21 @@ function PlatformApp() {
   );
 }
 
-const __mount = () => {
-  ReactDOM.createRoot(document.getElementById('root')).render(
-    <ErrorBoundary>
-      <PlatformApp />
-    </ErrorBoundary>
-  );
-  // 通知 HTML splash 淡出并移除节点
-  try {
-    document.body.classList.add('platform-mounted');
-    setTimeout(() => {
-      const sp = document.getElementById('platform-splash');
-      if (sp && sp.parentNode) sp.parentNode.removeChild(sp);
-    }, 300);
-  } catch (_) {}
-};
-const __gateThenMount = (info) => {
-  const offline = new URLSearchParams(location.search).has('offline');
-  if (info && info.online && !info.authed && !offline) {
-    const next = encodeURIComponent(
-      location.pathname + location.search + location.hash
-    );
-    location.replace('Login.html?next=' + next);
-    return;
-  }
-  __mount();
-};
-if (window.RPG_DATA_READY) {
-  window.RPG_DATA_READY.then(__gateThenMount);
-} else {
-  __mount();
+// Platform 路由块导出 — React Router 在 /platform/* 挂载本组件。
+export default function PlatformRoute() {
+  useEffect(() => {
+    // 鉴权 gate(原 __gateThenMount):在线但未登录 → 跳登录,带 next 回跳目标。
+    const offline = new URLSearchParams(location.search).has('offline');
+    const gate = (info) => {
+      if (info && info.online && !info.authed && !offline) {
+        const next = encodeURIComponent(location.pathname + location.search + location.hash);
+        appNavigate('/login?next=' + next, { replace: true });
+      }
+    };
+    if (window.RPG_DATA_READY) {
+      window.RPG_DATA_READY.then(gate).catch(() => {});
+    }
+  }, []);
+
+  return <PlatformApp />;
 }

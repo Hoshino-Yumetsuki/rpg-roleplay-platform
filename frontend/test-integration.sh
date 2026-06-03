@@ -32,9 +32,9 @@ run() {
 }
 
 echo "--- Static frontend assets (port 5173)"
-run static GET "$BASE_FE/Login.html"
-run static GET "$BASE_FE/Platform.html"
-run static GET "$BASE_FE/Game%20Console.html"
+run static GET "$BASE_FE/login"
+run static GET "$BASE_FE/platform/"
+run static GET "$BASE_FE/console"
 run static GET "$BASE_FE/src/api-client.js"
 run static GET "$BASE_FE/src/data-loader.js"
 run static GET "$BASE_FE/src/platform-app.jsx"

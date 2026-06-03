@@ -59,7 +59,7 @@ cd rpg-roleplay-platform
 ./scripts/setup.sh        # venv + deps + database + .env + migrations, then launches
 ```
 
-`setup.sh` is idempotent (safe to re-run): it creates the venv + installs deps, creates the `rpg` database/role + extensions, writes `rpg/.env`, runs migrations, then starts the backend (`:7860`) + frontend (`:5173`). Open <http://localhost:5173/Login.html> when it finishes; pass `--no-start` to set up without launching. Creating the database + the `vector` extension needs a Postgres **superuser** (a default local install runs as one; on a Linux server pre-create the role/db/extensions as `postgres`, then re-run).
+`setup.sh` is idempotent (safe to re-run): it creates the venv + installs deps, creates the `rpg` database/role + extensions, writes `rpg/.env`, runs migrations, then starts the backend (`:7860`) + frontend (`:5173`). Open <http://localhost:5173/login> when it finishes; pass `--no-start` to set up without launching. Creating the database + the `vector` extension needs a Postgres **superuser** (a default local install runs as one; on a Linux server pre-create the role/db/extensions as `postgres`, then re-run).
 
 ### Manual setup
 
@@ -101,10 +101,10 @@ $EDITOR .env           # set DATABASE_URL, RPG_MASTER_KEY, RESEND_API_KEY etc.
 cd ../frontend && npm install && npm run dev
 
 # 8. Open the login page (multi-page Vite build, not a SPA)
-open http://localhost:5173/Login.html
+open http://localhost:5173/login
 ```
 
-You'll land on the Login page, create a user, then bounce to `Platform.html` (library + cards + scripts) or `Game Console.html` (the actual gameplay screen).
+You'll land on the Login page, create a user, then land on `/platform/` (library + cards + scripts) or `/console` (the actual gameplay screen).
 
 > **Production deployment**: see `deploy/` for Docker / bare-metal templates.
 
@@ -113,7 +113,7 @@ You'll land on the Login page, create a user, then bounce to `Platform.html` (li
 ```
 ┌─ browser ──────────────────────────────────────────────────┐
 │  React 18 + Vite + JS (ESM multi-page)                     │
-│  Login.html · Platform.html · Game Console.html            │
+│  Single Vite SPA · /login · /platform · /console           │
 │  Cloudscape Design System · api-client.js · i18n           │
 └───────────────────────────────┬────────────────────────────┘
                                 │ fetch / SSE
@@ -229,7 +229,7 @@ A full annotated example lives in `deploy/.env.example`.
 │   └── tests/                 # pytest cases
 │
 ├── frontend/                  # React 18 + Vite (multi-page ESM)
-│   ├── Login.html · Platform.html · Game Console.html
+│   ├── index.html (single SPA) · /login · /platform · /console
 │   └── src/
 │       ├── pages/             # settings/scripts/cards/saves/admin
 │       ├── components/        # HelpDrawer/AdultSplash/FeedbackDrawer
