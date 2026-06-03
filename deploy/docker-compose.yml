@@ -15,6 +15,7 @@ services:
       # openssl rand -hex 32 — leaking it = all stored user API keys decryptable.
       # you mast set this in production.
       RPG_MASTER_KEY: your_master_key_here
+      RPG_DISABLE_EMAIL_VERIFICATION: "true"
 
       # 部署模式只有两个规范值:server / local。
       # server = 多用户:强制鉴权 + db 存储 + 危险工具默认关(本部署用这个)。

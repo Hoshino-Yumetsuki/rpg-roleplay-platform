@@ -243,14 +243,23 @@ def admin_unlock(ip: str, username: str) -> None:
 
 def _bootstrap_admin_allowed(setup_token: str | None) -> bool:
     """首用户(空 users 表)能否被授予 admin。
+    - 若 users 表为空:始终允许首位注册用户获得 admin（避免把实例自锁）。
 
-    - 本地/非鉴权模式:允许(单用户桌面场景,无引导风险)。
-    - server/强制鉴权模式:必须配置 RPG_SETUP_TOKEN 且请求携带匹配令牌,
-      否则首用户仅为普通 user —— 杜绝公网首注册抢 admin(CWE-269)。
-
-    注:自托管单人若想免 token 让首用户直接成 admin,把部署模式设为 local
-    (或 RPG_REQUIRE_AUTH=0)即可走上面的免鉴权分支;server 模式保留硬门控。
+    - 其余情况下:若部署为 local / 非鉴权模式,也允许;若为 server 强制鉴权
+      且配置了 RPG_SETUP_TOKEN 则需匹配该令牌才可授予 admin。默认情况下
+      只有空库时会跳过令牌检查以保证可救回性。
     """
+    # 空 users 时允许 bootstrap admin（防止误配置导致无法创建 admin）
+    try:
+        init_db()
+        with connect() as db:
+            any_user = db.execute("select 1 from users limit 1").fetchone()
+            if not any_user:
+                return True
+    except Exception:
+        # 若 DB 不可用时保守地允许，以便初始化脚本/迁移阶段能创建首个账号
+        return True
+
     from core.config import effective_auth_required
     from core.config import setup_token as _cfg_setup_token
     if not effective_auth_required():
@@ -401,22 +410,44 @@ def register(
 
     _PENDING_REGISTER[email_norm] = pending_json
 
-    # ── 本地/自托管模式:跳过邮箱验证 ──────────────────────────────────────────
-    # 开源用户反馈:自托管没有 RESEND_API_KEY → 验证码发不出(Resend 403)→ 卡注册,
-    # 只能从后端日志扒验证码。邮箱验证只在 server 强制鉴权模式有意义(数据在云端);
-    # 本地部署数据保存在本地,直接用刚生成的 code 完成注册并登录,无需邮件。
+    # 决定是否跳过邮箱验证：本地部署 (require_auth=False) 或 admin.registration_config 里
+    # 明确设置了 skip_email_verification = true 时跳过并直接完成注册。
     from core.config import require_auth as _require_auth_reg
-    if not _require_auth_reg():
+    skip_email_verification = False
+    # 环境变量控制: 若 RPG_DISABLE_EMAIL_VERIFICATION = "true", 全局禁用邮箱验证
+    import os
+    if os.getenv("RPG_DISABLE_EMAIL_VERIFICATION", "").lower() == "true":
+        skip_email_verification = True
+    try:
+        # 重取注册配置以查找 skip_email_verification 开关
+        with connect() as _db:
+            row = _db.execute(
+                "select value from app_config where key = 'admin.registration_config' limit 1"
+            ).fetchone()
+            cfg = (row.get("value") if row else None) or {}
+            # cfg 可能是 JSON 字符串或已解析的 dict
+            if isinstance(cfg, str):
+                import json as _json
+                try:
+                    cfg = _json.loads(cfg)
+                except Exception:
+                    cfg = {}
+            if isinstance(cfg, dict) and cfg.get("skip_email_verification"):
+                skip_email_verification = True
+    except Exception:
+        pass
+
+    if not _require_auth_reg() or skip_email_verification:
         try:
             user, token = confirm_email_verification(email_norm, code)
-            _log.info("[register] 本地模式自动完成注册(免邮箱验证) email=%s", _mask_email(email_norm))
+            _log.info("[register] 自动完成注册(免邮箱验证) email=%s", _mask_email(email_norm))
             return {
                 "ok": True, "pending_verify": False, "auto_verified": True,
                 "user": user, "session_token": token,
                 "email_mask": _mask_email(email_norm),
             }
         except Exception as _e:  # noqa: BLE001
-            _log.warning("[register] 本地模式自动验证失败,回退验证码流程: %s", _e)
+            _log.warning("[register] 自动验证失败,回退验证码流程: %s", _e)
 
     # ── server 模式:发验证码邮件 ──────────────────────────────────────────────
     from .email import EmailSendError, send_verification_email
