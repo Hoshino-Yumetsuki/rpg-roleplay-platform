@@ -465,6 +465,9 @@ async def run_context_phase(
         stop_requested=stop_event.is_set,
         user_id=api_user["id"] if api_user else None,
         script_id=active_script_id(api_user),
+        # task 107E: 透传 save_id,否则 RuntimePhaseDigestProvider(本存档历史摘要)+
+        # 锚点 NPC 强制登场(_extract_anchor_npc_names)因 services.save_id=None 永远 skipped。
+        save_id=ctx.early_active_save_id,
         api_id_override=_sub_api,
         model_override=_sub_model,
     ):
