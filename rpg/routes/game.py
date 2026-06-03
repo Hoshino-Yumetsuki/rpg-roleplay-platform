@@ -484,6 +484,15 @@ async def api_chat(
     # 老的 Game Console.html 发 text，新的 game-app.jsx 也偶尔走 message。
     # 后端必须两边兼容，否则用户输入直接被 "空消息" error 吞掉。
     message = (body_dict.get("message") or body_dict.get("text") or "").strip()
+    # 输入上限:nginx client_max_body_size=50m 是外层兜底,但 app 层缺单条消息上限 →
+    # 超长消息会进上下文撑爆 LLM(困惑的 context overflow)并膨胀 history/DB。给清晰 400。
+    # 32KB 对正常角色扮演输入极宽裕(约万余汉字)。
+    _MAX_CHAT_MSG_CHARS = 32000
+    if len(message) > _MAX_CHAT_MSG_CHARS:
+        return StreamingResponse(
+            iter([_sse("error", {"message": f"消息过长({len(message)} 字符,上限 {_MAX_CHAT_MSG_CHARS});请拆分后发送"})]),
+            media_type="text/event-stream",
+        )
     attachments = _save_attachments(body_dict.get("attachments") or [], user_id=api_user["id"] if api_user else None)
     message_for_model = _message_with_attachments(message, attachments)
     if not message_for_model.strip():
