@@ -168,6 +168,7 @@ def _get_vertex_client(user_id: int | None = None):
         return _VERTEX_CLIENT_CACHE[cache_key]
     try:
         from google import genai
+
         from core.vertex_sa import load_sa_credentials
 
         credentials, project_id = load_sa_credentials(user_id, allow_platform_fallback=True)
@@ -222,9 +223,9 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
     与 DB 向量列(默认 768)一致。模型不支持 dimensions(如 ada-002)时会 400 → 自动去掉
     dimensions 重试一次。
     """
-    import urllib.request
-    import urllib.error
     import json as _json
+    import urllib.error
+    import urllib.request
     global _last_openai_embed_error
     effective_url = (base_url.rstrip("/") if base_url else "https://api.openai.com/v1") + "/embeddings"
 
@@ -289,9 +290,9 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
 
 def _embed_via_gemini(model: str, api_key: str, texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]] | None:
     """Gemini native embedContent API, avoiding OpenAI-compatible batchEmbed quota."""
-    import urllib.request
-    import urllib.error
     import json as _json
+    import urllib.error
+    import urllib.request
 
     if not api_key:
         log.warning("[embedding] gemini api_id but no api_key")
@@ -571,7 +572,6 @@ def _embed_chunks_loop(script_id: int, user_id: int) -> None:
     daemon thread 异常死亡 / backend 重启后下次 embed_script 不会卡在
     already_running 状态。
     """
-    from ..db import connect
     log.info("[embedding] start chunks: script_id=%s user=%s", script_id, user_id)
     try:
         _embed_chunks_loop_inner(script_id, user_id)
@@ -644,7 +644,7 @@ def _embed_chunks_loop_inner(script_id: int, user_id: int) -> None:
             if _n == 0:
                 break
             with connect() as db:
-                for r, v in zip(rows[:_n], vecs[:_n]):
+                for r, v in zip(rows[:_n], vecs[:_n], strict=False):
                     db.execute(
                         "update document_chunks set embedding_vec = %s::vector, embedded_at = now() where id = %s",
                         (_vec_literal(v), r["id"]),
@@ -652,7 +652,7 @@ def _embed_chunks_loop_inner(script_id: int, user_id: int) -> None:
             continue
 
         with connect() as db:
-            for r, v in zip(rows, vecs):
+            for r, v in zip(rows, vecs, strict=False):
                 db.execute(
                     "update document_chunks set embedding_vec = %s::vector, embedded_at = now() where id = %s",
                     (_vec_literal(v), r["id"]),
@@ -685,7 +685,7 @@ def _embed_chunks_loop_inner(script_id: int, user_id: int) -> None:
             if vecs is None:
                 continue
             with connect() as db:
-                for c, v in zip(batch, vecs):
+                for c, v in zip(batch, vecs, strict=False):
                     db.execute(
                         "update character_cards set embedding_vec = %s::vector, embedded_at = now() where id = %s",
                         (_vec_literal(v), c["id"]),
@@ -710,7 +710,7 @@ def _embed_chunks_loop_inner(script_id: int, user_id: int) -> None:
             if vecs is None:
                 continue
             with connect() as db:
-                for w, v in zip(batch, vecs):
+                for w, v in zip(batch, vecs, strict=False):
                     db.execute(
                         "update worldbook_entries set embedding_vec = %s::vector, embedded_at = now() where id = %s",
                         (_vec_literal(v), w["id"]),
