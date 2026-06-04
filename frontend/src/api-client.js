@@ -24,13 +24,13 @@
       if (location.protocol === "file:") return "http://127.0.0.1:7860";
       // If we're already on the FastAPI port → same origin.
       if (location.port === "7860") return "";
-      // Static dev server (e.g. python -m http.server 5173) on
-      // another port → cross-origin to backend.
-      // Vite dev server (ports 5173-5179) proxies /api to the backend,
+      // Static dev server (e.g. python -m http.server) on another port
+      // → cross-origin to backend.
+      // Vite dev server proxies /api to the backend via vite.config.js,
       // so same-origin requests through the proxy avoid CORS/cookie issues.
+      // Detect Vite by its injected HMR client script rather than guessing port ranges.
       if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
-        const p = parseInt(location.port, 10);
-        if (p >= 5173 && p <= 5179) return "";
+        if (document.querySelector('script[type="module"][src*="/@vite/client"]')) return "";
         return "http://127.0.0.1:7860";
       }
       // Production / hosted: rely on same-origin proxy.
