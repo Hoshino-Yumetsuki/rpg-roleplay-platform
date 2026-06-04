@@ -17,7 +17,10 @@ def load_dotenv_once() -> None:
         # override=True: 让 .env 覆盖 shell 已设置的空值
         # (Claude Code CLI / 某些 shell 会 export ANTHROPIC_API_KEY= 空字符串,
         #  python-dotenv 默认 override=False 会保留空值,导致 .env 里的真 key 被忽略)
+        # .env 可能在仓库根 (生产) 或 rpg/.env (本地 setup.sh 写的位置)。两处都试,
+        # 缺失一侧是无害空操作;rpg/.env 后加载,本地优先生效。
         load_dotenv(Path(__file__).parent.parent.parent / ".env", override=True)
+        load_dotenv(Path(__file__).parent.parent / ".env", override=True)
     except ImportError:
         pass
 

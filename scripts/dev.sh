@@ -62,6 +62,31 @@ check_postgres() {
   return 1
 }
 
+# Postgres 进程在 ≠ 业务库已建好。check_postgres 只看端口在听,
+# 真正的初始化(建库 / 写 rpg/.env / 跑 migration)是 ./scripts/setup.sh 干的。
+# 没跑过 setup.sh 就直接 dev.sh start 的话,后端会回退到默认库 rpg_platform、
+# 连不上、然后在 psycopg 重试里挂 300s。这里提前判定并给出明确指引。
+check_db() {
+  if [ ! -f "$RPG_DIR/.env" ]; then
+    echo "  $(_bad) 还没初始化(缺 rpg/.env)— 先跑一次:  ./scripts/setup.sh"
+    return 1
+  fi
+  local url; url="$(grep -E '^DATABASE_URL=' "$RPG_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r' | sed -e 's/^["'\'']//' -e 's/["'\'']$//')"
+  if [ -z "$url" ]; then
+    echo "  $(_bad) rpg/.env 里没有 DATABASE_URL — 先跑:  ./scripts/setup.sh"
+    return 1
+  fi
+  if command -v psql >/dev/null 2>&1; then
+    if ! psql "$url" -tAc 'SELECT 1' >/dev/null 2>&1; then
+      echo "  $(_bad) 连不上数据库(库可能还没建)— 先跑:  ./scripts/setup.sh"
+      echo "      DATABASE_URL=$url"
+      return 1
+    fi
+  fi
+  echo "  $(_ok) 数据库可连"
+  return 0
+}
+
 check_backend() {
   local pid; pid="$(_pid_on_port "$BACKEND_PORT")"
   [ -z "$pid" ] && { echo "  $(_bad) backend :$BACKEND_PORT 未运行"; return 1; }
@@ -164,6 +189,7 @@ start_frontend() {
 cmd_status() {
   echo "─── dev status ───"
   check_postgres
+  check_db || true
   check_backend || true
   check_frontend || true
   echo ""
@@ -174,6 +200,7 @@ cmd_status() {
 cmd_start() {
   echo "─── 启动 dev 环境 (热重载已开启) ───"
   check_postgres || { echo "$(_bad) Postgres 没起,先解决。"; exit 1; }
+  check_db       || { echo "$(_bad) 数据库未就绪,先解决。"; exit 1; }
   start_backend  || exit 1
   start_frontend || exit 1
   echo ""
