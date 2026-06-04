@@ -70,8 +70,33 @@ def _credential_aliases(api_id: str) -> list[str]:
     return aliases
 
 
+def _ip_is_internal(ip_str: str) -> bool:
+    """判断单个 IP 是否私有/本地/保留(含 IPv4-mapped IPv6)。"""
+    import ipaddress
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True  # 无法解析为 IP 视为不安全
+    # IPv4-mapped IPv6 (::ffff:127.0.0.1) → 取出内嵌 IPv4 再判
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        ip = mapped
+    return bool(
+        ip.is_private or ip.is_loopback or ip.is_link_local
+        or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+    )
+
+
 def _validate_base_url(url: str) -> None:
-    """禁止把 base_url 指向私网/本机，避免 SSRF。"""
+    """禁止把 base_url 指向私网/本机/保留地址，避免 SSRF。
+
+    安全关键:**解析 hostname → 校验真实 IP**,而非字符串前缀黑名单。
+    这样十进制(2130706433)/八进制(0177.0.0.1)/十六进制(0x7f000001)/
+    IPv4-mapped IPv6([::ffff:169.254.169.254]) 这些绕过形式都会在 getaddrinfo
+    归一化后被 _ip_is_internal 统一拦截。DNS rebinding 在请求时(_connector_auth)
+    会再校一次缓解。
+    """
+    import socket
     from urllib.parse import urlparse
     try:
         p = urlparse(url)
@@ -79,16 +104,25 @@ def _validate_base_url(url: str) -> None:
         raise ValueError("base_url 必须是合法 URL") from exc
     if p.scheme not in {"https", "http"}:
         raise ValueError("base_url 必须是 http/https")
-    # 生产建议只允许 https；本地 admin 调试可允许 http
     from core.config import require_auth as _require_auth
     if p.scheme == "http" and _require_auth():
         raise ValueError("服务器模式下 base_url 必须是 https")
     host = (p.hostname or "").lower()
     if not host:
         raise ValueError("base_url 缺少 host")
-    for prefix in _PRIVATE_HOST_PREFIXES:
-        if host == prefix.rstrip(".") or host.startswith(prefix):
-            raise ValueError(f"base_url 不允许指向私有/本地地址：{host}")
+    # 字面量本地名快速拦截
+    if host in {"localhost", "ip6-localhost", "ip6-loopback"} or host.endswith(".localhost"):
+        raise ValueError(f"base_url 不允许指向本地地址：{host}")
+    # 真正的防线:解析出所有 A/AAAA,任一为内网/保留即拒(覆盖各种进制 IP 伪装)。
+    try:
+        infos = socket.getaddrinfo(host, p.port or (443 if p.scheme == "https" else 80),
+                                   proto=socket.IPPROTO_TCP)
+    except OSError as exc:
+        raise ValueError(f"base_url 主机无法解析：{host}") from exc
+    for info in infos:
+        ip_str = info[4][0]
+        if _ip_is_internal(ip_str):
+            raise ValueError(f"base_url 解析到私有/本地/保留地址，已拒绝：{host} → {ip_str}")
 
 
 def set_credential(user_id: int, api_id: str, plaintext_key: str, base_url_override: str = "", enabled: bool = True, *, allow_base_url: bool = False) -> dict[str, Any]:

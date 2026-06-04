@@ -3539,26 +3539,504 @@ function AccountSection() {
   };
 
   return (
-    <SetGroup title={t('settings.account.title')}>
-      {isCoBuilder ? (
-        <SetRow
-          label={t('settings.account.co_builder_label')}
-          description={t('settings.account.co_builder_desc')}
-        >
-          <CSToggle
-            checked={checked}
-            onChange={({ detail }) => handleToggle(detail.checked)}
-            disabled={saving}
+    <CSSpaceBetween size="l">
+      <SetGroup title={t('settings.account.title')}>
+        {isCoBuilder ? (
+          <SetRow
+            label={t('settings.account.co_builder_label')}
+            description={t('settings.account.co_builder_desc')}
           >
-            {checked ? t('settings.account.co_builder_on') : t('settings.account.co_builder_off')}
+            <CSToggle
+              checked={checked}
+              onChange={({ detail }) => handleToggle(detail.checked)}
+              disabled={saving}
+            >
+              {checked ? t('settings.account.co_builder_on') : t('settings.account.co_builder_off')}
+            </CSToggle>
+          </SetRow>
+        ) : (
+          <SetRow label={t('settings.account.co_builder_label')} description="">
+            <span style={{ fontSize: 13, color: 'var(--text-quiet)' }}>{t('settings.account.co_builder_na')}</span>
+          </SetRow>
+        )}
+      </SetGroup>
+      <DataMigrationSection />
+      <OnlineLibrarySection />
+    </CSSpaceBetween>
+  );
+}
+
+// 账号数据迁移:把个人数据(剧本/存档/角色卡/偏好)整体导出为 zip,在本地自部署实例导入。
+function DataMigrationSection() {
+  const { t } = useTranslation();
+  const [est, setEst] = useStatePL(null);
+  const [estErr, setEstErr] = useStatePL("");
+  const [includeChunks, setIncludeChunks] = useStatePL(false);
+  const [exporting, setExporting] = useStatePL(false);
+  const [importing, setImporting] = useStatePL(false);
+  const [importFile, setImportFile] = useStatePL(null);
+  const [importResult, setImportResult] = useStatePL(null);
+  const [importJob, setImportJob] = useStatePL(null);   // {stage, stage_progress, stage_total}
+  const fileRef = React.useRef(null);
+  const esRef = React.useRef(null);
+  const pollRef = React.useRef(null);
+
+  useEffectPL(() => {
+    let alive = true;
+    window.api?.account?.migrateEstimate?.()
+      .then((r) => { if (alive) setEst(r); })
+      .catch((e) => { if (alive) setEstErr(e?.message || String(e)); });
+    return () => { alive = false; };
+  }, []);
+
+  const doExport = () => {
+    setExporting(true);
+    try {
+      // 同源 GET + cookie → 直接触发浏览器下载 zip。
+      const url = window.api.account.migrateExportUrl(includeChunks);
+      const a = document.createElement('a');
+      a.href = url;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.__apiToast?.(t('settings.migrate.export_started', { defaultValue: '已开始下载数据包…' }), { kind: 'ok', duration: 2200 });
+    } catch (e) {
+      window.__apiToast?.(t('settings.migrate.export_fail', { defaultValue: '导出失败' }), { kind: 'danger', detail: e?.message });
+    } finally {
+      // 下载是浏览器接管,这里只复位按钮态
+      setTimeout(() => setExporting(false), 800);
+    }
+  };
+
+  const STAGE_LABELS = { scripts: '导入剧本', saves: '导入存档', cards: '导入角色卡', done: '完成' };
+
+  const finishJob = async (jobId) => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (esRef.current) { try { esRef.current.close?.(); } catch {} esRef.current = null; }
+    try {
+      const s = await window.api.scripts.jobStatus(jobId);
+      const job = s?.job || {};
+      const summary = (job.usage_actual && job.usage_actual.summary) || {};
+      setImportResult({ scripts: summary.scripts ?? 0, saves: summary.saves ?? 0, cards: summary.cards ?? 0, warnings: job.warnings || [] });
+      window.__apiToast?.(t('settings.migrate.import_done', { defaultValue: '导入完成' }), { kind: 'ok', duration: 2600,
+        detail: `剧本 ${summary.scripts ?? 0} · 存档 ${summary.saves ?? 0} · 角色卡 ${summary.cards ?? 0}` });
+    } catch (e) {
+      window.__apiToast?.(t('settings.migrate.import_fail', { defaultValue: '导入失败' }), { kind: 'danger', detail: e?.message });
+    } finally {
+      setImportJob(null); setImporting(false);
+    }
+  };
+
+  const doImport = async () => {
+    if (!importFile) return;
+    setImporting(true); setImportResult(null); setImportJob({ stage: 'scripts', stage_progress: 0, stage_total: 0 });
+    let jobId = null;
+    try {
+      const r = await window.api.account.migrateImport(importFile);
+      jobId = r?.job_id;
+      if (!jobId) throw new Error(r?.error || '未返回作业号');
+    } catch (e) {
+      setImporting(false); setImportJob(null);
+      window.__apiToast?.(t('settings.migrate.import_fail', { defaultValue: '导入失败' }), { kind: 'danger', detail: e?.payload?.error || e?.message });
+      return;
+    }
+    const isTerminal = (st) => ['done', 'done_with_errors', 'failed', 'cancelled'].includes(st);
+    // SSE 主路 + 轮询兜底
+    esRef.current = window.api.scripts.streamImport(jobId, {
+      on_update: (jb) => { setImportJob(jb); if (isTerminal(jb.status)) finishJob(jobId); },
+      on_done: () => finishJob(jobId),
+      on_error: () => {
+        if (pollRef.current) return;
+        pollRef.current = setInterval(async () => {
+          try {
+            const s = await window.api.scripts.jobStatus(jobId);
+            const job = s?.job; if (!job) return;
+            setImportJob(job);
+            if (isTerminal(job.status)) finishJob(jobId);
+          } catch {}
+        }, 2000);
+      },
+    });
+  };
+
+  useEffectPL(() => () => {
+    if (esRef.current) { try { esRef.current.close?.(); } catch {} }
+    if (pollRef.current) clearInterval(pollRef.current);
+  }, []);
+
+  return (
+    <SetGroup
+      title={t('settings.migrate.title', { defaultValue: '数据迁移(导出 / 导入)' })}
+      description={t('settings.migrate.desc', { defaultValue: '把你的全部个人数据打包,迁移到本地自部署实例;或从数据包恢复。不含 API 密钥。' })}
+    >
+      <CSAlert type="info">
+        {t('settings.migrate.note_keys', { defaultValue: '出于安全,导出不含 API 密钥(在服务端加密存储,跨实例无法解密)。迁移到本地后请在「设置 → 模型」重新填写各 provider 的 API key。' })}
+      </CSAlert>
+
+      <SetRow
+        label={t('settings.migrate.export_label', { defaultValue: '导出我的全部数据' })}
+        description={est
+          ? t('settings.migrate.export_counts', { defaultValue: '剧本 {{s}} · 存档 {{v}} · 角色卡 {{c}} · 模型条目 {{m}}', s: est.scripts ?? 0, v: est.saves ?? 0, c: est.cards ?? 0, m: est.model_entries ?? 0 })
+          : (estErr ? t('settings.migrate.est_fail', { defaultValue: '统计失败:' }) + estErr : t('settings.migrate.estimating', { defaultValue: '正在统计…' }))}
+      >
+        <CSSpaceBetween size="xs">
+          <CSToggle checked={includeChunks} onChange={({ detail }) => setIncludeChunks(detail.checked)}>
+            {t('settings.migrate.include_chunks', { defaultValue: '包含原文切片(体积更大,用于本地继续做向量检索)' })}
           </CSToggle>
-        </SetRow>
-      ) : (
-        <SetRow label={t('settings.account.co_builder_label')} description="">
-          <span style={{ fontSize: 13, color: 'var(--text-quiet)' }}>{t('settings.account.co_builder_na')}</span>
-        </SetRow>
+          <CSButton variant="primary" iconName="download" loading={exporting} onClick={doExport}>
+            {t('settings.migrate.export_btn', { defaultValue: '导出数据包(.zip)' })}
+          </CSButton>
+        </CSSpaceBetween>
+      </SetRow>
+
+      <SetRow
+        label={t('settings.migrate.import_label', { defaultValue: '导入数据包' })}
+        description={t('settings.migrate.import_help', { defaultValue: '选择从在线服务导出的 account-*.zip。导入会在当前账号下新建剧本/存档/角色卡,不覆盖现有数据。' })}
+      >
+        <CSSpaceBetween size="xs">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".zip,application/zip"
+            onChange={(e) => { setImportFile(e.target.files?.[0] || null); setImportResult(null); }}
+            style={{ fontSize: 13 }}
+          />
+          <CSButton iconName="upload" loading={importing} disabled={!importFile || importing} onClick={doImport}>
+            {t('settings.migrate.import_btn', { defaultValue: '导入到当前账号' })}
+          </CSButton>
+        </CSSpaceBetween>
+      </SetRow>
+
+      {importJob && (
+        <CSBox>
+          <div style={{ fontSize: 13, marginBottom: 4 }}>
+            {(STAGE_LABELS[importJob.stage] || importJob.stage || '处理中')}
+            {importJob.stage_total ? ` ${importJob.stage_progress || 0}/${importJob.stage_total}` : '…'}
+          </div>
+          <div style={{ height: 6, background: 'var(--line,#36322d)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${importJob.stage_total ? Math.round(100 * (importJob.stage_progress || 0) / importJob.stage_total) : 30}%`,
+              background: 'var(--accent,#c96442)', transition: 'width .3s' }} />
+          </div>
+        </CSBox>
+      )}
+
+      {importResult && (
+        <CSAlert type={(importResult.warnings || []).length ? 'warning' : 'success'} header={t('settings.migrate.import_result', { defaultValue: '导入结果' })}>
+          <div>{t('settings.migrate.import_summary', { defaultValue: '剧本 {{s}} · 存档 {{v}} · 角色卡 {{c}}', s: importResult.scripts ?? 0, v: importResult.saves ?? 0, c: importResult.cards ?? 0 })}</div>
+          {(importResult.warnings || []).length > 0 && (
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12 }}>
+              {importResult.warnings.slice(0, 20).map((w, i) => <li key={i}>{w}</li>)}
+              {importResult.warnings.length > 20 && <li>… 其余 {importResult.warnings.length - 20} 条已省略</li>}
+            </ul>
+          )}
+        </CSAlert>
       )}
     </SetGroup>
+  );
+}
+
+// 功能 B:本地↔在线剧本库联邦。集连接(PAT/设备码)+ 浏览/导入/发布 + 设备授权 + PAT 管理。
+const DEFAULT_ONLINE_BASE = 'https://rpg-roleplay.stellatrix.icu';
+
+function OnlineLibrarySection() {
+  const [conn, setConn] = useStatePL(null);            // {connected, base_url}
+  const [isProvider, setIsProvider] = useStatePL(false); // 本实例是否为在线库提供方(server 模式)
+  const reload = useCallbackPL(async () => {
+    try { setConn(await window.api.federation.connectorGet()); } catch { setConn({ connected: false, base_url: DEFAULT_ONLINE_BASE }); }
+  }, []);
+  useEffectPL(() => { reload(); }, [reload]);
+  useEffectPL(() => {
+    window.api?.federation?.providerInfo?.().then((r) => setIsProvider(!!r?.provider_enabled)).catch(() => setIsProvider(false));
+  }, []);
+
+  // 角色分离:
+  //  - 提供方(在线服务,server 模式)只显示「令牌管理」;设备授权在独立 /device 页完成,
+  //    不在设置里放配对码填写窗口(避免在线服务器出现「连接到在线服务」这种自连客户端 UI)。
+  //  - 客户端(本地自部署)只显示连接器(连接在线服务 / 浏览 / 导入 / 发布)。
+  if (isProvider) {
+    return (
+      <SetGroup
+        title="在线剧本库 · 提供方"
+        description="本实例是在线服务,管理外部客户端(本地部署 / CLI)的接入。设备授权请用独立授权页 /device 完成。"
+      >
+        <PatManager />
+      </SetGroup>
+    );
+  }
+  return (
+    <SetGroup
+      title="在线剧本库(连接在线服务)"
+      description="连接在线服务,浏览 / 完整导入公开剧本,或把自有剧本发布到在线库。"
+    >
+      <ConnectorConnect conn={conn} onChange={reload} />
+      {conn?.connected && <OnlineBrowse />}
+      {conn?.connected && <OnlinePublish />}
+    </SetGroup>
+  );
+}
+
+function ConnectorConnect({ conn, onChange }) {
+  const [base, setBase] = useStatePL(conn?.base_url || DEFAULT_ONLINE_BASE);
+  const [token, setToken] = useStatePL('');
+  const [busy, setBusy] = useStatePL(false);
+  const [device, setDevice] = useStatePL(null);        // {user_code, verification_uri, device_code, base_url, interval}
+  const pollRef = React.useRef(null);
+  useEffectPL(() => { setBase(conn?.base_url || DEFAULT_ONLINE_BASE); }, [conn?.base_url]);
+  useEffectPL(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  const savePat = async () => {
+    if (!token.trim()) { window.__apiToast?.('请粘贴访问令牌', { kind: 'warning' }); return; }
+    setBusy(true);
+    try {
+      await window.api.federation.connectorSet(base.trim(), token.trim());
+      window.__apiToast?.('已连接在线剧本库', { kind: 'ok' });
+      setToken(''); onChange?.();
+    } catch (e) { window.__apiToast?.('连接失败', { kind: 'danger', detail: e?.payload?.error || e?.message }); }
+    finally { setBusy(false); }
+  };
+
+  const disconnect = async () => {
+    setBusy(true);
+    try { await window.api.federation.connectorSet(base.trim(), ''); window.__apiToast?.('已断开', { kind: 'ok' }); onChange?.(); }
+    catch (e) { window.__apiToast?.('操作失败', { kind: 'danger', detail: e?.message }); }
+    finally { setBusy(false); }
+  };
+
+  const startDevice = async () => {
+    setBusy(true);
+    try {
+      const d = await window.api.federation.deviceStart(base.trim(), ['library:read', 'library:publish']);
+      setDevice(d);
+      const iv = Math.max(2, (d.interval || 5)) * 1000;
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(async () => {
+        try {
+          const r = await window.api.federation.devicePoll(d.base_url || base.trim(), d.device_code);
+          if (r.connected) {
+            clearInterval(pollRef.current); pollRef.current = null;
+            setDevice(null); window.__apiToast?.('已连接在线剧本库', { kind: 'ok' }); onChange?.();
+          } else if (r.status && !['authorization_pending', 'pending'].includes(r.status)) {
+            clearInterval(pollRef.current); pollRef.current = null;
+            setDevice(null); window.__apiToast?.('授权未完成:' + r.status, { kind: 'warning' });
+          }
+        } catch { /* 继续轮询 */ }
+      }, iv);
+    } catch (e) { window.__apiToast?.('设备码流启动失败', { kind: 'danger', detail: e?.payload?.error || e?.message }); }
+    finally { setBusy(false); }
+  };
+
+  if (conn?.connected) {
+    return (
+      <CSSpaceBetween size="s">
+        <CSBox>已连接:<strong>{conn.base_url}</strong></CSBox>
+        <CSButton iconName="unlocked" loading={busy} onClick={disconnect}>断开连接</CSButton>
+      </CSSpaceBetween>
+    );
+  }
+
+  return (
+    <CSSpaceBetween size="m">
+      <SetRow label="在线服务地址" description="默认官方;可改为你自建的在线节点(强制 https,禁私网地址)。">
+        <CSInput value={base} onChange={({ detail }) => setBase(detail.value)} placeholder={DEFAULT_ONLINE_BASE} />
+      </SetRow>
+
+      <SetRow label="方式一 · 设备码连接(推荐)" description="点连接 → 在浏览器登录在线服务并输入下面的配对码授权,无需手动复制令牌。">
+        {device ? (
+          <CSAlert type="info" header="在浏览器完成授权">
+            <div>1. 打开授权页:<a href={device.verification_uri_complete || device.verification_uri} target="_blank" rel="noopener noreferrer">{device.verification_uri_complete || device.verification_uri}</a>(已带配对码,点开确认即可)</div>
+            <div>2. 配对码:<strong style={{ fontSize: 18, letterSpacing: 2 }}>{device.user_code}</strong>(如未自动填入则手动输入)</div>
+            <div style={{ marginTop: 6, color: 'var(--text-quiet)' }}>批准后本页自动连接…</div>
+          </CSAlert>
+        ) : (
+          <CSButton variant="primary" iconName="external" loading={busy} onClick={startDevice}>用设备码连接</CSButton>
+        )}
+      </SetRow>
+
+      <SetRow label="方式二 · 粘贴个人访问令牌(PAT)" description="在线服务「个人访问令牌」里生成一个,粘贴到此。">
+        <CSSpaceBetween size="xs">
+          <CSInput value={token} type="password" onChange={({ detail }) => setToken(detail.value)} placeholder="rpgpat_…" />
+          <CSButton loading={busy} onClick={savePat}>保存并连接</CSButton>
+        </CSSpaceBetween>
+      </SetRow>
+    </CSSpaceBetween>
+  );
+}
+
+function OnlineBrowse() {
+  const [q, setQ] = useStatePL('');
+  const [items, setItems] = useStatePL(null);
+  const [loading, setLoading] = useStatePL(false);
+  const [importing, setImporting] = useStatePL({});
+  const load = useCallbackPL(async (query) => {
+    setLoading(true);
+    try { const r = await window.api.federation.connectorScripts(query); setItems(r?.items || []); }
+    catch (e) { window.__apiToast?.('加载在线库失败', { kind: 'danger', detail: e?.payload?.error || e?.message }); setItems([]); }
+    finally { setLoading(false); }
+  }, []);
+  const doImport = async (it) => {
+    setImporting((p) => ({ ...p, [it.id]: true }));
+    try {
+      const r = await window.api.federation.connectorImport(it.id);
+      window.__apiToast?.('已完整导入到本地', { kind: 'ok', detail: `「${it.title}」→ 本地剧本 #${r.script_id}` });
+    } catch (e) { window.__apiToast?.('导入失败', { kind: 'danger', detail: e?.payload?.error || e?.message }); }
+    finally { setImporting((p) => ({ ...p, [it.id]: false })); }
+  };
+  return (
+    <CSExpandableSection headerText="浏览在线剧本库 → 完整导入到本地" defaultExpanded
+      onChange={({ detail }) => { if (detail.expanded && items == null) load(''); }}>
+      <CSSpaceBetween size="s">
+        <div style={{ display: 'flex', gap: 8, maxWidth: 460 }}>
+          <div style={{ flex: 1 }}>
+            <CSInput value={q} type="search" placeholder="搜剧本标题…" onChange={({ detail }) => setQ(detail.value)}
+              onKeyDown={(e) => { if (e.detail.key === 'Enter') load(q); }} />
+          </div>
+          <CSButton loading={loading} onClick={() => load(q)}>搜索</CSButton>
+        </div>
+        {items && items.length === 0 && <CSBox color="text-body-secondary">在线库暂无公开剧本。</CSBox>}
+        {(items || []).map((it) => (
+          <div key={it.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 10px', border: '1px solid var(--line,#36322d)', borderRadius: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600 }}>{it.title || '(未命名)'}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-quiet)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {it.owner_name ? `by ${it.owner_name} · ` : ''}♥ {it.clone_count || 0}{it.description ? ' · ' + String(it.description).slice(0, 50) : ''}
+              </div>
+            </div>
+            <CSButton variant="primary" loading={!!importing[it.id]} onClick={() => doImport(it)}>导入</CSButton>
+          </div>
+        ))}
+      </CSSpaceBetween>
+    </CSExpandableSection>
+  );
+}
+
+function OnlinePublish() {
+  const [scripts, setScripts] = useStatePL([]);
+  const [sel, setSel] = useStatePL(null);
+  const [busy, setBusy] = useStatePL(false);
+  useEffectPL(() => {
+    window.api.scripts.list().then((r) => {
+      const list = Array.isArray(r) ? r : (r?.items || r?.scripts || []);
+      setScripts(list.filter((s) => s.is_owner !== false).map((s) => ({ value: String(s.id), label: s.title || `剧本 #${s.id}` })));
+    }).catch(() => {});
+  }, []);
+  const publish = async () => {
+    if (!sel) return;
+    setBusy(true);
+    try {
+      const r = await window.api.federation.connectorPublish(Number(sel.value));
+      window.__apiToast?.('已发布到在线库', { kind: 'ok', detail: `在线剧本 #${r.script_id}` });
+    } catch (e) { window.__apiToast?.('发布失败', { kind: 'danger', detail: e?.payload?.error || e?.message }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <SetRow label="发布自有剧本到在线库" description="把本地一个自有剧本完整上传到在线库并公开(需令牌含发布权限)。">
+      <div style={{ display: 'flex', gap: 8, maxWidth: 460 }}>
+        <div style={{ flex: 1 }}>
+          <CSSelect selectedOption={sel} options={scripts} placeholder="选择本地剧本…"
+            onChange={({ detail }) => setSel(detail.selectedOption)} />
+        </div>
+        <CSButton iconName="upload" loading={busy} disabled={!sel} onClick={publish}>发布</CSButton>
+      </div>
+    </SetRow>
+  );
+}
+
+function DeviceApprove() {
+  const [code, setCode] = useStatePL('');
+  const [info, setInfo] = useStatePL(null);
+  const [busy, setBusy] = useStatePL(false);
+  const lookup = async () => {
+    setBusy(true); setInfo(null);
+    try { const r = await window.api.federation.deviceLookup(code.trim().toUpperCase()); setInfo(r.device); }
+    catch (e) { window.__apiToast?.('未找到配对码', { kind: 'warning', detail: e?.payload?.error || e?.message }); }
+    finally { setBusy(false); }
+  };
+  const decide = async (deny) => {
+    setBusy(true);
+    try {
+      await window.api.federation.deviceApprove(code.trim().toUpperCase(), deny);
+      window.__apiToast?.(deny ? '已拒绝' : '已批准,客户端将自动连接', { kind: 'ok' });
+      setInfo(null); setCode('');
+    } catch (e) { window.__apiToast?.('操作失败', { kind: 'danger', detail: e?.payload?.error || e?.message }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <CSSpaceBetween size="s">
+      <div style={{ display: 'flex', gap: 8, maxWidth: 360 }}>
+        <div style={{ flex: 1 }}>
+          <CSInput value={code} placeholder="WXYZ-7K9M" onChange={({ detail }) => setCode(detail.value)} />
+        </div>
+        <CSButton loading={busy} disabled={!code.trim()} onClick={lookup}>查询</CSButton>
+      </div>
+      {info && (
+        <CSAlert type="info" header="确认授权">
+          <div>客户端:{info.client_name || '未命名'} · 权限:{(info.scopes || []).join(', ')}</div>
+          <CSSpaceBetween direction="horizontal" size="xs">
+            <CSButton variant="primary" loading={busy} onClick={() => decide(false)}>批准</CSButton>
+            <CSButton loading={busy} onClick={() => decide(true)}>拒绝</CSButton>
+          </CSSpaceBetween>
+        </CSAlert>
+      )}
+    </CSSpaceBetween>
+  );
+}
+
+function PatManager() {
+  const [items, setItems] = useStatePL([]);
+  const [name, setName] = useStatePL('');
+  const [scopes, setScopes] = useStatePL({ read: true, publish: false });
+  const [created, setCreated] = useStatePL(null);
+  const [busy, setBusy] = useStatePL(false);
+  const reload = useCallbackPL(async () => {
+    try { const r = await window.api.federation.patList(); setItems(r?.items || []); } catch { setItems([]); }
+  }, []);
+  useEffectPL(() => { reload(); }, [reload]);
+  const create = async () => {
+    const sc = [scopes.read && 'library:read', scopes.publish && 'library:publish'].filter(Boolean);
+    if (!sc.length) { window.__apiToast?.('至少选一个权限', { kind: 'warning' }); return; }
+    setBusy(true);
+    try {
+      const r = await window.api.federation.patCreate({ name: name.trim(), scopes: sc });
+      setCreated(r.token); setName(''); reload();
+    } catch (e) { window.__apiToast?.('生成失败', { kind: 'danger', detail: e?.payload?.error || e?.message }); }
+    finally { setBusy(false); }
+  };
+  const revoke = async (id) => {
+    try { await window.api.federation.patRevoke(id); reload(); window.__apiToast?.('已吊销', { kind: 'ok' }); }
+    catch (e) { window.__apiToast?.('操作失败', { kind: 'danger', detail: e?.message }); }
+  };
+  return (
+    <CSSpaceBetween size="s">
+      {created && (
+        <CSAlert type="success" header="令牌已生成(仅显示这一次,请立即复制)" dismissible onDismiss={() => setCreated(null)}>
+          <code style={{ wordBreak: 'break-all' }}>{created}</code>
+        </CSAlert>
+      )}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ width: 180 }}>
+          <CSInput value={name} placeholder="令牌名称(如:我的本地实例)" onChange={({ detail }) => setName(detail.value)} />
+        </div>
+        <CSToggle checked={scopes.read} onChange={({ detail }) => setScopes((s) => ({ ...s, read: detail.checked }))}>读取</CSToggle>
+        <CSToggle checked={scopes.publish} onChange={({ detail }) => setScopes((s) => ({ ...s, publish: detail.checked }))}>发布</CSToggle>
+        <CSButton loading={busy} onClick={create}>生成令牌</CSButton>
+      </div>
+      {items.length === 0 && <CSBox color="text-body-secondary" fontSize="body-s">还没有令牌。生成一个供本地实例/CLI 连接,或在另一台设备上用设备码连接(会自动出现在这里)。</CSBox>}
+      {items.map((p) => (
+        <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 13 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <CSBadge color={p.source === 'device' ? 'green' : 'grey'}>{p.source === 'device' ? '设备授权' : '手动令牌'}</CSBadge>
+            <strong>{p.name || '(未命名)'}</strong>
+            <span style={{ color: 'var(--text-quiet)' }}>{(p.scopes || []).join(', ')}</span>
+            <span style={{ color: 'var(--text-quiet)', fontSize: 12 }}>
+              {p.last_used_at ? '· 最近使用 ' + (window.__fmt?.ago(p.last_used_at) || p.last_used_at) : '· 从未使用'}
+              {p.revoked_at ? ' · 已吊销' : ''}
+            </span>
+          </span>
+          {!p.revoked_at && <CSButton variant="inline-link" onClick={() => revoke(p.id)}>吊销</CSButton>}
+        </div>
+      ))}
+    </CSSpaceBetween>
   );
 }
 
