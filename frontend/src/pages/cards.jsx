@@ -342,8 +342,89 @@ const NPC_CARDS = [
 function CardsPage({ subPage = "user" }) {
   return (
     <div className="pl-stack">
-      {subPage === "npc" ? <NpcCardsView /> : <UserCardsView />}
+      {subPage === "npc" ? <NpcCardsView />
+        : subPage === "online" ? <OnlineCardsView />
+        : <UserCardsView />}
     </div>
+  );
+}
+
+/* 在线角色卡库 — 浏览并完整导入其他用户公开分享的 PC 角色卡。
+   GET /api/cards/public · POST /api/cards/public/{id}/clone(完整复制进自己卡库,非指针) */
+function OnlineCardsView() {
+  const [items, setItems] = React.useState(null);
+  const [q, setQ] = React.useState('');
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState('');
+  const [importing, setImporting] = React.useState({});
+
+  const load = React.useCallback(async (query) => {
+    setLoading(true); setErr('');
+    try {
+      const r = await window.api.cards.publicList(query ? { q: query } : undefined);
+      setItems((r && r.items) || []);
+    } catch (e) { setErr(e?.message || '加载失败'); setItems([]); }
+    finally { setLoading(false); }
+  }, []);
+
+  React.useEffect(() => { load(''); }, [load]);
+
+  const doImport = async (c) => {
+    setImporting((p) => ({ ...p, [c.id]: true }));
+    try {
+      await window.api.cards.cloneFromPublic(c.id);
+      window.__apiToast?.('已导入到「我的角色卡」', { kind: 'ok', duration: 2200, detail: `「${c.name}」已复制为你自己的卡,可在「我的角色卡」编辑使用。` });
+      load(q);  // 刷新热度
+    } catch (e) {
+      window.__apiToast?.('导入失败', { kind: 'danger', detail: e?.payload?.error || e?.message });
+    } finally {
+      setImporting((p) => ({ ...p, [c.id]: false }));
+    }
+  };
+
+  return (
+    <CSSpaceBetween size="l">
+      <CSHeader
+        variant="h1"
+        description="浏览其他玩家公开分享的角色卡。点「导入」会把整张卡完整复制进你自己的「我的角色卡」,之后可自由编辑、挂任意剧本使用。"
+        actions={<CSButton iconName="refresh" loading={loading} onClick={() => load(q)}>刷新</CSButton>}
+      >在线角色卡库</CSHeader>
+
+      <div style={{ display: 'flex', gap: 8, maxWidth: 460 }}>
+        <div style={{ flex: 1 }}>
+          <CSInput value={q} onChange={({ detail }) => setQ(detail.value)} placeholder="搜角色名 / 身份…"
+            onKeyDown={(e) => { if (e.detail.key === 'Enter') load(q); }} type="search" />
+        </div>
+        <CSButton onClick={() => load(q)}>搜索</CSButton>
+      </div>
+
+      {err && <CSAlert type="error" header="加载失败">{err}</CSAlert>}
+      {loading && items == null ? <CSBox color="text-body-secondary" padding="m">正在加载在线角色卡…</CSBox>
+        : (items && items.length === 0) ? <CSBox textAlign="center" color="text-body-secondary" padding={{ vertical: 'xl' }}>暂无公开角色卡。你可以在「我的角色卡」里把卡设为公开,分享给大家。</CSBox>
+        : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
+            {(items || []).map((c) => (
+              <div key={c.id} style={{ border: '1px solid var(--line, #36322d)', borderRadius: 10, padding: 14, background: 'var(--panel, #211f1d)', display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                  <strong style={{ fontSize: 15 }}>{c.name || '(未命名)'}</strong>
+                  <span style={{ fontSize: 11, color: 'var(--text-quiet, #9a948c)' }}>♥ {c.clone_count || 0}</span>
+                </div>
+                {c.identity && <div style={{ fontSize: 12, color: 'var(--accent, #c96442)' }}>{String(c.identity).slice(0, 40)}</div>}
+                <div style={{ fontSize: 12, color: 'var(--text-quiet, #9a948c)', lineHeight: 1.5, minHeight: 36, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  {(c.personality || c.background || c.appearance || '暂无简介').slice(0, 90)}
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {(c.tags || []).slice(0, 3).map((tg) => <CSBadge key={tg}>{tg}</CSBadge>)}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 2 }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted, #b8b2a8)' }}>by {c.owner_name || '匿名'}</span>
+                  <CSButton variant="primary" loading={!!importing[c.id]} onClick={() => doImport(c)}>导入</CSButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+    </CSSpaceBetween>
   );
 }
 
@@ -415,19 +496,36 @@ function CardGrid({ cards, onEdit, kind, filter, empty, onDeleted, onDuplicate, 
         { id: 'delete', text: t('cards.list.menu_delete'), iconName: 'remove' },
       ];
     }
+    const isPub = !!(c._raw?.is_public ?? c.is_public);
     return [
       { id: 'png', text: t('cards.list.menu_export_png'), href: window.api.cards.exportPng(c.id), external: true, iconName: 'file' },
       { id: 'tavern', text: t('cards.list.menu_export_tavern'), href: window.api.cards.exportTavern(c.id), external: true, iconName: 'download' },
       { id: 'copyid', text: t('cards.list.menu_copy_id'), iconName: 'copy' },
       ...(onDuplicate ? [{ id: 'dup', text: t('cards.list.menu_duplicate'), iconName: 'copy' }] : []),
+      isPub
+        ? { id: 'unpublish', text: t('cards.list.menu_unpublish', { defaultValue: '取消公开' }), iconName: 'lock-private' }
+        : { id: 'publish', text: t('cards.list.menu_publish', { defaultValue: '发布到在线库' }), iconName: 'share' },
       { id: 'delete', text: t('cards.list.menu_delete'), iconName: 'remove' },
     ];
+  };
+  const setPublic = async (c, pub) => {
+    try {
+      await window.api.cards.setPublic(c.id, pub);
+      window.__apiToast?.(pub
+        ? t('cards.toast.published', { defaultValue: '已发布到在线角色卡库', name: c.name })
+        : t('cards.toast.unpublished', { defaultValue: '已取消公开', name: c.name }), { kind: 'ok' });
+      onDeleted && onDeleted(c);  // 复用 reload 信号刷新列表
+    } catch (e) {
+      window.__apiToast?.(t('cards.toast.publish_fail', { defaultValue: '操作失败' }), { kind: 'danger', detail: e?.message || String(e) });
+    }
   };
   const onMenu = (c, id) => {
     if (id === 'copyid') copyId(c);
     else if (id === 'dup') onDuplicate?.(c);
     else if (id === 'delete') handleDelete(c);
     else if (id === 'promote') promoteNpcToUserCard(c);
+    else if (id === 'publish') setPublic(c, true);
+    else if (id === 'unpublish') setPublic(c, false);
     // png / tavern 由 ButtonDropdown href 自动打开新标签,无需 onMenu 处理
   };
 
@@ -443,6 +541,9 @@ function CardGrid({ cards, onEdit, kind, filter, empty, onDeleted, onDuplicate, 
           <CSSpaceBetween direction="horizontal" size="xs" alignItems="center">
             <CSBox key="name" variant="h3" padding="n">{c.name}</CSBox>
             {c.pinned && <CSBadge key="pin" color="blue">{t('cards.list.pinned')}</CSBadge>}
+            {(c._raw?.is_public ?? c.is_public) && kind !== 'npc' && (
+              <CSBadge key="pub" color="green">{t('cards.list.published', { defaultValue: '已公开' })}</CSBadge>
+            )}
           </CSSpaceBetween>
         ),
         sections: [
@@ -500,6 +601,7 @@ function UserCardsView() {
           bio: c.description || c.summary || c.bio || c.personality || c.current_status || c.appearance || "",
           tags: c.tags || [],
           pinned: !!c.pinned,
+          is_public: !!c.is_public,
           uses: c.uses || 0,
           updated: window.__fmt?.ago(c.updated_at) || c.updated_at || "—",
           _raw: c,

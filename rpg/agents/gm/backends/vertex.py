@@ -131,7 +131,7 @@ class _VertexBackend:
         else:
             raise last_exc  # type: ignore[misc]
         self._capture_usage(resp)
-        return resp.text.strip()
+        return (resp.text or "").strip()
 
     def _capture_usage(self, resp) -> None:
         meta = getattr(resp, "usage_metadata", None)
@@ -176,9 +176,7 @@ class _VertexBackend:
             config=config,
         )
         self._capture_usage(resp)
-        if resp.text is None:
-            return ""
-        return resp.text.strip()
+        return (resp.text or "").strip()
 
     def stream(self, system: str, messages: list[dict], max_tokens: int) -> Iterator[str]:
         self._ensure_available()

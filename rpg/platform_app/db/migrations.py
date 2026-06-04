@@ -28,6 +28,12 @@ from core.config import migration_lock_timeout_ms as _migration_lock_timeout_ms
 
 MIGRATION_LOCK_TIMEOUT_MS = _migration_lock_timeout_ms()
 
+# embedding 向量维度:默认 768(Google text-embedding-004 / 平台栈)。自部署用别的
+# provider(如 SiliconFlow Qwen3-Embedding-8B=4096、BGE-M3=1024)时,**首次部署前**设
+# EMBED_DIM=<维度>,fresh DB 的 pgvector 列 + HNSW 索引按此维度建,避免写入维度不匹配报错。
+# 已有 DB 不受影响(add column if not exists 不重跑);换维度需重建库或手动 ALTER 后重嵌入。
+_EMBED_DIM = (os.environ.get("EMBED_DIM", "") or "768").strip() or "768"
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  版本化 migration 框架
@@ -207,15 +213,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
     ]),
     (10, "pgvector_columns_and_hnsw", [
         # 仅当 vector 扩展已启用时建 vector 列 + HNSW；否则保持 jsonb fallback
-        # 用 DO 块按运行时条件执行
-        """
+        # 用 DO 块按运行时条件执行(维度 = _EMBED_DIM,默认 768,自部署可 env 覆盖)
+        f"""
         do $$
         begin
           if exists (select 1 from pg_extension where extname = 'vector') then
-            -- 加 vector 列（768 维，gemini embedding 标准；可后续调整）
-            execute 'alter table document_chunks add column if not exists embedding_vec vector(768)';
-            execute 'alter table memories add column if not exists embedding_vec vector(768)';
-            -- HNSW 索引（cosine）
+            -- 加 vector 列(默认 768=gemini 标准;EMBED_DIM 可在首次部署前覆盖)
+            execute 'alter table document_chunks add column if not exists embedding_vec vector({_EMBED_DIM})';
+            execute 'alter table memories add column if not exists embedding_vec vector({_EMBED_DIM})';
+            -- HNSW 索引(cosine)
             execute 'create index if not exists idx_doc_chunks_embedding_hnsw on document_chunks using hnsw (embedding_vec vector_cosine_ops)';
             execute 'create index if not exists idx_memories_embedding_hnsw on memories using hnsw (embedding_vec vector_cosine_ops)';
           end if;
@@ -522,14 +528,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # v19: 对齐现网嵌入。设计原写 BGE-M3(1024),但平台实际可用的是
         # Vertex text-embedding-004(768 维,knowledge.embedding 已封装)。
         # 自托管 BGE-M3 未部署 → 改用 768 复用现有嵌入栈(更省、已 live)。表为空,安全 alter。
-        """
+        # 维度 = _EMBED_DIM(默认 768;自部署 EMBED_DIM 覆盖)。
+        f"""
         do $$
         begin
           if exists (select 1 from pg_extension where extname = 'vector')
              and exists (select 1 from information_schema.columns
                          where table_name='kb_canon_entities' and column_name='embedding') then
             execute 'alter table kb_canon_entities drop column embedding';
-            execute 'alter table kb_canon_entities add column embedding vector(768)';
+            execute 'alter table kb_canon_entities add column embedding vector({_EMBED_DIM})';
           end if;
         end $$;
         """,
@@ -1103,12 +1110,12 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "alter table document_chunks add column if not exists embedded_at timestamptz",
         "alter table character_cards add column if not exists embedded_at timestamptz",
         "alter table worldbook_entries add column if not exists embedded_at timestamptz",
-        """
+        f"""
         do $$
         begin
           if exists (select 1 from pg_extension where extname = 'vector') then
-            execute 'alter table character_cards add column if not exists embedding_vec vector(768)';
-            execute 'alter table worldbook_entries add column if not exists embedding_vec vector(768)';
+            execute 'alter table character_cards add column if not exists embedding_vec vector({_EMBED_DIM})';
+            execute 'alter table worldbook_entries add column if not exists embedding_vec vector({_EMBED_DIM})';
             execute 'create index if not exists idx_character_cards_embedding_hnsw on character_cards using hnsw (embedding_vec vector_cosine_ops)';
             execute 'create index if not exists idx_worldbook_entries_embedding_hnsw on worldbook_entries using hnsw (embedding_vec vector_cosine_ops)';
           end if;
@@ -1384,6 +1391,89 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "update worldbook_entries "
         "set first_revealed_chapter = greatest(0, (metadata->>'chapter_min')::int) "
         "where (metadata->>'chapter_min') ~ '^[0-9]+$' and first_revealed_chapter = 0",
+    ]),
+    (54, "character_cards_public_library", [
+        # 在线角色卡库:用户 PC 卡(card_type='pc')可发布到公开库,他人浏览 + 完整 clone
+        # 到自己集合(复制,非指针)。只列 is_public;clone_count 记热度。
+        "alter table character_cards add column if not exists is_public boolean not null default false",
+        "alter table character_cards add column if not exists published_at timestamptz",
+        "alter table character_cards add column if not exists clone_count integer not null default 0",
+        "create index if not exists idx_character_cards_public "
+        "on character_cards(is_public, published_at desc) where is_public",
+    ]),
+    (55, "federation_pat_and_device", [
+        # 功能 B:本地↔在线剧本库打通。在线服务签发 PAT / 设备码给外部客户端(本地部署),
+        # 客户端用 Bearer PAT 调 /api/ext/library/*。两表都只存令牌的 sha256 哈希,绝不存明文。
+        "create table if not exists personal_access_tokens ("
+        "  id bigserial primary key,"
+        "  user_id bigint not null references users(id) on delete cascade,"
+        "  token_hash text not null unique,"
+        "  name text not null default '',"
+        "  scopes jsonb not null default '[]'::jsonb,"
+        "  created_at timestamptz not null default now(),"
+        "  expires_at timestamptz,"
+        "  last_used_at timestamptz,"
+        "  revoked_at timestamptz"
+        ")",
+        "create index if not exists idx_pat_user on personal_access_tokens(user_id) "
+        "where revoked_at is null",
+        # 设备码流(GitHub CLI 式):客户端拿 device_code 轮询,用户在浏览器输 user_code 批准。
+        "create table if not exists device_authorizations ("
+        "  id bigserial primary key,"
+        "  device_code_hash text not null unique,"
+        "  user_code text not null unique,"
+        "  client_name text not null default '',"
+        "  scopes jsonb not null default '[]'::jsonb,"
+        "  status text not null default 'pending',"  # pending | approved | denied
+        "  user_id bigint references users(id) on delete cascade,"
+        "  pat_id bigint references personal_access_tokens(id) on delete set null,"
+        "  created_at timestamptz not null default now(),"
+        "  expires_at timestamptz not null,"
+        "  interval_seconds integer not null default 5,"
+        "  approved_at timestamptz"
+        ")",
+        "create index if not exists idx_device_auth_usercode on device_authorizations(user_code)",
+    ]),
+    (56, "pat_source", [
+        # PAT 来源:'manual'(用户在设置里手动生成)/ 'device'(设备码流签发)。
+        # 用于「授权设备」与「个人令牌」分类展示(GitHub 式)。
+        "alter table personal_access_tokens add column if not exists source text not null default 'manual'",
+    ]),
+    (57, "compliance_dmca_csam_tables", [
+        # 修历史缺漏:admin DMCA 下架 / CSAM 举报合规端点查 dmca_takedowns / csam_reports,
+        # 但这两表从未被任何 migration 创建(v37 注释声称创建实则没有)→ 端点 500。
+        # 按 api/admin.py 端点用到的列补建。dmca_strikes 已在别处建,不在此处。
+        "create table if not exists dmca_takedowns ("
+        "  id bigserial primary key,"
+        "  complainant_name text not null default '',"
+        "  complainant_email text not null default '',"
+        "  infringing_url text not null default '',"
+        "  original_work_desc text not null default '',"
+        "  status text not null default 'open',"  # open|closed|restored|rejected|counter_received
+        "  notes text,"
+        "  created_by bigint references users(id) on delete set null,"
+        "  counter_received_at timestamptz,"
+        "  restore_after timestamptz,"
+        "  actioned_at timestamptz,"
+        "  actioned_by bigint references users(id) on delete set null,"
+        "  created_at timestamptz not null default now()"
+        ")",
+        "create index if not exists idx_dmca_takedowns_status on dmca_takedowns(status, created_at desc)",
+        "create table if not exists csam_reports ("
+        "  id bigserial primary key,"
+        "  reporter_id bigint references users(id) on delete set null,"
+        "  reported_user_id bigint references users(id) on delete set null,"
+        "  content_url text not null default '',"
+        "  description text not null default '',"
+        "  status text not null default 'open',"  # open|decided
+        "  decision text,"                          # founded|unfounded|escalate
+        "  decision_notes text,"
+        "  cybertip_report_id text,"
+        "  decided_at timestamptz,"
+        "  decided_by bigint references users(id) on delete set null,"
+        "  created_at timestamptz not null default now()"
+        ")",
+        "create index if not exists idx_csam_reports_status on csam_reports(status, created_at desc)",
     ]),
 ]
 

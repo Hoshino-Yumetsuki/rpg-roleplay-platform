@@ -207,10 +207,10 @@ function GCWelcomeModal({ open, onClose }) {
         </div>
         {/* API 说明 */}
         <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>平台不提供 API 代理</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>自带密钥(BYOK)· 平台不代为提供 API 服务</div>
           <div style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--text-quiet, #9a9590)' }}>
-            GM 主对话需要你自行准备 AI API Key（Anthropic / OpenAI / Vertex / DeepSeek 等）。
-            RAG Embedder 由 admin/vip 兜底；普通用户建议自配。
+            GM 主对话与 RAG Embedder 均采用自带密钥（BYOK）模式,需你自行准备并配置 AI API Key（Anthropic / OpenAI / Vertex / DeepSeek 等）。
+            平台不代为提供 AI API 调用服务。
           </div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>

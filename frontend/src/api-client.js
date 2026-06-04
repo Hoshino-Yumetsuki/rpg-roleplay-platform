@@ -273,6 +273,14 @@
       avatarReset: () => POST(`${API_PREFIX}/profile/avatar/reset`, {}),
       visibility: (body) => POST(`${API_PREFIX}/profile/visibility`, body),
       exportData: (body) => POST(`${API_PREFIX}/account/export`, body || {}),
+      // 账号数据迁移(免部署 → 本地):聚合剧本/存档/角色卡/偏好为单个 zip
+      migrateEstimate: () => GET(`${API_PREFIX}/me/account/export/estimate`),
+      migrateExportUrl: (includeChunks) => BASE + `${API_PREFIX}/me/account/export` + (includeChunks ? "?include_chunks=1" : ""),
+      migrateImport: (file) => {
+        const fd = new FormData(); fd.append("file", file);
+        // 多剧本账号包串行恢复,可能数十秒~分钟级 → 给 10 分钟,避免默认 15s 误中断。
+        return _send(`${API_PREFIX}/me/account/import`, { method: "POST", body: fd, signal: timeoutSignal(600000) });
+      },
       deactivate: () => POST(`${API_PREFIX}/account/deactivate`, {}),
       deleteAccount: (body) => POST(`${API_PREFIX}/account/delete`, body || {}),
       usage: (days) => GET(`${API_PREFIX}/me/usage`, days ? { days } : undefined),
@@ -351,7 +359,7 @@
       },
       // CSAM Reports
       csamReports: {
-        list: () => GET(`/api/admin/csam/reports`),
+        list: ({ status } = {}) => GET(`/api/admin/csam/reports`, status ? { status } : undefined),
         decision: (id, body) => POST(`/api/admin/csam/reports/${id}/decision`, body),
       },
       // AUP 用户操作 (suspend / unsuspend / terminate)
@@ -478,6 +486,30 @@
       checkout: (sid, commitId) => POST(`${API_PREFIX}/scripts/${sid}/checkout/${commitId}`, {}),
     },
 
+    // ---------- 功能 B:本地↔在线剧本库联邦 ----------
+    federation: {
+      // 本实例是否为在线库提供方(server 模式开;本地客户端关)→ 决定是否展示 /device、令牌管理
+      providerInfo: () => GET(`${API_PREFIX}/ext/provider-info`),
+      // 在线提供方:PAT 管理(本服务签发给外部客户端)
+      patList: () => GET(`${API_PREFIX}/me/pat`),
+      patCreate: (body) => POST(`${API_PREFIX}/me/pat`, body),
+      patRevoke: (id) => POST(`${API_PREFIX}/me/pat/` + id + "/revoke", {}),
+      // 在线提供方:设备码批准页(登录用户在浏览器批准外部客户端)
+      deviceLookup: (userCode) => GET(`${API_PREFIX}/me/device/lookup`, { user_code: userCode }),
+      deviceApprove: (userCode, deny) => POST(`${API_PREFIX}/me/device/approve`, { user_code: userCode, deny: !!deny }),
+      // 本地客户端:连接器(指向在线服务)
+      connectorGet: () => GET(`${API_PREFIX}/me/library-connector`),
+      connectorSet: (base_url, token) => POST(`${API_PREFIX}/me/library-connector`, { base_url, token }),
+      connectorTest: () => POST(`${API_PREFIX}/me/library-connector/test`, {}),
+      connectorScripts: (q) => GET(`${API_PREFIX}/me/library-connector/scripts`, q ? { q } : undefined),
+      // 整包下载/上传 + DB 恢复,可能数十秒 → 给 3 分钟,避免默认 15s 误中断。
+      connectorImport: (remote_script_id) => POST(`${API_PREFIX}/me/library-connector/import`, { remote_script_id }, { signal: timeoutSignal(180000) }),
+      connectorPublish: (script_id) => POST(`${API_PREFIX}/me/library-connector/publish`, { script_id }, { signal: timeoutSignal(180000) }),
+      // 本地客户端:设备码流(引导用户在浏览器授权在线服务)
+      deviceStart: (base_url, scopes) => POST(`${API_PREFIX}/me/library-connector/device/start`, { base_url, scopes }),
+      devicePoll: (base_url, device_code) => POST(`${API_PREFIX}/me/library-connector/device/poll`, { base_url, device_code }),
+    },
+
     // ---------- Saves & branches ----------
     saves: {
       list: () => GET(`${API_PREFIX}/saves`),
@@ -491,7 +523,8 @@
       exportUrl: (sid) => BASE + `${API_PREFIX}/saves/` + sid + "/export",
       importFile: (file) => {
         const fd = new FormData(); fd.append("file", file);
-        return _send(`${API_PREFIX}/saves/import`, { method: "POST", body: fd });
+        // 自包含 bundle(.zip)导入要整包恢复,可能超默认 15s → 给 3 分钟。
+        return _send(`${API_PREFIX}/saves/import`, { method: "POST", body: fd, signal: timeoutSignal(180000) });
       },
     },
     branches: {
@@ -532,6 +565,10 @@
       myGet: (id) => GET(`${API_PREFIX}/me/character-cards/` + id),
       myUpsert: (body) => POST(`${API_PREFIX}/me/character-cards`, body),
       myDelete: (id) => POST(`${API_PREFIX}/me/character-cards/` + id + "/delete", {}),
+      // 在线角色卡库:发布/取消公开自己的卡 · 浏览公开卡 · 完整克隆进自己卡库
+      setPublic: (id, isPublic) => POST(`${API_PREFIX}/me/character-cards/` + id + "/visibility", { public: !!isPublic }),
+      publicList: (q) => GET(`${API_PREFIX}/cards/public`, q),
+      cloneFromPublic: (id) => POST(`${API_PREFIX}/cards/public/` + id + "/clone", {}),
       importTavern: (file, opts = {}) => {
         const fd = new FormData(); fd.append("file", file);
         if (opts.aiSplit) fd.append("ai_split", "true");
@@ -725,6 +762,9 @@
   }
   window.withToast = withToast;
 
+  // 别名:部分组件(GmStyleEditor 等)用 window.api.me.* 访问「我的账户」端点,
+  // 而账户方法定义在 api.account 命名空间。补这条别名,二者等价,避免 undefined 报错。
+  if (!api.me) api.me = api.account;
   window.api = api;
   window.dispatchEvent(new CustomEvent("api-ready", { detail: { base: BASE } }));
 })();

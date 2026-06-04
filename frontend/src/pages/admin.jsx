@@ -1270,7 +1270,7 @@ export function AdminDmcaTakedownsPage() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await window.api.admin.dmcaTakedowns({ status: statusFilter.value });
+      const res = await window.api.admin.dmcaTakedowns.list({ status: statusFilter.value });
       setItems(res.takedowns || res || []);
     } catch (e) {
       setErr(e?.message || t('admin_page.common.load_fail'));
@@ -1285,7 +1285,7 @@ export function AdminDmcaTakedownsPage() {
     if (!actionModal) return;
     setActionBusy(true);
     try {
-      await window.api.admin.dmcaTakedownAction(actionModal.item.id, {
+      await window.api.admin.dmcaTakedowns.action(actionModal.item.id, {
         action: actionModal.action, reason: actionReason,
       });
       window.toast?.(t('admin_page.dmca_takedowns.op_ok'), { kind: 'ok' });
@@ -1302,7 +1302,7 @@ export function AdminDmcaTakedownsPage() {
   async function doCreate() {
     setCreating(true);
     try {
-      await window.api.admin.dmcaTakedownCreate(createForm);
+      await window.api.admin.dmcaTakedowns.create(createForm);
       window.toast?.(t('admin_page.dmca_takedowns.create_ok'), { kind: 'ok' });
       setCreateModal(false);
       setCreateForm({ complainant_name: '', complainant_email: '', infringing_url: '', original_work_desc: '' });
@@ -1318,7 +1318,7 @@ export function AdminDmcaTakedownsPage() {
     if (!counterModal) return;
     setCounterBusy(true);
     try {
-      await window.api.admin.dmcaTakedownCounter(counterModal.id, { notes: counterNotes });
+      await window.api.admin.dmcaTakedowns.counter(counterModal.id, { notes: counterNotes });
       window.toast?.(t('admin_page.dmca_takedowns.counter_ok'), { kind: 'ok' });
       setCounterModal(null);
       setCounterNotes('');
@@ -1502,7 +1502,7 @@ export function AdminDmcaStrikesPage() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await window.api.admin.dmcaStrikes();
+      const res = await window.api.admin.dmcaStrikes.list();
       setUsers(res.users || []);
     } catch (e) {
       setErr(e?.message || t('admin_page.common.load_fail'));
@@ -1517,7 +1517,7 @@ export function AdminDmcaStrikesPage() {
     if (!strikeModal) return;
     setStrikeBusy(true);
     try {
-      const res = await window.api.admin.dmcaStrikeIncrement(strikeModal.user_id, { reason: strikeReason });
+      const res = await window.api.admin.dmcaStrikes.increment(strikeModal.user_id, { reason: strikeReason });
       if (res.terminate) {
         window.toast?.(t('admin_page.dmca_strikes.strike_added_terminated', { count: res.strike_count }), { kind: 'danger', duration: 8000 });
       } else {
@@ -1659,7 +1659,7 @@ export function AdminCsamReportsPage() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await window.api.admin.csamReports({ status: statusFilter.value });
+      const res = await window.api.admin.csamReports.list({ status: statusFilter.value });
       setReports(res.reports || []);
     } catch (e) {
       setErr(e?.message || t('admin_page.common.load_fail'));
@@ -1674,7 +1674,7 @@ export function AdminCsamReportsPage() {
     if (!decisionModal || !decisionForm.decision) return;
     setDeciding(true);
     try {
-      await window.api.admin.csamDecision(decisionModal.id, decisionForm);
+      await window.api.admin.csamReports.decision(decisionModal.id, decisionForm);
       window.toast?.(t('admin_page.csam.decided_ok'), { kind: 'ok' });
       setDecisionModal(null);
       setDecisionForm({ decision: '', notes: '' });

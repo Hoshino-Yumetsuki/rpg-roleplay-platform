@@ -28,7 +28,7 @@ import {
   AdminFeedbackPage,
 } from './pages/admin.jsx';
 import PolicyNoticeBanner from './components/PolicyNoticeBanner.jsx';
-import { FeedbackDrawer } from './components/FeedbackDrawer.jsx';
+import { FeedbackQuickModal } from './components/FeedbackQuickModal.jsx';
 import HelpDrawerRoot from './components/HelpDrawer.jsx';
 // Cloudscape shell(AWS 控制台架构 + 暖色主题)
 import CSTopNavigation from '@cloudscape-design/components/top-navigation';
@@ -64,6 +64,7 @@ const getPLNav = (t) => [
   { id: "modules",  label: t('platform.nav.modules'),  icon: "spark" },
   { id: "saves",    label: t('platform.nav.saves'),    icon: "play" },
   { id: "cards",    label: t('platform.nav.cards'),    icon: "cards" },
+  { id: "cards-online", label: t('platform.nav.cards_online', { defaultValue: '在线角色卡库' }), icon: "cards" },
   // task 141: 测试期禁用文件库入口 — 资产库目前无 mime 白名单可绕过 → 安全风险。
   // 整页保留代码但导航不暴露;后端 library.py 同步加 403 短路。
   // { id: "library",  label: t('platform.nav.library'),  icon: "folder" },
@@ -87,6 +88,7 @@ const getPLTitles = (t) => ({
   "saves-branches": [t('platform.nav.saves_branches'), t('platform.nav.saves_branches_sub')],
   cards:    [t('platform.nav.cards'),    t('platform.nav.cards_sub')],
   "cards-npc": [t('platform.nav.cards_npc'), t('platform.nav.cards_npc_sub')],
+  "cards-online": [t('platform.nav.cards_online', { defaultValue: '在线角色卡库' }), t('platform.nav.cards_online_sub', { defaultValue: '浏览并导入他人公开分享的角色卡' })],
   library:  [t('platform.nav.library'),  t('platform.nav.library_sub')],
   me:          [t('platform.nav.me'),         t('platform.nav.me_sub')],
   "me-edit":   [t('platform.nav.me_edit'),    t('platform.nav.me_edit_sub')],
@@ -3871,18 +3873,19 @@ const getCSModules = (t) => [
     ] },
   { id: 'play', label: t('platform.nav.saves'), group: t('platform.nav.group_play'),
     // NPC 角色卡已移入「剧本」详情面板(NPC 卡属于具体剧本),不再在开始游戏出现。
-    pages: ['saves', 'saves-branches', 'cards', 'modules', 'play-settings'],
+    pages: ['saves', 'saves-branches', 'cards', 'cards-online', 'modules', 'play-settings'],
     sub: [
       { text: t('platform.nav.cs_saves'),          href: '#saves' },
       { text: t('platform.nav.cs_branches'),        href: '#saves-branches' },
       { text: t('platform.nav.cs_user_cards'),      href: '#cards' },
+      { text: t('platform.nav.cards_online', { defaultValue: '在线角色卡库' }), href: '#cards-online' },
       { text: t('platform.nav.modules'),            href: '#modules' },
       { text: t('platform.nav.cs_play_settings'),   href: '#play-settings' },
     ] },
   { id: 'account', label: t('platform.nav.account'), group: t('platform.nav.group_system'),
     pages: ['me', 'me-edit', 'me-settings', 'settings', 'settings-models',
       'settings-modelparams', 'settings-modules', 'settings-memory', 'settings-permissions',
-      'settings-danger'],
+      'settings-account', 'settings-danger'],
     sub: [
       { text: t('platform.nav.me'),                  href: '#me' },
       { text: t('platform.nav.me_edit'),              href: '#me-edit' },
@@ -3893,6 +3896,7 @@ const getCSModules = (t) => [
       { text: t('platform.nav.settings_modules'),     href: '#settings-modules' },
       { text: t('platform.nav.settings_memory'),      href: '#settings-memory' },
       { text: t('platform.nav.settings_permissions'), href: '#settings-permissions' },
+      { text: t('platform.nav.settings_account', { defaultValue: '账号与数据迁移' }), href: '#settings-account' },
       { text: t('platform.nav.settings_danger'),      href: '#settings-danger' },
     ] },
   // 系统管理:仅 admin 角色可见/可访问(adminOnly)。部署配置等站点级设置从用户
@@ -4069,7 +4073,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
             kind: 'info',
             detail: '点右上"提交反馈"查看详情',
             duration: 5000,
-            action: { label: '查看', onClick: () => setFeedbackOpen(true) },
+            action: { label: '查看', onClick: () => plNavigate('feedback') },
           });
         }
       } catch (_) {}
@@ -4169,7 +4173,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
   // 页面 → 帮助 slug 映射(slug 对应 frontend/help/__index.json 中的键)
   const PAGE_HELP_SLUG = {
     scripts: 'scripts', 'scripts-import': 'scripts',
-    cards: 'cards', 'cards-npc': 'cards',
+    cards: 'cards', 'cards-npc': 'cards', 'cards-online': 'cards',
     saves: 'saves', 'saves-branches': 'saves',
     settings: 'settings-models',
     'settings-models': 'settings-models',
@@ -4199,7 +4203,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
   return (
     <>
       <PolicyNoticeBanner />
-      <FeedbackDrawer open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      <FeedbackQuickModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
       <WelcomeModal open={welcomeOpen} firstTime={welcomeFirstTime}
         onClose={() => { setWelcomeOpen(false); setWelcomeFirstTime(false); }} />
       <HelpDrawerRoot />

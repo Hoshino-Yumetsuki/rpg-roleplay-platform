@@ -34,6 +34,7 @@ import { ScriptsPage } from '../pages/scripts.jsx';
 import { CardsPage } from '../pages/cards.jsx';
 import { SettingsPage } from '../pages/settings.jsx';
 import { FeedbackPage } from '../pages/feedback.jsx';
+import { DeviceAuthorizePage } from '../pages/device.jsx';
 import { plPathToPage, plNavigate, plPageToPath } from '../router.js';
 
 // AGE-02: splash gate
@@ -66,16 +67,16 @@ const TWEAK_DEFAULTS = {
 // PL_HASH_ALIASES 里归一。
 const PL_IDS = [
   ...((PL_NAV || []).filter((i) => i.id).map((i) => i.id)),
-  'me', 'me-edit', 'me-settings', 'saves-branches', 'scripts-import', 'cards-npc',
+  'me', 'me-edit', 'me-settings', 'saves-branches', 'scripts-import', 'cards-npc', 'cards-online',
   // 新 IA 子页(Cloudscape 迁移后):剧本 / 开始游戏 / 设置&账户 各模块的左栏子页
   'scripts-library', 'scripts-editor', 'scripts-settings', 'play-settings',
   'settings-models', 'settings-modelparams', 'settings-modules', 'settings-memory',
-  'settings-permissions', 'settings-danger', 'admin-deploy',
+  'settings-permissions', 'settings-account', 'settings-danger', 'admin-deploy',
   'admin-users', 'admin-usage', 'admin-audit', 'admin-health',
   'admin-logs', 'admin-registration', 'admin-security', 'admin-maintenance',
   'admin-dmca-takedowns', 'admin-dmca-strikes', 'admin-csam-reports', 'admin-aup-actions',
   'admin-feedback',
-  'usage', 'plugins', 'mcp', 'skills', 'apis', 'feedback',
+  'usage', 'plugins', 'mcp', 'skills', 'apis', 'feedback', 'device',
 ];
 function parsePage() {
   return plPathToPage(PL_IDS);
@@ -151,12 +152,14 @@ function PlatformApp() {
   else if (page === 'library') body = <LibraryPage />;
   else if (page === 'cards') body = <CardsPage subPage="user" />;
   else if (page === 'cards-npc') body = <CardsPage subPage="npc" />;
+  else if (page === 'cards-online') body = <CardsPage subPage="online" />;
   else if (page === 'settings') body = <SettingsPage section="preferences" />;
   else if (page === 'settings-models') body = <SettingsPage section="models" />;
   else if (page === 'settings-modelparams') body = <SettingsPage section="modelparams" />;
   else if (page === 'settings-modules') body = <SettingsPage section="modules" />;
   else if (page === 'settings-memory') body = <SettingsPage section="memory" />;
   else if (page === 'settings-permissions') body = <SettingsPage section="permissions" />;
+  else if (page === 'settings-account') body = <SettingsPage section="account" />;
   else if (page === 'settings-danger') body = <SettingsPage section="danger" />;
   else if (page === 'admin-deploy') body = <AdminGuard><SettingsPage section="deploy" /></AdminGuard>;
   else if (page === 'admin-users')        body = <AdminGuard><AdminUsersPage /></AdminGuard>;
@@ -178,6 +181,7 @@ function PlatformApp() {
   else if (page === 'skills') body = <CapPage kind="skills" />;
   else if (page === 'apis') body = <CapPage kind="apis" />;
   else if (page === 'feedback') body = <FeedbackPage />;
+  else if (page === 'device') body = <DeviceAuthorizePage />;
   else body = <ProfilePage />;
 
   return (

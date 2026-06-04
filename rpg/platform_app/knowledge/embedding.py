@@ -30,7 +30,9 @@ log = logging.getLogger(__name__)
 # 系统默认 embedding 配置(env 可覆盖,用户 BYOK 优先于 env)
 DEFAULT_EMBED_MODEL = os.environ.get("EMBED_MODEL", "text-embedding-004")
 DEFAULT_EMBED_API_ID = os.environ.get("EMBED_API_ID", "vertex_ai")
-EMBED_DIM = 768
+# 向量维度:默认 768(text-embedding-004 / 平台栈)。自部署用别的 provider 时设 EMBED_DIM
+# (须与 migrations 建表维度一致,首次部署前设)。仅用于返回维度校验,不强制截断。
+EMBED_DIM = int(os.environ.get("EMBED_DIM", "768") or "768")
 # Vertex text-embedding-004 限制:**单请求总 token ≤ 20000**(不是 250 项)。
 # 中文 chunk 平均 ~200 token,100 项已经超过 20K → 400 INVALID_ARGUMENT。
 # 减到 30 项 × ~600 char ≈ 9000 tokens,留足 50% buffer 处理长 chunk。
@@ -55,6 +57,41 @@ EMBED_MODEL = DEFAULT_EMBED_MODEL
 
 
 _PLATFORM_FALLBACK_ROLES = ("admin", "vip_user")
+_VERTEX_API_IDS = {"vertex", "google", "vertex_ai"}
+_OPENAI_API_IDS = {"openai", "openai_compat"}
+_GEMINI_API_IDS = {"gemini", "google_gemini"}
+_COHERE_API_IDS = {"cohere"}
+
+
+def _is_google_generative_openai_base(base_url: str) -> bool:
+    return "generativelanguage.googleapis.com" in (base_url or "").lower()
+
+
+def _native_gemini_embed_model(model: str) -> str:
+    """Gemini OpenAI-compatible /embeddings hits batchEmbed quota; native uses embedContent."""
+    model = (model or "").strip()
+    if model in {"", "text-embedding-004"}:
+        return os.environ.get("GEMINI_EMBED_MODEL", "gemini-embedding-001")
+    return model
+
+
+def _normalize_platform_embed_config(
+    api_id: str,
+    model: str,
+    api_key: str,
+    base_url: str,
+) -> tuple[str, str, str, str]:
+    """Platform Gemini key should use native embedContent, not OpenAI-compatible batchEmbed."""
+    if api_key and api_id in _OPENAI_API_IDS and _is_google_generative_openai_base(base_url):
+        return "gemini", _native_gemini_embed_model(model), api_key, ""
+    # 自部署兜底:部署者配了 EMBED_API_KEY(+常配 EMBED_BASE_URL)但没设 EMBED_API_ID →
+    # 默认值 vertex_ai 会走 Vertex SA(自部署没有)→ 静默失败。Vertex 用 SA 不用 api_key,
+    # 所以「有 api_key」本身就说明意图是 OpenAI 兼容 provider(SiliconFlow 等),非 Vertex。
+    # 非 google 原生 base 时纠偏成 openai,让自部署开箱即用。
+    if api_key and api_id in _VERTEX_API_IDS and not _is_google_generative_openai_base(base_url):
+        log.info("[embedding] EMBED_API_KEY set with default vertex_ai api_id → 纠偏为 openai (OpenAI 兼容 provider)")
+        return "openai", model, api_key, base_url
+    return api_id, model, api_key, base_url
 
 
 def _is_admin(user_id: int | None) -> bool:
@@ -77,7 +114,7 @@ def _resolve_embed_config(user_id: int | None) -> tuple[str, str, str, str]:
 
     优先链:
     1. user 自己配的 BYOK embedder credential(任何用户都允许)
-    2. 平台 env 兜底(EMBED_API_KEY / EMBED_BASE_URL / EMBED_MODEL)— 只对 admin 生效。
+    2. 平台 env 兜底(EMBED_API_KEY / EMBED_BASE_URL / EMBED_MODEL)— 只对 admin/vip 生效。
        普通用户没自己配 → 返回空 api_key,_embed_via_openai 会返 None 让上层降级。
 
     设计理由:Gemini API text-embedding-004 在付费层 $0.025/M tokens,100 用户
@@ -95,16 +132,16 @@ def _resolve_embed_config(user_id: int | None) -> tuple[str, str, str, str]:
             if cred.get("key"):
                 base_url = cred.get("base_url_override", "") or env_base_url
                 return api_id, model, cred["key"], base_url
-            # user 没自配 — 只 admin 才走平台 env 兜底
+            # user 没自配 — 只 admin/vip 才走平台 env 兜底
             if _is_admin(user_id):
-                return api_id, model, os.environ.get("EMBED_API_KEY", ""), env_base_url
+                return _platform_fallback_config()
             # 普通用户 + 没自配 → 返空 key 让 _embed_via_openai 返 None
             log.debug("[embedding] non-admin user %s without own embedder cred; refusing platform fallback", user_id)
             return api_id, model, "", ""
         except Exception as exc:
             log.debug("[embedding] resolve_embed_config failed for user %s: %s", user_id, exc)
     # 无 user_id (后台 cron / 内部任务):走 env 兜底
-    return DEFAULT_EMBED_API_ID, DEFAULT_EMBED_MODEL, os.environ.get("EMBED_API_KEY", ""), env_base_url
+    return _platform_fallback_config()
 
 
 def _get_vertex_client(user_id: int | None = None):
@@ -147,11 +184,6 @@ def _get_vertex_client(user_id: int | None = None):
 # ---------------------------------------------------------------------------
 # Provider dispatch
 # ---------------------------------------------------------------------------
-
-_VERTEX_API_IDS = {"vertex", "google", "vertex_ai"}
-_OPENAI_API_IDS = {"openai", "openai_compat"}
-_COHERE_API_IDS = {"cohere"}
-
 
 def _embed_via_vertex(model: str, texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT", user_id: int | None = None) -> list[list[float]] | None:
     """调 Vertex genai SDK。model 为空时回退 DEFAULT_EMBED_MODEL。user_id 用于 BYOK SA 优先链。"""
@@ -230,6 +262,49 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
         return None
 
 
+def _embed_via_gemini(model: str, api_key: str, texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]] | None:
+    """Gemini native embedContent API, avoiding OpenAI-compatible batchEmbed quota."""
+    import urllib.request
+    import urllib.error
+    import json as _json
+
+    if not api_key:
+        log.warning("[embedding] gemini api_id but no api_key")
+        return None
+
+    effective_model = _native_gemini_embed_model(model)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{effective_model}:embedContent?key={api_key}"
+    out: list[list[float]] = []
+    try:
+        for text in texts:
+            payload = _json.dumps({
+                "content": {"parts": [{"text": text}]},
+                "taskType": task_type,
+                "outputDimensionality": EMBED_DIM,
+            }).encode()
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = _json.loads(resp.read())
+            values = data.get("embedding", {}).get("values") or []
+            if len(values) != EMBED_DIM:
+                log.warning("[embedding] gemini embed returned dim=%s expected=%s", len(values), EMBED_DIM)
+                return None
+            out.append(list(values))
+        return out
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")
+        log.warning("[embedding] gemini embed failed: %s %s", e.code, body[:200])
+        return None
+    except Exception as e:
+        log.warning("[embedding] gemini embed failed: %s", e)
+        return None
+
+
 def _embed_via_cohere(model: str, api_key: str, texts: list[str]) -> list[list[float]] | None:
     """Cohere embed API v2。"""
     try:
@@ -264,6 +339,8 @@ def _embed_provider_dispatch(
             log.warning("[embedding] openai api_id but no api_key; falling back to vertex")
             return _embed_via_vertex(model or DEFAULT_EMBED_MODEL, texts, task_type=task_type, user_id=user_id)
         return _embed_via_openai(model, api_key, texts, base_url=base_url)
+    if api_id in _GEMINI_API_IDS:
+        return _embed_via_gemini(model, api_key, texts, task_type=task_type)
     if api_id in _COHERE_API_IDS:
         if not api_key:
             log.warning("[embedding] cohere api_id but no api_key; falling back to vertex")
@@ -279,7 +356,7 @@ def _embed_provider_dispatch(
 
 def _platform_fallback_config() -> tuple[str, str, str, str]:
     """读 EMBED_* env 平台配置 (admin 兜底 + 内部 cron 用)。"""
-    return (
+    return _normalize_platform_embed_config(
         DEFAULT_EMBED_API_ID,
         os.environ.get("EMBED_MODEL", DEFAULT_EMBED_MODEL),
         os.environ.get("EMBED_API_KEY", ""),

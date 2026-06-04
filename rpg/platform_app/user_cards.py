@@ -350,3 +350,100 @@ def user_cards_for_retrieval(user_id: int, names: list[str]) -> list[dict[str, A
         if any(n in candidates or any(n in c or c in n for c in candidates) for n in name_lc):
             out.append(card)
     return out
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  在线角色卡库(PC 卡:发布 / 浏览 / 完整 clone 到自己集合)
+# ══════════════════════════════════════════════════════════════════════
+def set_card_public(user_id: int, card_id: int, is_public: bool) -> dict[str, Any]:
+    """作者发布/取消公开自己的 PC 卡。仅 owner。"""
+    init_db()
+    with connect() as db:
+        owned = db.execute(
+            "select 1 from character_cards where id=%s and user_id=%s and card_type='pc'",
+            (int(card_id), user_id),
+        ).fetchone()
+        if not owned:
+            raise ValueError("角色卡不存在或无权访问")
+        row = db.execute(
+            """
+            update character_cards
+            set is_public = %s,
+                published_at = case when %s then coalesce(published_at, now()) else null end,
+                updated_at = now()
+            where id = %s and user_id = %s and card_type='pc'
+            returning is_public, published_at
+            """,
+            (bool(is_public), bool(is_public), int(card_id), user_id),
+        ).fetchone()
+    return {"ok": True, "is_public": bool(row["is_public"]),
+            "published_at": str(row["published_at"]) if row["published_at"] else None}
+
+
+def list_public_cards(q: str | None = None, limit: int = 30, offset: int = 0) -> dict[str, Any]:
+    """在线角色卡库:只列 is_public 的 PC 卡 + 作者展示名 + 热度。secrets 不外露。"""
+    init_db()
+    limit = max(1, min(int(limit), 60))
+    offset = max(0, int(offset))
+    where = ["c.is_public", "c.card_type = 'pc'"]
+    params: list[Any] = []
+    if q:
+        where.append("(lower(c.name) like %s or lower(c.identity) like %s or lower(c.full_name) like %s)")
+        like = f"%{q.lower()}%"
+        params.extend([like, like, like])
+    sql = (
+        "select c.*, u.display_name as owner_name, u.username as owner_username "
+        "from character_cards c join users u on u.id = c.user_id "
+        f"where {' and '.join(where)} "
+        "order by c.published_at desc nulls last, c.id desc limit %s offset %s"
+    )
+    params.extend([limit, offset])
+    with connect() as db:
+        rows = db.execute(sql, tuple(params)).fetchall()
+    items = []
+    for r in rows:
+        dto = card_to_dto(r) or {}
+        dto["is_public"] = True
+        dto["clone_count"] = int(r.get("clone_count") or 0)
+        dto["published_at"] = str(r["published_at"]) if r.get("published_at") else None
+        dto["owner_name"] = r.get("owner_name") or r.get("owner_username") or "匿名作者"
+        dto.pop("secrets", None)  # 列表不暴露作者私密设定(导入后才得完整卡)
+        items.append(dto)
+    return {"ok": True, "items": items, "total": len(items), "limit": limit, "offset": offset}
+
+
+def clone_public_card(user_id: int, card_id: int) -> dict[str, Any]:
+    """把一张公开 PC 卡【完整复制】到当前用户卡库(复制,非指针)。新卡默认私有。"""
+    init_db()
+    with connect() as db:
+        src = db.execute(
+            "select user_id, slug from character_cards where id=%s and is_public and card_type='pc'",
+            (int(card_id),),
+        ).fetchone()
+        if not src:
+            raise ValueError("公开角色卡不存在")
+        if int(src["user_id"]) == int(user_id):
+            raise ValueError("这是你自己的角色卡,无需导入")
+        new_slug = f"{src['slug'] or 'card'}-imp{int(card_id)}"
+        new = db.execute(
+            """
+            insert into character_cards(
+              user_id, slug, card_type, source, first_revealed_chapter,
+              name, full_name, aliases, identity, background, appearance, personality,
+              speech_style, current_status, secrets, sample_dialogue,
+              tags, metadata, token_budget, priority, importance, enabled, scope, avatar_path
+            )
+            select %(uid)s, %(slug)s, 'pc', 'cloned', first_revealed_chapter,
+              name, full_name, aliases, identity, background, appearance, personality,
+              speech_style, current_status, '', sample_dialogue,
+              tags, metadata, token_budget, priority, importance, true, scope, avatar_path
+            from character_cards where id = %(src)s and is_public and card_type='pc'
+            on conflict(user_id, slug, card_type) where card_type in ('pc','persona') do nothing
+            returning id
+            """,
+            {"uid": user_id, "slug": new_slug, "src": int(card_id)},
+        ).fetchone()
+        if not new:
+            raise ValueError("你已导入过这张角色卡")
+        db.execute("update character_cards set clone_count = clone_count + 1 where id = %s", (int(card_id),))
+    return {"ok": True, "card_id": int(new["id"])}

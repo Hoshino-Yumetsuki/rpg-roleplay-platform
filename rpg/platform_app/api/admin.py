@@ -928,35 +928,38 @@ async def admin_dmca_strikes_list(
     admin=Depends(_require_admin),
 ):
     with connect() as db:
+        # dmca_strikes 是「每用户一行」的聚合表(strike_count + 最近一次信息),不是逐条日志。
+        # 原查询按逐条日志取 ds.id/ds.reason/ds.created_at → 列不存在 500。改读聚合列。
         rows = db.execute(
             """
-            select ds.id, ds.user_id, u.username, ds.reason, ds.created_at
+            select ds.user_id, u.username, ds.strike_count,
+                   ds.last_strike_at, ds.last_strike_reason, ds.terminated_at
             from dmca_strikes ds
             join users u on u.id = ds.user_id
-            order by ds.created_at desc
+            where ds.strike_count > 0
+            order by ds.last_strike_at desc nulls last
             limit 200
             """,
         ).fetchall()
 
-        # 按用户聚合
-        by_user: dict = {}
-        for r in rows:
-            uid = r["user_id"]
-            if uid not in by_user:
-                by_user[uid] = {
-                    "user_id": uid,
-                    "username": r["username"],
-                    "strike_count": 0,
-                    "strikes": [],
-                }
-            by_user[uid]["strike_count"] += 1
-            by_user[uid]["strikes"].append({
-                "id": r["id"],
-                "reason": r["reason"],
-                "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
-            })
+    def _iso(v):
+        try:
+            return v.isoformat()
+        except Exception:
+            return None
 
-    return json_response({"users": list(by_user.values())})
+    users = [{
+        "user_id": r["user_id"],
+        "username": r["username"],
+        "strike_count": r["strike_count"],
+        "last_strike_at": _iso(r.get("last_strike_at")),
+        "last_strike_reason": r.get("last_strike_reason") or "",
+        "terminated_at": _iso(r.get("terminated_at")),
+        # 聚合表无逐条历史;给出最近一次作为单条,供前端展示。
+        "strikes": ([{"reason": r.get("last_strike_reason") or "", "created_at": _iso(r.get("last_strike_at"))}]
+                    if r["strike_count"] else []),
+    } for r in rows]
+    return json_response({"users": users})
 
 
 @router.post("/api/admin/dmca/strikes/{user_id}/increment")
