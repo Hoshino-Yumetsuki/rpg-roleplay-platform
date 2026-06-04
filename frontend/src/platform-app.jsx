@@ -3979,7 +3979,9 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
   const reactiveUser = useReactiveUser();
   const [continueState, setContinueState] = useStatePL({ open: false, save: null, nodeId: null });
   const [searchOpen, setSearchOpen] = useStatePL(false);
-  const [navOpen, setNavOpen] = useStatePL(true);
+  const [navOpen, setNavOpen] = useStatePL(() => {
+    try { return localStorage.getItem('pl.navOpen') !== 'false'; } catch { return true; }
+  });
   const [chrome, setChromeState] = useStatePL({});
   const [feedbackOpen, setFeedbackOpen] = useStatePL(false);
   const [welcomeOpen, setWelcomeOpen] = useStatePL(false);
@@ -3987,6 +3989,8 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
   const chromeApi = React.useMemo(() => ({ set: (c) => setChromeState(c || {}), clear: () => setChromeState({}) }), []);
   void chrome;
   useEffectPL(() => { setChromeState({}); }, [page]);
+  // 持久化侧栏折叠状态
+  useEffectPL(() => { try { localStorage.setItem('pl.navOpen', navOpen ? 'true' : 'false'); } catch {} }, [navOpen]);
 
   // 反馈已改为独立页 /feedback(参考 AWS 支持中心)。__openFeedback 改为导航到该页,
   // 不再开抽屉(平台内)。游戏台(独立文档)的 FeedbackDrawerRoot 仍用抽屉,不受影响。

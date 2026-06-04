@@ -370,8 +370,12 @@ function App() {
     return tabs.some((tab) => tab.id === hash) ? hash : fallback;
   };
   const [activeTab, setActiveTab] = useState(() => getRightTabForLocation(t.defaultRightTab || 'status'));
-  const [railCollapsed, setRailCollapsed] = useState(false);
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(() => {
+    try { return localStorage.getItem('gc.rail.collapsed') === 'true'; } catch { return false; }
+  });
+  const [panelCollapsed, setPanelCollapsed] = useState(() => {
+    try { return localStorage.getItem('gc.panel.collapsed') === 'true'; } catch { return false; }
+  });
   const [mobileNav, setMobileNav] = useState(false);  // 手机端: 左 rail 改汉堡抽屉的开关
   const [showSlash, setShowSlash] = useState(false);
   const [showPlus, setShowPlus] = useState(false);
@@ -386,6 +390,9 @@ function App() {
   const [splashNeeded, setSplashNeeded] = useState(null);
   // GC 使用须知弹窗（随时可打开）
   const [welcomeGCOpen, setWelcomeGCOpen] = useState(false);
+  // 持久化侧栏折叠状态
+  useEffect(() => { try { localStorage.setItem('gc.rail.collapsed', railCollapsed ? 'true' : 'false'); } catch {} }, [railCollapsed]);
+  useEffect(() => { try { localStorage.setItem('gc.panel.collapsed', panelCollapsed ? 'true' : 'false'); } catch {} }, [panelCollapsed]);
   useEffect(() => {
     fetch('/api/me/splash/status', { credentials: 'same-origin' })
       .then((r) => r.ok ? r.json() : null)
