@@ -50,14 +50,7 @@ def _system_blocks(system: str, extra: str = "") -> list[dict[str, Any]]:
 class _AnthropicBackend:
     # task 57 (2026-05-25): 默认改为当前 Sonnet（最新平衡型）；
     # Opus 4.7 是 frontier 但成本 5×，留给用户显式选。
-    def __init__(
-        self,
-        model: str = "claude-sonnet-4-6",
-        user_id: int | None = None,
-        base_url: str | None = None,
-        credential_env: str = "ANTHROPIC_API_KEY",
-        api_id: str = "anthropic",
-    ):
+    def __init__(self, model: str = "claude-sonnet-4-6", user_id: int | None = None):
         from anthropic import Anthropic
 
         from platform_app.user_credentials import resolve_api_key
@@ -68,35 +61,28 @@ class _AnthropicBackend:
             byok_only = bool(_require_auth())
         except Exception:
             byok_only = True  # 配置读不到时按更保守的生产策略
-        env_fb = "" if (byok_only and user_id) else credential_env
-        result = resolve_api_key(user_id, api_id, env_fallback=env_fb)
+        env_fb = "" if (byok_only and user_id) else "ANTHROPIC_API_KEY"
+        result = resolve_api_key(user_id, "anthropic", env_fallback=env_fb)
         key = result.get("key")
         if not key and not byok_only:
             # 仅本地/匿名开发模式才看 EMBED_API_KEY 这种历史遗留 fallback
-            key = os.environ.get(credential_env) or os.environ.get("EMBED_API_KEY")
+            key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("EMBED_API_KEY")
         if not key:
-            provider_label = api_id or "Anthropic"
-            env_label = credential_env or "ANTHROPIC_API_KEY"
             raise ValueError(
-                f"{provider_label} API key 未配置。请在「设置 → API 设置」添加你的 API Key。"
-                f"(测试服 LLM 调用必须 BYOK,平台不提供共享 key,环境变量 {env_label})"
+                "Anthropic API key 未配置。请在「设置 → API 设置」添加你自己的 Anthropic API Key。"
+                "(测试服 LLM 调用必须 BYOK,平台不提供共享 key)"
             )
         # 读超时原 120s 太紧:GM 带 reasoning 的长回合常被中途切断 → 整轮 token 白烧。
         # 提到 300s,可用 RPG_GM_TIMEOUT 调。
         _read_to = float(os.environ.get("RPG_GM_TIMEOUT", "300"))
-        client_kwargs = dict(
+        self.client = Anthropic(
             api_key=key,
             timeout=httpx.Timeout(_read_to, connect=10.0),
         )
-        if base_url:
-            client_kwargs["base_url"] = base_url
-        self.client = Anthropic(**client_kwargs)
         self.model_name = model
         self.user_id = user_id  # task 141: 给 _thinking_param 用
         self.last_usage: dict[str, int] = {}
-        src_label = result.get('source', 'env')
-        url_label = base_url or "https://api.anthropic.com"
-        log.info(f"[GM] Anthropic · {self.model_name} @ {url_label} (key from {src_label})")
+        log.info(f"[GM] Anthropic · {self.model_name} (key from {result.get('source', 'env')})")
 
     def _thinking_param(self) -> dict | None:
         """task 141: 按用户偏好返 Anthropic Extended Thinking 参数。

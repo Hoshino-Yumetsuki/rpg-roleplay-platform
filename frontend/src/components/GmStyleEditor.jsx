@@ -1,6 +1,6 @@
 /**
  * GmStyleEditor — GM 叙事「倾向性」6 滑块编辑器(线性 0-100)。
- * scope='user'  → 写用户级默认(window.api.account.setGmStyle)
+ * scope='user'  → 写用户级默认(window.api.me.setGmStyle)
  * scope='script'→ 写剧本级(window.api.scripts.setGmStyle(scriptId)),仅 owner 可写。
  *
  * 后端:agents/gm/style_harness 的 6 旋钮。滑块值 0-100 确定性映射到 GM 提示词片段。
@@ -42,7 +42,7 @@ export default function GmStyleEditor({ scope = 'user', scriptId = null, canWrit
     try {
       const r = scope === 'script'
         ? await window.api.scripts.getGmStyle(scriptId)
-        : await window.api.account.getGmStyle();
+        : await window.api.me.getGmStyle();
       const gs = (r && r.gm_style) || {};
       setVals(gs); setBase(gs);
     } catch (e) {
@@ -66,7 +66,7 @@ export default function GmStyleEditor({ scope = 'user', scriptId = null, canWrit
       KNOBS.forEach((k) => { patch[k.key] = vals[k.key]; });
       const r = scope === 'script'
         ? await window.api.scripts.setGmStyle(scriptId, patch)
-        : await window.api.account.setGmStyle(patch);
+        : await window.api.me.setGmStyle(patch);
       const saved = (r && r.gm_style) || patch;
       // 后端可能返回部分键,合并回完整 vals
       setVals((p) => ({ ...p, ...saved })); setBase((p) => ({ ...p, ...saved }));

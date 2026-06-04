@@ -25,7 +25,6 @@ usage 是 {"input_tokens", "output_tokens", "cached_input_tokens",
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from typing import Any
 
 from core.logging import get_logger
@@ -61,26 +60,17 @@ def call_agent_json(
         消除"返了 usage 没人 record"的赊账漏洞。
         agent_kind 用作 metadata.kind(如 "curator" / "black_swan" / "phase_digest")。
     """
-    # 查找 api_id 对应的 provider kind，支持 deepseek-anthropic 等自定义 Anthropic 兼容 provider
-    _api_kind = None
-    try:
-        from model_registry import find_api, load_model_catalog
-        _api = find_api(load_model_catalog(), api_id)
-        _api_kind = (_api or {}).get("kind", "")
-    except Exception:
-        pass
-
-    if api_id == "anthropic" or _api_kind == "anthropic":
+    if api_id == "anthropic":
         if tool_schema:
             text, usage = _anthropic_tool_use(
-                api_id, model, system_prompt, user_prompt, user_id,
+                model, system_prompt, user_prompt, user_id,
                 tool_schema, max_tokens,
             )
         else:
             text, usage = _anthropic_json_text(
-                api_id, model, system_prompt, user_prompt, user_id, max_tokens,
+                model, system_prompt, user_prompt, user_id, max_tokens,
             )
-    elif api_id == "vertex_ai" or _api_kind == "vertex_ai":
+    elif api_id == "vertex_ai":
         if tool_schema:
             text, usage = _vertex_function_call(
                 model, system_prompt, user_prompt, user_id, tool_schema, max_tokens,
@@ -147,7 +137,6 @@ def _maybe_record_usage(
 # ── Anthropic native tool_use ─────────────────────────────────────
 
 def _anthropic_tool_use(
-    api_id: str,
     model: str,
     system_prompt: str,
     user_prompt: str,
@@ -159,30 +148,15 @@ def _anthropic_tool_use(
 
     模型必须输出 tool_use block;返回 tool.input 的 JSON 序列化。
     失败(模型不配合)返回 ('{}', usage)。
-    支持自定义 Anthropic 兼容端点（如 deepseek-anthropic）。
     """
     from anthropic import Anthropic
 
     from platform_app.user_credentials import resolve_api_key
-    # 从模型目录获取 base_url 和 credential_env
-    _base_url = None
-    _env_name = "ANTHROPIC_API_KEY"
-    try:
-        from model_registry import find_api, load_model_catalog
-        _api = find_api(load_model_catalog(), api_id)
-        if _api:
-            _base_url = (_api.get("base_url") or "").strip() or None
-            _env_name = _api.get("credential_env") or _env_name
-    except Exception:
-        pass
-    result = resolve_api_key(user_id, api_id, env_fallback=_env_name)
+    result = resolve_api_key(user_id, "anthropic", env_fallback="ANTHROPIC_API_KEY")
     key = result.get("key")
     if not key:
-        raise RuntimeError(f"找不到 {api_id} API Key for agent harness")
-    client_kwargs = {"api_key": key}
-    if _base_url:
-        client_kwargs["base_url"] = _base_url
-    client = Anthropic(**client_kwargs)
+        raise RuntimeError("找不到 Anthropic API Key for agent harness")
+    client = Anthropic(api_key=key)
     tool_name = tool_schema.get("name") or "emit_payload"
     resp = client.messages.create(
         model=model,
@@ -202,7 +176,6 @@ def _anthropic_tool_use(
 
 
 def _anthropic_json_text(
-    api_id: str,
     model: str,
     system_prompt: str,
     user_prompt: str,
@@ -212,29 +185,15 @@ def _anthropic_json_text(
     """Anthropic 无 schema 时:在 system prompt 里要求 JSON,纯文本解析。
 
     主要给调用方没有定义 tool_schema 的场景兜底。
-    支持自定义 Anthropic 兼容端点（如 deepseek-anthropic）。
     """
     from anthropic import Anthropic
 
     from platform_app.user_credentials import resolve_api_key
-    _base_url = None
-    _env_name = "ANTHROPIC_API_KEY"
-    try:
-        from model_registry import find_api, load_model_catalog
-        _api = find_api(load_model_catalog(), api_id)
-        if _api:
-            _base_url = (_api.get("base_url") or "").strip() or None
-            _env_name = _api.get("credential_env") or _env_name
-    except Exception:
-        pass
-    result = resolve_api_key(user_id, api_id, env_fallback=_env_name)
+    result = resolve_api_key(user_id, "anthropic", env_fallback="ANTHROPIC_API_KEY")
     key = result.get("key")
     if not key:
-        raise RuntimeError(f"找不到 {api_id} API Key for agent harness")
-    client_kwargs = {"api_key": key}
-    if _base_url:
-        client_kwargs["base_url"] = _base_url
-    client = Anthropic(**client_kwargs)
+        raise RuntimeError("找不到 Anthropic API Key for agent harness")
+    client = Anthropic(api_key=key)
     resp = client.messages.create(
         model=model,
         max_tokens=max_tokens,
@@ -566,11 +525,7 @@ def resolve_api_and_model(
     """
     from core.llm_backend import (
         first_user_model as _first_user_model,
-    )
-    from core.llm_backend import (
         resolve_preferred_api as _resolve_api,
-    )
-    from core.llm_backend import (
         resolve_preferred_model as _resolve_model,
     )
     user_default = _first_user_model(user_id)
@@ -616,13 +571,13 @@ def call_agent_tool_loop(
     *,
     tools: list[dict],
     terminal_tool_name: str,
-    tool_handler: Callable[[str, dict], str | dict],
+    tool_handler: "Callable[[str, dict], str | dict]",
     max_iterations: int = 4,
     max_tokens: int = 1024,
     agent_kind: str | None = None,
     save_id: int | None = None,
     context_run_id: int | None = None,
-) -> tuple[dict | None, dict, list[dict]]:
+) -> "tuple[dict | None, dict, list[dict]]":
     """Anthropic native multi-turn tool use 循环。返回 (terminal_tool_args, usage, trace)。
 
     trace 是 [(tool_name, args, result), ...] 让 caller 审计 LLM 中间动作。
@@ -630,7 +585,7 @@ def call_agent_tool_loop(
 
     非 anthropic provider:暂不支持,抛 NotImplementedError。
     """
-    from collections.abc import Callable as _Callable  # noqa: F401 (used above for annotation)
+    from typing import Callable as _Callable  # noqa: F401 (used above for annotation)
 
     if api_id != "anthropic":
         raise NotImplementedError(
@@ -638,7 +593,6 @@ def call_agent_tool_loop(
         )
 
     from anthropic import Anthropic
-
     from platform_app.user_credentials import resolve_api_key
 
     result = resolve_api_key(user_id, "anthropic", env_fallback="ANTHROPIC_API_KEY")

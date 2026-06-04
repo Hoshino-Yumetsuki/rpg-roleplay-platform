@@ -25,11 +25,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from core.config import (
     cors_max_age as _cors_max_age,
-)
-from core.config import (
     gzip_min_bytes as _gzip_min_bytes,
-)
-from core.config import (
     trusted_proxies as _trusted_proxies,
 )
 from core.logging import get_logger
@@ -74,22 +70,6 @@ def _cors_origins() -> tuple[list[str], bool]:
     origins = [item.strip() for item in raw.split(",") if item.strip()]
     if not origins:
         origins = ["http://127.0.0.1:7860", "http://localhost:7860"]
-    # 开发模式下（RPG_ENV=dev 或本地模式），确保 Vite dev server origin 被包含，便于本地调试
-    try:
-        # 直接读取 RPG_ENV 优先判断，避免引用本文件中尚未定义的函数导致 NameError
-        rpg_env = os.getenv("RPG_ENV", "").strip().lower()
-        is_dev = (rpg_env == "dev")
-        if not is_dev:
-            from core.config import is_local_mode as _is_local_mode
-            is_dev = _is_local_mode()
-        if is_dev:
-            dev_hosts = ["http://127.0.0.1:5173", "http://localhost:5173"]
-            for h in dev_hosts:
-                if h not in origins:
-                    origins.append(h)
-    except Exception:
-        # 忽略任何导入/判断错误，不影响生产环境行为
-        pass
     allow_all = "*" in origins
     return (["*"] if allow_all else origins), not allow_all
 
@@ -377,11 +357,6 @@ async def api_contract_middleware(request: Request, call_next):
     if original_path.startswith("/api") and request.method in MUTATING_METHODS:
         origin = request.headers.get("origin")
         if not _origin_allowed(origin):
-            # 记录被拒绝的 Origin 与当前允许列表，便于调试跨域问题
-            try:
-                log.warning(f"[CORS] Blocked request from origin={origin!r}; allowed={_origins}")
-            except Exception:
-                pass
             return JSONResponse(
                 {"ok": False, "error": "Origin 不在允许列表", "request_id": request_id},
                 status_code=403,
