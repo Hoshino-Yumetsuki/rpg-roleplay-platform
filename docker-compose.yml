@@ -40,6 +40,8 @@ services:
         condition: service_healthy
 
   # Daily account hard-delete + audit-log cleanup.
+  # cron 调度(scripts/cron_scheduler.py + croniter),非裸 while/sleep。
+  # 调度表达式见下方 RPG_CRON_SCHEDULE(标准 5 段 cron,UTC),默认每天 03:00,
   cron:
     image: rpg-app:latest
     build:
@@ -47,9 +49,9 @@ services:
       dockerfile: Dockerfile
     restart: always
     command:
-      - "/bin/sh"
-      - "-c"
-      - "while true; do python -m scripts.run_cron all; sleep 86400; done"
+      - "python"
+      - "-m"
+      - "scripts.cron_scheduler"
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,6 +59,11 @@ services:
       DATABASE_URL: postgres://rpg:rpg@postgres:5432/rpg
       RPG_MASTER_KEY: your_master_key_here
       RPG_DEPLOYMENT_MODE: ${RPG_DEPLOYMENT_MODE:-server}
+      # cron 调度表达式(UTC)。改这里即可,或用宿主机 env / .env 覆盖。
+      # 例:"30 4 * * *"=每天 04:30;"0 */6 * * *"=每 6 小时。
+      RPG_CRON_SCHEDULE: ${RPG_CRON_SCHEDULE:-0 3 * * *}
+      # 要跑的 run_cron 子命令(默认 all,见 scripts/run_cron.py)。
+      RPG_CRON_COMMAND: ${RPG_CRON_COMMAND:-all}
 
   postgres:
     image: pgvector/pgvector:0.8.2-pg17-trixie
