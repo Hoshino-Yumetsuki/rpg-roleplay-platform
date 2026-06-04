@@ -79,7 +79,7 @@ def _tool_remove_memory_item(state: Any, args: dict) -> str:
     if bucket not in {"resources", "abilities", "facts", "pinned", "notes"}:
         return f"失败: bucket 非法 {bucket!r}"
     try:
-        idx = int(index)
+        idx = int(str(index))
     except (TypeError, ValueError):
         return "失败: index 必须是整数"
     items = state.data.get("memory", {}).get(bucket, []) or []

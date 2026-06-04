@@ -50,8 +50,8 @@ def _t_list_pending_anchors(user_id: int, args: dict) -> str:
     save_id = int(save_id_raw)
     phase_label = (args.get("phase_label") or "").strip() or None
     try:
-        chapter_min = int(args.get("chapter_min")) if args.get("chapter_min") is not None else None
-        chapter_max = int(args.get("chapter_max")) if args.get("chapter_max") is not None else None
+        chapter_min = int(str(args.get("chapter_min"))) if args.get("chapter_min") is not None else None
+        chapter_max = int(str(args.get("chapter_max"))) if args.get("chapter_max") is not None else None
     except (TypeError, ValueError):
         return "失败: chapter_min / chapter_max 必须整数"
     try:
@@ -120,13 +120,13 @@ def _t_mark_anchor_satisfied(user_id: int, args: dict) -> str:
     if len(how) > 600:
         how = how[:600]
     try:
-        drift = float(args.get("drift_score") if args.get("drift_score") is not None else 0.0)
+        drift = float(str(args.get("drift_score"))) if args.get("drift_score") is not None else 0.0
     except (TypeError, ValueError):
         drift = 0.0
     drift = max(0.0, min(1.0, drift))
     new_status = "variant" if drift >= 0.15 else "occurred"
     try:
-        occurred_turn = int(args.get("occurred_at_turn")) if args.get("occurred_at_turn") is not None else None
+        occurred_turn = int(str(args.get("occurred_at_turn"))) if args.get("occurred_at_turn") is not None else None
     except (TypeError, ValueError):
         return "失败: occurred_at_turn 必须整数"
 
@@ -158,7 +158,7 @@ def _t_mark_anchor_satisfied(user_id: int, args: dict) -> str:
                     select id, status, summary, source_chapter from save_anchor_states
                     where save_id = %s and id = %s
                     """,
-                    (save_id, int(anchor_id_raw)),
+                    (save_id, int(str(anchor_id_raw))),
                 ).fetchone()
             if not row:
                 return f"失败: 找不到锚点 (save={save_id}, key={anchor_key!r}, id={anchor_id_raw})"
@@ -237,7 +237,7 @@ def _t_mark_anchor_superseded(user_id: int, args: dict) -> str:
                 row = db.execute(
                     "select id, status, is_fatal, summary from save_anchor_states "
                     "where save_id = %s and id = %s",
-                    (save_id, int(anchor_id_raw)),
+                    (save_id, int(str(anchor_id_raw))),
                 ).fetchone()
             if not row:
                 return f"失败: 找不到锚点 (save={save_id}, key={anchor_key!r})"
@@ -642,11 +642,11 @@ def register_anchor_tools() -> None:
             scope="user",
             origins=_ANCHOR_READ_ORIGINS,
             destructive=False,
-            input_examples=[
+            input_examples=(
                 {"save_id": 1, "limit": 5},
                 {"save_id": 1, "phase_label": "柏林暗流篇", "limit": 3},
                 {"save_id": 1, "chapter_min": 10, "chapter_max": 30},
-            ],
+            ),
         ),
         ToolSpec(
             name="mark_anchor_satisfied",
@@ -672,13 +672,13 @@ def register_anchor_tools() -> None:
             scope="user",
             origins=_ANCHOR_MUTATE_ORIGINS,
             destructive=False,
-            input_examples=[
+            input_examples=(
                 {"save_id": 1, "anchor_key": "chapter:12:event:0",
                  "how_it_happened": "穆蕾莉娅在地下车场对 MC 透露异端情报,而非原著的浴室场景",
                  "drift_score": 0.3},
                 {"save_id": 1, "anchor_key": "chapter:7:event:2",
                  "how_it_happened": "完全按原著方式 — Kaiserin 当夜命令清空北区情报站", "drift_score": 0.0},
-            ],
+            ),
         ),
         ToolSpec(
             name="mark_anchor_superseded",
@@ -701,10 +701,10 @@ def register_anchor_tools() -> None:
             scope="user",
             origins=_ANCHOR_MUTATE_ORIGINS,
             destructive=False,
-            input_examples=[
+            input_examples=(
                 {"save_id": 1, "anchor_key": "chapter:18:event:1",
                  "reason": "MC 提前 6 章拦截了图卢兹方面的密令,该事件的前置条件已不存在"},
-            ],
+            ),
         ),
         ToolSpec(
             name="record_history_anchor",
@@ -737,12 +737,12 @@ def register_anchor_tools() -> None:
             scope="user",
             origins=_ANCHOR_MUTATE_ORIGINS,
             destructive=False,
-            input_examples=[
+            input_examples=(
                 {"save_id": 2, "summary": "MC 在波斯王宫向国王透露 1914 年一战会爆发的情报,国王召开内阁紧急会议",
                  "importance": 75, "tags": ["政治", "穿越者泄密"], "characters": ["波斯国王"], "locations": ["波斯王宫"]},
                 {"save_id": 2, "summary": "MC 拯救了原著中应被刺杀的林有德,改写了陨石坑刺杀事件",
                  "importance": 90, "characters": ["林有德"], "linked_pending_anchors": ["chapter:162:event:0"]},
-            ],
+            ),
         ),
         ToolSpec(
             name="check_pending_anchor_drift",
@@ -788,10 +788,10 @@ def register_anchor_tools() -> None:
             scope="user",
             origins=_ANCHOR_READ_ORIGINS,
             destructive=False,
-            input_examples=[
+            input_examples=(
                 {"save_id": 2, "limit": 5},
                 {"save_id": 2, "character_filter": "林有德", "min_importance": 60},
-            ],
+            ),
         ),
         ToolSpec(
             name="summarize_anchors",
@@ -831,7 +831,7 @@ def register_anchor_tools() -> None:
             scope="user",
             origins=_ANCHOR_MUTATE_ORIGINS,
             destructive=False,
-            input_examples=[{"save_id": 3, "original_protag_name": "爱丽丝"}],
+            input_examples=({"save_id": 3, "original_protag_name": "爱丽丝"},),
         ),
         ToolSpec(
             name="claim_protagonist_pov",
@@ -860,10 +860,10 @@ def register_anchor_tools() -> None:
             scope="user",
             origins=_ANCHOR_MUTATE_ORIGINS,
             destructive=False,
-            input_examples=[
+            input_examples=(
                 {"save_id": 3},  # 默认按 importance 取
                 {"save_id": 3, "original_protag_name": "爱丽丝"},
-            ],
+            ),
         ),
     ]
     for spec in specs:

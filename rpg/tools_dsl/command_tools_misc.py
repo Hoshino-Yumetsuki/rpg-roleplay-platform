@@ -356,7 +356,7 @@ def register_misc_tools() -> None:
           "properties": {"mode": {"type": "string",
                                   "enum": ["default", "auto_review", "full_access", "read_only"]}},
           "required": ["mode"]},
-         _t_set_permission_mode, "save", _SAVE_SENSITIVE, False),
+         _t_set_permission_mode, _SAVE_SENSITIVE, False),
         ("inject_pending_question",
          "向当前 save 注入一个待回答问题 (debug 用,只允许 UI/API)",
          {"type": "object",
@@ -365,15 +365,15 @@ def register_misc_tools() -> None:
               "options": {"type": "array", "items": {"type": "string"}},
               "source": {"type": "string", "default": "gm:json"},
           }, "required": ["question"]},
-         _t_inject_pending_question, "save",
+         _t_inject_pending_question,
          # task 48: inject_pending_question 是 debug 用工具,助手不应自调
          frozenset({"ui_button", "api_direct"}), False),
     ]
-    for name, desc, schema, exec_, scope, origins, destructive in save_specs:
+    for name, desc, schema, exec_, origins, destructive in save_specs:
         if not registry.has(name):
             registry.register(ToolSpec(
                 name=name, description=desc, input_schema=schema,
-                executor=exec_, scope=scope, origins=origins, destructive=destructive,
+                executor=exec_, scope="save", origins=origins, destructive=destructive,
             ))
 
     user_specs = [
