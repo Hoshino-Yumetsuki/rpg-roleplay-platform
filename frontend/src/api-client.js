@@ -287,6 +287,11 @@
       usageTimeline: (days, group_by) => GET(`${API_PREFIX}/me/usage/timeline`, { days: days || 30, group_by: group_by || "day" }),
       stats: () => GET(`${API_PREFIX}/me/stats`),
       activity: (limit) => GET(`${API_PREFIX}/me/activity`, limit ? { limit } : undefined),
+      // 成就(见 docs/design/I_achievements.md)
+      achievements: () => GET(`${API_PREFIX}/me/achievements`),
+      achievementsSeen: () => POST(`${API_PREFIX}/me/achievements/seen`, {}),
+      achievementsCatalog: () => GET(`/api/achievements`),  // 公开目录(匿名可拉)
+      publicWall: (username) => GET(`/api/u/${encodeURIComponent(username)}/achievements`),  // 公开成就墙
       preferences: (body) => POST(`${API_PREFIX}/me/preference`, body),
       gmStyleSchema: () => GET(`${API_PREFIX}/gm-style/schema`),
       getGmStyle: () => GET(`${API_PREFIX}/me/gm-style`),
@@ -345,6 +350,13 @@
       saveMaintenance: (body) => POST(`${API_PREFIX}/admin/maintenance`, body),
       // 服务重启
       restart: () => POST(`${API_PREFIX}/admin/restart`, {}),
+      // 成就目录管理(见 docs/design/I_achievements.md)
+      achievements: {
+        list: () => GET(`/api/admin/achievements`),
+        create: (body) => POST(`/api/admin/achievements`, body),
+        update: (id, body) => PUT(`/api/admin/achievements/${encodeURIComponent(id)}`, body),
+        remove: (id) => DEL(`/api/admin/achievements/${encodeURIComponent(id)}`),
+      },
       // DMCA Takedowns
       dmcaTakedowns: {
         list: ({ status, limit } = {}) => GET(`/api/admin/dmca/takedowns`, { status: status || 'open', limit: limit || 50 }),

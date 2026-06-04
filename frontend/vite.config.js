@@ -9,10 +9,42 @@ export default defineConfig(({ mode }) => {
   // HTML 文档,而是 src/main.jsx 里 React Router 按路径(/login、/platform/*、
   // /console)懒加载的路由块。Vite 默认以 index.html 为入口,无需显式 rollupOptions.input。
 
+  // ── SPA history fallback(仅 dev server)─────────────────────────────
+  // Platform 用 History API 路由(/settings、/saves、/wall 等)。vite dev 默认无
+  // SPA 回退,直接访问/刷新这些干净 URL 会 404 白屏。这里在 configureServer 注入
+  // connect 中间件,把非 /api、非静态文件的请求回退到 Platform.html。
+  // 仅作用于 dev;preview/生产由各自服务器做 history-fallback,不受影响。
+  // (来自社区贡献者 xingzhiyou 的 PR #14)
+  function spaHistoryFallbackPlugin() {
+    return {
+      name: 'spa-history-fallback',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          const url = req.url || '';
+          if (
+            url.startsWith('/api') ||
+            url.startsWith('/assets/') ||
+            url.startsWith('/@') ||
+            url.startsWith('/node_modules/') ||
+            /\.\w+(\?|$)/.test(url) ||
+            url === '/Login.html' ||
+            url === '/Platform.html' ||
+            url === '/Game Console.html' ||
+            url === '/favicon.svg'
+          ) {
+            return next();
+          }
+          req.url = '/Platform.html';
+          next();
+        });
+      },
+    };
+  }
+
   return {
     // jsxRuntime: 'classic' — 所有 JSX 文件已显式 import React,
     // classic runtime 用 React.createElement 替代 automatic 的 _jsx()。
-    plugins: [react({ jsxRuntime: 'classic' })],
+    plugins: [react({ jsxRuntime: 'classic' }), spaHistoryFallbackPlugin()],
 
     // ── 永久根治 dev 黑屏 ────────────────────────────────────────────────
     // 根因:Cloudscape 每个组件是独立子入口,Vite 默认懒发现依赖;运行中遇到

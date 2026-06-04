@@ -214,14 +214,20 @@ function CommandMenu({ query, onPick, onClose, triggerRef }) {
       document.removeEventListener("mousedown", onOutside, true);
     };
   }, [onClose, triggerRef]);
-  // task 141: max-height 自适应 trigger 上方可用空间,popover 不冲出 viewport 顶
-  React.useLayoutEffect(() => {
+  // task 141: max-height 自适应 trigger 上方可用空间,popover 不冲出 viewport 顶。
+  // PR #14: 再加 55vh 上限 + resize 响应,防止菜单过高挡住整个界面。
+  const calcCmdHeight = React.useCallback(() => {
     if (!menuRef.current || !triggerRef?.current) return;
     const triggerRect = triggerRef.current.getBoundingClientRect();
     const aboveSpace = Math.max(120, triggerRect.top - 16);
-    menuRef.current.style.maxHeight = aboveSpace + "px";
+    menuRef.current.style.maxHeight = Math.min(aboveSpace, window.innerHeight * 0.55) + "px";
     menuRef.current.style.overflowY = "auto";
-  }, [query]);
+  }, [triggerRef]);
+  React.useLayoutEffect(calcCmdHeight, [calcCmdHeight, query]);
+  React.useEffect(() => {
+    window.addEventListener("resize", calcCmdHeight);
+    return () => window.removeEventListener("resize", calcCmdHeight);
+  }, [calcCmdHeight]);
   const q = query.replace(/^\//, "").trim().toLowerCase();
   const filtered = SLASH_COMMANDS.filter(c =>
     c.trigger.toLowerCase().includes("/" + q) || t(c.labelKey).includes(query.replace(/^\//, ""))
@@ -263,13 +269,19 @@ function CommandMenu({ query, onPick, onClose, triggerRef }) {
 
 function AttachMenu({ onPick, onClose, triggerRef }) {
   const menuRef = useRefC(null);
-  React.useLayoutEffect(() => {
+  // PR #14: 55vh 上限 + resize,防止菜单过高挡界面。
+  const calcHeight = React.useCallback(() => {
     if (!menuRef.current || !triggerRef?.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const aboveSpace = Math.max(160, rect.top - 16);
-    menuRef.current.style.maxHeight = aboveSpace + "px";
+    menuRef.current.style.maxHeight = Math.min(aboveSpace, window.innerHeight * 0.55) + "px";
     menuRef.current.style.overflowY = "auto";
-  }, []);
+  }, [triggerRef]);
+  React.useLayoutEffect(calcHeight, [calcHeight]);
+  React.useEffect(() => {
+    window.addEventListener("resize", calcHeight);
+    return () => window.removeEventListener("resize", calcHeight);
+  }, [calcHeight]);
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
     const onOutside = (e) => {
@@ -691,13 +703,19 @@ function EffortSection({ selectedKey }) {
 function PermissionPopover({ current, onPick, onClose, triggerRef }) {
   const { t } = useTranslation();
   const menuRef = useRefC(null);
-  React.useLayoutEffect(() => {
+  // PR #14: 55vh 上限 + resize,防止权限菜单过高挡界面。
+  const calcPermHeight = React.useCallback(() => {
     if (!menuRef.current || !triggerRef?.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const aboveSpace = Math.max(160, rect.top - 16);
-    menuRef.current.style.maxHeight = aboveSpace + "px";
+    menuRef.current.style.maxHeight = Math.min(aboveSpace, window.innerHeight * 0.55) + "px";
     menuRef.current.style.overflowY = "auto";
-  }, []);
+  }, [triggerRef]);
+  React.useLayoutEffect(calcPermHeight, [calcPermHeight]);
+  React.useEffect(() => {
+    window.addEventListener("resize", calcPermHeight);
+    return () => window.removeEventListener("resize", calcPermHeight);
+  }, [calcPermHeight]);
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
     const onOutside = (e) => {
@@ -832,6 +850,19 @@ function Composer({
     window.addEventListener("rpg-composer-restore", handler);
     return () => window.removeEventListener("rpg-composer-restore", handler);
   }, [setText]);
+
+  // PR #14: 选择斜杠命令后自动聚焦输入框,可直接回车发送或继续输入参数。
+  React.useEffect(() => {
+    if (!pickedCommand) return;
+    const id = setTimeout(() => {
+      const ta = taRef.current;
+      if (ta && ta.focus) {
+        ta.focus();
+        try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {}
+      }
+    }, 50);
+    return () => clearTimeout(id);
+  }, [pickedCommand]);
 
   // @ mention picker state
   const [mention, setMention] = useStateC(null); // { start, query }
@@ -1014,7 +1045,7 @@ function Composer({
               <button
                 className="btn primary"
                 onClick={onSend}
-                disabled={!text.trim() && !attachments?.length}
+                disabled={!text.trim() && !attachments?.length && !pickedCommand}
               >
                 <Icon name="send" size={12} /> {t('game.composer.send')}
               </button>

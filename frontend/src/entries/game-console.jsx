@@ -368,8 +368,15 @@ function App() {
     return tabs.some((tab) => tab.id === hash) ? hash : fallback;
   };
   const [activeTab, setActiveTab] = useState(() => getRightTabForLocation(t.defaultRightTab || 'status'));
-  const [railCollapsed, setRailCollapsed] = useState(false);
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // 侧栏折叠状态持久化(localStorage,刷新后保留)。来自 PR #14。
+  const [railCollapsed, setRailCollapsed] = useState(() => {
+    try { return localStorage.getItem('gc.rail.collapsed') === 'true'; } catch { return false; }
+  });
+  const [panelCollapsed, setPanelCollapsed] = useState(() => {
+    try { return localStorage.getItem('gc.panel.collapsed') === 'true'; } catch { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem('gc.rail.collapsed', railCollapsed ? 'true' : 'false'); } catch {} }, [railCollapsed]);
+  useEffect(() => { try { localStorage.setItem('gc.panel.collapsed', panelCollapsed ? 'true' : 'false'); } catch {} }, [panelCollapsed]);
   const [mobileNav, setMobileNav] = useState(false);  // 手机端: 左 rail 改汉堡抽屉的开关
   const [showSlash, setShowSlash] = useState(false);
   const [showPlus, setShowPlus] = useState(false);
@@ -1146,10 +1153,11 @@ function App() {
   }, [history.length, attachments]);
 
   const onSend = () => {
-    if (!text.trim() && !attachments.length) return;
+    // 选了斜杠命令但没填文字时,也允许直接发送(发命令 trigger)。来自 PR #14。
+    if (!text.trim() && !attachments.length && !pickedCommand) return;
     if (runState.running) return;
     setHasError(false);
-    startRun(text.trim() || '（仅附件，请基于本轮上下文推进。）');
+    startRun(text.trim() || (pickedCommand ? pickedCommand.trigger.trim() : '（仅附件，请基于本轮上下文推进。）'));
   };
   const onSendRaw = useCallback((raw) => {
     if (runState.running) return;
