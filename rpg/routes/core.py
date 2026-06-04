@@ -12,7 +12,7 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 
 from routes._deps_fastapi import get_current_user
 
@@ -20,19 +20,9 @@ router = APIRouter()
 
 
 @router.get("/")
-async def index() -> JSONResponse:
-    """Backend root。前端是单页应用(单 index.html + React Router),由 frontend/ 提供
-    (Vite dev server :5173,或同源静态部署)。生产中本路由被 StaticFiles mount 遮蔽。"""
-    from app import APP_TITLE
-    return JSONResponse({
-        "ok": True,
-        "service": f"{APP_TITLE} RPG backend",
-        "frontend": {
-            "spa": "index.html (Vite dev: http://127.0.0.1:5173/)",
-            "routes": ["/login", "/platform/", "/console"],
-        },
-        "docs": "/docs",
-    })
+async def index() -> RedirectResponse:
+    """把根域名直接导向前端主界面。"""
+    return RedirectResponse(url="/platform/", status_code=307)
 
 
 @router.get("/api/health")
