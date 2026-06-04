@@ -1021,7 +1021,7 @@ function EditApiModal({ open, api, isNew, isAdminUser = false, onClose, onConfir
                   rows={6}
                   value={form.api_key}
                   onChange={(e) => setForm((f) => ({ ...f, api_key: e.target.value }))}
-                  placeholder={'{"type": "service_account", "project_id": "...", "client_email": "...", "private_key": "-----BEGIN RSA PRIVATE KEY-----\\n..."}'}
+                  placeholder={'{"type": "service_account", "project_id": "...", "client_email": "...", "private_key": "<PRIVATE_KEY_PEM_WITH_NEWLINES>"}'}
                   style={{ width: '100%', fontFamily: 'monospace', fontSize: '12px', resize: 'vertical', padding: '8px', boxSizing: 'border-box' }}
                   autoComplete="off"
                   spellCheck={false}
@@ -1730,7 +1730,7 @@ const MODELS_DATA = [
   },
   {
     id: "anthropic", name: "Anthropic", base_url: "https://api.anthropic.com/v1",
-    enabled: true, status: "online", key_set: true, key_hint: "·sk-ant-…b211", proxy: "直连",
+    enabled: true, status: "online", key_set: true, key_hint: "·sk-***", proxy: "直连",
     models: [
       { id: "claude-opus-4-7", real_name: "claude-opus-4-7", display: "Claude Opus 4.7 · 长文", capabilities: ["long", "tool-use", "rpg"], enabled: true, price: "$15 / $75", context: "200K", health: "ok", visible: true },
       { id: "claude-sonnet-4-6", real_name: "claude-sonnet-4-6", display: "Claude Sonnet 4.6", capabilities: ["text", "fast"], enabled: true, price: "$3 / $15", context: "200K", health: "ok", visible: true },
