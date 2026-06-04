@@ -128,7 +128,10 @@ def import_script(
         title=script_title,
     )
     # 用户明确选了某种模式但实际走了另一种，要在报告里标出，并拒绝静默回退
-    if (split_rule or "auto") not in {"", "auto"} and report.get("mode") not in {split_rule, "auto"}:
+    expected_modes = {split_rule, "auto"}
+    if split_rule == "custom":
+        expected_modes.add("custom_pattern")
+    if (split_rule or "auto") not in {"", "auto"} and report.get("mode") not in expected_modes:
         raise ValueError(f"无法用 {split_rule} 规则切分该文本：实际只能用 {report.get('mode')}")
     if not chapters:
         raise ValueError("没有识别到可导入章节")
