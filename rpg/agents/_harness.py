@@ -60,17 +60,26 @@ def call_agent_json(
         消除"返了 usage 没人 record"的赊账漏洞。
         agent_kind 用作 metadata.kind(如 "curator" / "black_swan" / "phase_digest")。
     """
-    if api_id == "anthropic":
+    # 查找 api_id 对应的 provider kind，支持 deepseek-anthropic 等自定义 Anthropic 兼容 provider
+    _api_kind = None
+    try:
+        from model_registry import find_api, load_model_catalog
+        _api = find_api(load_model_catalog(), api_id)
+        _api_kind = (_api or {}).get("kind", "")
+    except Exception:
+        pass
+
+    if api_id == "anthropic" or _api_kind == "anthropic":
         if tool_schema:
             text, usage = _anthropic_tool_use(
-                model, system_prompt, user_prompt, user_id,
+                api_id, model, system_prompt, user_prompt, user_id,
                 tool_schema, max_tokens,
             )
         else:
             text, usage = _anthropic_json_text(
-                model, system_prompt, user_prompt, user_id, max_tokens,
+                api_id, model, system_prompt, user_prompt, user_id, max_tokens,
             )
-    elif api_id == "vertex_ai":
+    elif api_id == "vertex_ai" or _api_kind == "vertex_ai":
         if tool_schema:
             text, usage = _vertex_function_call(
                 model, system_prompt, user_prompt, user_id, tool_schema, max_tokens,
@@ -137,6 +146,7 @@ def _maybe_record_usage(
 # ── Anthropic native tool_use ─────────────────────────────────────
 
 def _anthropic_tool_use(
+    api_id: str,
     model: str,
     system_prompt: str,
     user_prompt: str,
@@ -148,15 +158,30 @@ def _anthropic_tool_use(
 
     模型必须输出 tool_use block;返回 tool.input 的 JSON 序列化。
     失败(模型不配合)返回 ('{}', usage)。
+    支持自定义 Anthropic 兼容端点（如 deepseek-anthropic）。
     """
     from anthropic import Anthropic
 
     from platform_app.user_credentials import resolve_api_key
-    result = resolve_api_key(user_id, "anthropic", env_fallback="ANTHROPIC_API_KEY")
+    # 从模型目录获取 base_url 和 credential_env
+    _base_url = None
+    _env_name = "ANTHROPIC_API_KEY"
+    try:
+        from model_registry import find_api, load_model_catalog
+        _api = find_api(load_model_catalog(), api_id)
+        if _api:
+            _base_url = (_api.get("base_url") or "").strip() or None
+            _env_name = _api.get("credential_env") or _env_name
+    except Exception:
+        pass
+    result = resolve_api_key(user_id, api_id, env_fallback=_env_name)
     key = result.get("key")
     if not key:
-        raise RuntimeError("找不到 Anthropic API Key for agent harness")
-    client = Anthropic(api_key=key)
+        raise RuntimeError(f"找不到 {api_id} API Key for agent harness")
+    client_kwargs = {"api_key": key}
+    if _base_url:
+        client_kwargs["base_url"] = _base_url
+    client = Anthropic(**client_kwargs)
     tool_name = tool_schema.get("name") or "emit_payload"
     resp = client.messages.create(
         model=model,
@@ -176,6 +201,7 @@ def _anthropic_tool_use(
 
 
 def _anthropic_json_text(
+    api_id: str,
     model: str,
     system_prompt: str,
     user_prompt: str,
@@ -185,15 +211,29 @@ def _anthropic_json_text(
     """Anthropic 无 schema 时:在 system prompt 里要求 JSON,纯文本解析。
 
     主要给调用方没有定义 tool_schema 的场景兜底。
+    支持自定义 Anthropic 兼容端点（如 deepseek-anthropic）。
     """
     from anthropic import Anthropic
 
     from platform_app.user_credentials import resolve_api_key
-    result = resolve_api_key(user_id, "anthropic", env_fallback="ANTHROPIC_API_KEY")
+    _base_url = None
+    _env_name = "ANTHROPIC_API_KEY"
+    try:
+        from model_registry import find_api, load_model_catalog
+        _api = find_api(load_model_catalog(), api_id)
+        if _api:
+            _base_url = (_api.get("base_url") or "").strip() or None
+            _env_name = _api.get("credential_env") or _env_name
+    except Exception:
+        pass
+    result = resolve_api_key(user_id, api_id, env_fallback=_env_name)
     key = result.get("key")
     if not key:
-        raise RuntimeError("找不到 Anthropic API Key for agent harness")
-    client = Anthropic(api_key=key)
+        raise RuntimeError(f"找不到 {api_id} API Key for agent harness")
+    client_kwargs = {"api_key": key}
+    if _base_url:
+        client_kwargs["base_url"] = _base_url
+    client = Anthropic(**client_kwargs)
     resp = client.messages.create(
         model=model,
         max_tokens=max_tokens,

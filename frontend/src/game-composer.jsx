@@ -215,13 +215,19 @@ function CommandMenu({ query, onPick, onClose, triggerRef }) {
     };
   }, [onClose, triggerRef]);
   // task 141: max-height 自适应 trigger 上方可用空间,popover 不冲出 viewport 顶
-  React.useLayoutEffect(() => {
+  const calcCmdHeight = React.useCallback(() => {
     if (!menuRef.current || !triggerRef?.current) return;
     const triggerRect = triggerRef.current.getBoundingClientRect();
     const aboveSpace = Math.max(120, triggerRect.top - 16);
-    menuRef.current.style.maxHeight = aboveSpace + "px";
+    const maxVh = window.innerHeight * 0.55;
+    menuRef.current.style.maxHeight = Math.min(aboveSpace, maxVh) + "px";
     menuRef.current.style.overflowY = "auto";
-  }, [query]);
+  }, [triggerRef]);
+  React.useLayoutEffect(calcCmdHeight, [calcCmdHeight, query]);
+  React.useEffect(() => {
+    window.addEventListener("resize", calcCmdHeight);
+    return () => window.removeEventListener("resize", calcCmdHeight);
+  }, [calcCmdHeight]);
   const q = query.replace(/^\//, "").trim().toLowerCase();
   const filtered = SLASH_COMMANDS.filter(c =>
     c.trigger.toLowerCase().includes("/" + q) || t(c.labelKey).includes(query.replace(/^\//, ""))
@@ -263,13 +269,20 @@ function CommandMenu({ query, onPick, onClose, triggerRef }) {
 
 function AttachMenu({ onPick, onClose, triggerRef }) {
   const menuRef = useRefC(null);
-  React.useLayoutEffect(() => {
+  const calcHeight = React.useCallback(() => {
     if (!menuRef.current || !triggerRef?.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    const aboveSpace = Math.max(160, rect.top - 16);
-    menuRef.current.style.maxHeight = aboveSpace + "px";
+    const aboveSpace = Math.max(200, rect.top - 16);
+    // 不超过视口 55%，防止菜单过高挡住整个界面
+    const maxVh = window.innerHeight * 0.55;
+    menuRef.current.style.maxHeight = Math.min(aboveSpace, maxVh) + "px";
     menuRef.current.style.overflowY = "auto";
-  }, []);
+  }, [triggerRef]);
+  React.useLayoutEffect(calcHeight, [calcHeight]);
+  React.useEffect(() => {
+    window.addEventListener("resize", calcHeight);
+    return () => window.removeEventListener("resize", calcHeight);
+  }, [calcHeight]);
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
     const onOutside = (e) => {
@@ -435,7 +448,7 @@ function ModelPopover({ current, onPick, align = "left", gameState, onClose, tri
   });
 
   // 选中态必须与底部标签(_currentModelLabel)同源,否则会"勾在 A、底部显示 B"。
-  // 优先级:current(localModel,点击后乐观更新) > 存档 session_model > catalog.selected > gameState.app。
+  // 优先级:current(localModel,点击后乐观更新) > 存档 session_model > gameState.app(反映用户偏好) > catalog.selected(全局默认)。
   const _sessionModel = gameState && gameState.session_model;
   const selected = (catalog && catalog.selected) || {};
   let selectedKey = "";
@@ -443,14 +456,14 @@ function ModelPopover({ current, onPick, align = "left", gameState, onClose, tri
     const hit = flat.find((m) => m.id === current || m.real_name === current);
     if (hit) selectedKey = `${hit.api_id}::${hit.real_name}`;
   }
-  if (!selectedKey) {
-    if (_sessionModel && _sessionModel.api_id && _sessionModel.model_id) {
-      selectedKey = `${_sessionModel.api_id}::${_sessionModel.model_id}`;
-    } else if (selected.api_id && selected.model_id) {
-      selectedKey = `${selected.api_id}::${selected.model_id}`;
-    } else if (gameState && gameState.app) {
-      selectedKey = `${gameState.app.api_id || ""}::${gameState.app.model_real_name || ""}`;
-    }
+  if (!selectedKey && _sessionModel && _sessionModel.api_id && _sessionModel.model_id) {
+    selectedKey = `${_sessionModel.api_id}::${_sessionModel.model_id}`;
+  }
+  if (!selectedKey && gameState && gameState.app && gameState.app.api_id) {
+    selectedKey = `${gameState.app.api_id}::${gameState.app.model_real_name || ""}`;
+  }
+  if (!selectedKey && selected.api_id && selected.model_id) {
+    selectedKey = `${selected.api_id}::${selected.model_id}`;
   }
 
   const pickModel = async (item) => {
@@ -691,13 +704,19 @@ function EffortSection({ selectedKey }) {
 function PermissionPopover({ current, onPick, onClose, triggerRef }) {
   const { t } = useTranslation();
   const menuRef = useRefC(null);
-  React.useLayoutEffect(() => {
+  const calcPermHeight = React.useCallback(() => {
     if (!menuRef.current || !triggerRef?.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const aboveSpace = Math.max(160, rect.top - 16);
-    menuRef.current.style.maxHeight = aboveSpace + "px";
+    const maxVh = window.innerHeight * 0.55;
+    menuRef.current.style.maxHeight = Math.min(aboveSpace, maxVh) + "px";
     menuRef.current.style.overflowY = "auto";
-  }, []);
+  }, [triggerRef]);
+  React.useLayoutEffect(calcPermHeight, [calcPermHeight]);
+  React.useEffect(() => {
+    window.addEventListener("resize", calcPermHeight);
+    return () => window.removeEventListener("resize", calcPermHeight);
+  }, [calcPermHeight]);
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
     const onOutside = (e) => {

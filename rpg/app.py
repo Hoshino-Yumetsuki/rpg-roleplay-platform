@@ -960,6 +960,31 @@ def _payload(api_user: dict[str, Any] | None = None) -> dict[str, Any]:
     _sess_view = _session_model_app_view(model_catalog, _sess)
     if _sess_view:
         model = _sess_view
+    else:
+        # 无 session_model 时检查用户偏好（Level 2），与 _ensure_loaded 优先级一致
+        try:
+            if api_user and api_user.get("id"):
+                from core.llm_backend import resolve_preferred_api, resolve_preferred_model
+                _uid_int = int(api_user["id"])
+                _pa = resolve_preferred_api(_uid_int, "gm.api_id")
+                _pm = resolve_preferred_model(_uid_int, "gm.model_real_name")
+                if _pa and _pm:
+                    from model_registry import find_api, find_model
+                    _api = find_api(model_catalog, _pa)
+                    if _api:
+                        _m = find_model(_api, _pm)
+                        if _m:
+                            model = {
+                                "api_id": _pa,
+                                "api_display_name": _api.get("display_name", _pa),
+                                "api_kind": _api.get("kind", _pa),
+                                "model_id": _m["id"],
+                                "real_name": _m.get("real_name", _m["id"]),
+                                "display_name": _m.get("display_name", _m["id"]),
+                                "capabilities": list(_m.get("capabilities", [])),
+                            }
+        except Exception:
+            pass
     is_admin = bool(api_user and api_user.get("role") == "admin")
     payload = state.status_payload()
     # 当前模型的 context window（tokens），由 platform_app.usage.context_window_for
