@@ -460,11 +460,11 @@
     },
     {
       "id": "xiaomi_mimo",
-      "display_name": "MiMo",
+      "display_name": "MiMo (Xiaomi)",
       "kind": "openai_compat",
       "enabled": false,
       "credential_env": "MIMO_API_KEY",
-      "base_url": "",
+      "base_url": "https://chat.d.xiaomi.net/ai/api/v1",
       "metadata": {
         "status": "preview",
         "note": "MiMo 公共 API 暂未开放，base_url 待小米发布后填入"

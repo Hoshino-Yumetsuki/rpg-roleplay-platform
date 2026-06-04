@@ -1155,10 +1155,10 @@ function App() {
   }, [history.length, attachments]);
 
   const onSend = () => {
-    if (!text.trim() && !attachments.length) return;
+    if (!text.trim() && !attachments.length && !pickedCommand) return;
     if (runState.running) return;
     setHasError(false);
-    startRun(text.trim() || '（仅附件，请基于本轮上下文推进。）');
+    startRun(text.trim() || (pickedCommand ? pickedCommand.trigger.trim() : '（仅附件，请基于本轮上下文推进。）'));
   };
   const onSendRaw = useCallback((raw) => {
     if (runState.running) return;

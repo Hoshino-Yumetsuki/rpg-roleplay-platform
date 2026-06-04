@@ -3434,6 +3434,7 @@ function CapCard({ id, name, desc, tag, on, status, kind, onChanged, _raw }) {
   const [v, setV] = useStatePL(!!on);
   const [editOpen, setEditOpen] = useStatePL(false);
   const [logOpen, setLogOpen] = useStatePL(false);
+  const [deleteOpen, setDeleteOpen] = useStatePL(false);
   const [logText, setLogText] = useStatePL("");
   const [logBusy, setLogBusy] = useStatePL(false);
   React.useEffect(() => { setV(!!on); }, [on]);
@@ -3525,6 +3526,9 @@ function CapCard({ id, name, desc, tag, on, status, kind, onChanged, _raw }) {
         <div style={{display: "flex", gap: 4}}>
           <button className="iconbtn" data-tip="编辑" onClick={() => setEditOpen(true)}><Icon name="edit" size={12} /></button>
           <button className="iconbtn" data-tip="查看日志" onClick={() => setLogOpen(true)}><Icon name="debug" size={12} /></button>
+          {kind === "mcp" && (
+            <button className="iconbtn" data-tip="删除" onClick={() => setDeleteOpen(true)} style={{color: "var(--danger)"}}><Icon name="close" size={12} /></button>
+          )}
         </div>
       </div>
       <PromptModal
@@ -3598,6 +3602,35 @@ function CapCard({ id, name, desc, tag, on, status, kind, onChanged, _raw }) {
                   } catch (e) { window.__apiToast?.("导出失败", { kind: "danger", detail: e?.message }); }
                 }}><Icon name="download" size={12} /> 导出</button>
               </div>
+            </footer>
+          </div>
+        </div>
+      )}
+      {deleteOpen && (
+        <div className="pl-modal-backdrop" onClick={() => setDeleteOpen(false)}>
+          <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(400px, 100%)"}}>
+            <header className="pl-modal-head">
+              <div>
+                <div className="pl-modal-eyebrow">删除 MCP 服务器</div>
+                <h2 className="pl-modal-title" style={{color: "var(--danger)"}}>确认删除 {name}？</h2>
+              </div>
+              <button className="iconbtn" onClick={() => setDeleteOpen(false)} data-tip="取消"><Icon name="close" size={14} /></button>
+            </header>
+            <div style={{padding: "8px 16px 16px", fontSize: 13, color: "var(--muted)"}}>
+              此操作将永久移除该 MCP 服务器配置，无法撤销。
+            </div>
+            <footer className="pl-modal-foot">
+              <button className="btn ghost" onClick={() => setDeleteOpen(false)}>取消</button>
+              <button className="btn danger" onClick={async () => {
+                try {
+                  await window.api.mcp.remove({ id, server_id: id });
+                  window.__apiToast?.("已删除", { kind: "ok", duration: 1500 });
+                  setDeleteOpen(false);
+                  onChanged && onChanged();
+                } catch (e) {
+                  window.__apiToast?.("删除失败", { kind: "danger", detail: e?.message });
+                }
+              }}><Icon name="close" size={12} /> 确认删除</button>
             </footer>
           </div>
         </div>

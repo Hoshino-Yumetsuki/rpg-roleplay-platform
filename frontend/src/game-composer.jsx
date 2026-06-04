@@ -852,6 +852,19 @@ function Composer({
     return () => window.removeEventListener("rpg-composer-restore", handler);
   }, [setText]);
 
+  // 选择斜杠命令后自动聚焦输入框，让用户可以直接按回车发送或输入参数
+  React.useEffect(() => {
+    if (pickedCommand) {
+      setTimeout(() => {
+        const ta = taRef.current;
+        if (ta && ta.focus) {
+          ta.focus();
+          try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {}
+        }
+      }, 50);
+    }
+  }, [pickedCommand]);
+
   // @ mention picker state
   const [mention, setMention] = useStateC(null); // { start, query }
   // task 48：原硬编码 6 个角色（顾承砚/沈知微/韩司直/阿衡/童守人/税吏甲），
@@ -1033,7 +1046,7 @@ function Composer({
               <button
                 className="btn primary"
                 onClick={onSend}
-                disabled={!text.trim() && !attachments?.length}
+                disabled={!text.trim() && !attachments?.length && !pickedCommand}
               >
                 <Icon name="send" size={12} /> {t('game.composer.send')}
               </button>
