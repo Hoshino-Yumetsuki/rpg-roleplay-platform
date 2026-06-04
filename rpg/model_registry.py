@@ -167,6 +167,20 @@ DEFAULT_MODEL_CATALOG: dict[str, Any] = {
             ],
         },
         {
+            "id": "deepseek-anthropic",
+            "display_name": "DeepSeek (Anthropic)",
+            "kind": "anthropic",
+            "enabled": True,
+            "credential_env": "DEEPSEEK_API_KEY",
+            "base_url": "https://api.deepseek.com/anthropic",
+            "models": [
+                {"id": "deepseek-v4-flash", "real_name": "deepseek-v4-flash", "display_name": "DeepSeek V4 Flash", "enabled": True,
+                 "capabilities": ["text", "streaming", "tools", "json_mode"]},
+                {"id": "deepseek-v4-pro",   "real_name": "deepseek-v4-pro",   "display_name": "DeepSeek V4 Pro",   "enabled": True,
+                 "capabilities": ["text", "streaming", "tools", "json_mode", "reasoning"]},
+            ],
+        },
+        {
             "id": "deepseek",
             "display_name": "DeepSeek",
             "kind": "openai_compat",

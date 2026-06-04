@@ -315,17 +315,43 @@ def _resolve_provider_key(api: dict[str, Any], user_id: int | None) -> str:
 
 def _list_anthropic_models(api: dict[str, Any], user_id: int | None = None) -> list[dict[str, Any]]:
     from anthropic import Anthropic
+    from anthropic import APIStatusError
     key = _resolve_provider_key(api, user_id)
-    client = Anthropic(api_key=key)
-    models = []
-    for m in client.models.list():
-        models.append({
-            "id": m.id,
-            "real_name": m.id,
-            "display_name": getattr(m, "display_name", m.id),
-            "created_at": str(getattr(m, "created_at", "")),
-        })
-    return models
+    base_url = api.get("base_url") or None
+    client_kwargs: dict[str, Any] = {"api_key": key}
+    if base_url:
+        client_kwargs["base_url"] = base_url
+    client = Anthropic(**client_kwargs)
+    try:
+        models = []
+        for m in client.models.list():
+            models.append({
+                "id": m.id,
+                "real_name": m.id,
+                "display_name": getattr(m, "display_name", m.id),
+                "created_at": str(getattr(m, "created_at", "")),
+            })
+        return models
+    except (APIStatusError, Exception) as exc:
+        # 如果 Anthropic 端点不支持 /v1/models（如 DeepSeek Anthropic 兼容端点返回 404），
+        # 且该 provider 与某个 OpenAI 兼容端点共享同一 API key（credential_env 含 DEEPSEEK 等），
+        # 则降级到 OpenAI 兼容方式列模型。
+        api_id = (api.get("id") or "").lower()
+        env_name = (api.get("credential_env") or "").upper()
+        is_deepseek_family = "deepseek" in api_id or "DEEPSEEK" in env_name
+        if is_deepseek_family:
+            try:
+                return _list_openai_compat_models({
+                    "id": api.get("id", "deepseek-anthropic"),
+                    "base_url": "https://api.deepseek.com/v1",
+                    "credential_env": api.get("credential_env", "DEEPSEEK_API_KEY"),
+                }, user_id=user_id)
+            except Exception:
+                pass
+        # 对于其他 Anthropic 端点或降级也失败的情况，抛原始异常
+        raise RuntimeError(
+            f"列模型失败（{type(exc).__name__}）: {exc}"
+        ) from exc
 
 
 def _list_openai_compat_models(api: dict[str, Any], user_id: int | None = None) -> list[dict[str, Any]]:

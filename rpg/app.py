@@ -1055,7 +1055,17 @@ def _redact_catalog(catalog: dict[str, Any], is_admin: bool, user_id: int | None
         if require_auth:
             api["has_credential"] = normalize_api_id(api.get("id")) in cred_ids
         else:
-            api["has_credential"] = model_probe._credential_present(api)
+            # 本地模式：检查环境变量 + 数据库中用户凭证
+            env_ok = model_probe._credential_present(api)
+            db_ok = False
+            if user_id is not None:
+                try:
+                    from platform_app.user_credentials import get_credential as _get_cred
+                    _c = _get_cred(int(user_id), api.get("id"))
+                    db_ok = bool(_c and _c.get("key"))
+                except Exception:
+                    pass
+            api["has_credential"] = env_ok or db_ok
         if not is_admin:
             api.pop("credential_ref", None)
             api.pop("credential_env", None)
