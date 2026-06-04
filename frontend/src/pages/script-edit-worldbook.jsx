@@ -432,8 +432,7 @@ export function WorldbookEditorView({ script }) {
           <CSButton
             variant="inline-link"
             iconName="external"
-            disabled={!isOwner}
-            onClick={(ev) => { ev.stopPropagation(); openPanel(e, false); }}
+            onClick={(ev) => { ev?.stopPropagation?.(); openPanel(e, false); }}
           >
             {t('scripts.edit.worldbook.col_detail', { defaultValue: '详情' })}
           </CSButton>

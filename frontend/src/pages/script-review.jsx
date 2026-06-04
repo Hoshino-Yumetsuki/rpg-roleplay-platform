@@ -46,7 +46,7 @@ function ReviewFlags({ flags }) {
   return (
     <div className="sr-flags" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '8px 0' }}>
       <span className={f.needs_review ? 'sr-flag warn' : 'sr-flag ok'}>
-        {f.needs_review ? '⚠ 需复核' : '✓ 摄入正常'}
+        {f.needs_review ? '⚠ 需核对' : '✓ 提取正常'}
       </span>
       <span className="sr-flag">作者非正文 {(f.author_notes || []).length}</span>
       <span className="sr-flag">怪标题 {(f.weird_titles || []).length}</span>
@@ -74,13 +74,13 @@ function ReviewStatusBanner({ scriptId, status, busy, onChange }) {
       <div style={{ display: 'grid', gap: 4 }}>
         <div style={{ fontWeight: 600, fontSize: 14 }}>
           {isReviewed
-            ? `✓ 此剧本已通过 KB 复核${reviewedAtLabel ? ` · ${reviewedAtLabel}` : ''}`
-            : '⚠ 此剧本尚未通过 KB 复核 — 标记前无法用于新建存档'}
+            ? `✓ 此剧本的设定已核对通过${reviewedAtLabel ? ` · ${reviewedAtLabel}` : ''}`
+            : '⚠ 此剧本的设定还没核对 — 核对通过后才能用来开局 / 分享'}
         </div>
         <div style={{ fontSize: 12, opacity: 0.7 }}>
           {isReviewed
-            ? '若发现实体/世界线/时间锚错误,可撤回复核后重新编辑。'
-            : '请抽查下方实体摘要、世界线归属、时间锚,确认无误后点击「标记已复核」。'}
+            ? '下面是 AI 从原文提取的人物 / 世界观 / 时间线。若发现提取错了,可「撤回确认」后重新编辑。'
+            : '下面是 AI 从你剧本原文里自动提取的【人物 / 世界观 / 时间线】设定。请抽查有没有提取错的,确认无误后点「确认设定无误」。'}
         </div>
       </div>
       <button
@@ -101,7 +101,7 @@ function ReviewStatusBanner({ scriptId, status, busy, onChange }) {
           color: isReviewed ? 'var(--text, #ebe7df)' : '#fff',
         }}
       >
-        {isReviewed ? '↶ 撤回复核' : '✓ 标记已复核'}
+        {isReviewed ? '↶ 撤回确认' : '✓ 确认设定无误'}
       </button>
     </div>
   );
@@ -139,7 +139,7 @@ export function ScriptReview({ scriptId, initialStatus, onReviewedChange }) {
     if (r.ok) reload(); else setErr(r.error || '删除失败');
   };
 
-  if (busy) return <div className="sr-loading">加载复核数据…</div>;
+  if (busy) return <div className="sr-loading">加载设定核对…</div>;
   if (err) return <div className="sr-error">错误:{err}</div>;
   if (!data) return null;
 
@@ -147,7 +147,7 @@ export function ScriptReview({ scriptId, initialStatus, onReviewedChange }) {
   const wls = data.worldlines || [];
   return (
     <div className="script-review" style={{ padding: 16 }}>
-      <h2>剧本复核 · {data.script?.title || scriptId}</h2>
+      <h2>剧本设定核对 · {data.script?.title || scriptId}</h2>
       <ReviewStatusBanner
         scriptId={scriptId}
         status={status}

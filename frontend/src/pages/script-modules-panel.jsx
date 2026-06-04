@@ -44,6 +44,7 @@ export function useScriptRebuild(scriptId) {
   const reload = React.useCallback(async () => {
     if (!scriptId) return;
     setStatusLoading(true);
+    setActiveJob(null);
     try {
       const r = await window.api?.scripts?.getModulesStatus?.(scriptId);
       if (r && r.ok !== false) {
@@ -93,6 +94,8 @@ export function useScriptRebuild(scriptId) {
               };
             });
           }
+        } else if (aj && aj.ok !== false) {
+          setActiveJob(null);
         }
       }
     } catch (_) {}

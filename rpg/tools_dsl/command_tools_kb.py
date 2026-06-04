@@ -39,7 +39,11 @@ def _save_ctx(db, save_id: int, user_id: int) -> dict | None:
         raw = wl.get("progress_chapter")
         progress = int(raw) if isinstance(raw, (int, float)) and raw >= 1 else 1
         mode = wl.get("foreknowledge_mode") or "none"
-    return {"script_id": row["script_id"], "commit_id": row["active_commit_id"],
+    # pin 重定向:存档若挂在 pinned/floating 引用剧本上,KB 读取走 pin 目标剧本的数据。
+    # 仅影响【读取】(本 ctx 喂的全是 KB lookup 工具);存档归属/写入另走原 script_id。
+    from platform_app.knowledge._pin import effective_kb_script_id
+    return {"script_id": effective_kb_script_id(db, row["script_id"]),
+            "commit_id": row["active_commit_id"],
             "progress_chapter": progress, "mode": mode}
 
 

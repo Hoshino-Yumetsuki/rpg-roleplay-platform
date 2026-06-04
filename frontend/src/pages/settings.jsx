@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
 import { ConfirmModal, SettingsToggle, useAutoSave, usePlatformData, useReactiveUser, publishUser, fmtN, ResizableSplit } from '../platform-app.jsx';
 import AgentModelPicker from '../components/AgentModelPicker.jsx';
-import InfoHint, { LabelWithHint } from '../components/InfoHint.jsx';
+import GmStyleEditor from '../components/GmStyleEditor.jsx';
 import { getCaps as _getCapsImported } from '../components/catalog-helpers.js';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSContainer from '@cloudscape-design/components/container';
@@ -68,19 +68,20 @@ function catalogApiIdForCredential(apiId) {
    SetGroup = Container + Header(h2)  ·  SetRow = FormField(label 上 / 控件下)。
    各 section 用这两个套,保证全站基线对齐、间距一致。 */
 function SetGroup({ title, description, actions, children }) {
-  // 简化:section 说明收进标题旁 ⓘ,不再占常驻副标题行。
+  // 用 Header 原生 description 渲染 section 说明(可见副标题、原生预留间隔),
+  // 不再塞进标题旁 ⓘ —— 短说明直接展示更易读,也让各 section 基线一致。
   return (
-    <CSContainer header={<CSHeader variant="h2" actions={actions}>{description ? <LabelWithHint label={title} hint={description} /> : title}</CSHeader>}>
+    <CSContainer header={<CSHeader variant="h2" actions={actions} description={description || undefined}>{title}</CSHeader>}>
       {/* React.Children.toArray 给多子元素派稳定 key,避免 SpaceBetween 的 key 警告 */}
       <CSSpaceBetween size="l">{React.Children.toArray(children)}</CSSpaceBetween>
     </CSContainer>
   );
 }
 function SetRow({ label, description, children }) {
-  // 简化 + 对齐:行说明从常驻 description 副标题收进 label 旁的 ⓘ。
-  // 所有行只剩单行 label → 行高统一 → 输入框纵向对齐(根治「输入框对不齐」)。
+  // 用 FormField 原生 description(label 下方可见副标题):短帮助文字直接显示而非藏进 ⓘ,
+  // FormField 自带副标题预留间隔 → 行结构一致、并排字段组控件纵向对齐。
   return (
-    <CSFormField label={description ? <LabelWithHint label={label} hint={description} /> : label}>
+    <CSFormField label={label} description={description || undefined}>
       {children}
     </CSFormField>
   );
@@ -148,7 +149,7 @@ function SettingsPage({ section: sectionProp } = {}) {
         </CSSpaceBetween>
       )}
       {external && <CSHeader variant="h1">{sectionLabel}</CSHeader>}
-      {section === "preferences" && [<PrefSection key="pref" />, <BlackSwanSection key="bs" />, <ExtractorSection key="ext" />, <ClarifySection key="clar" />]}
+      {section === "preferences" && [<PrefSection key="pref" />, <CSContainer key="gmstyle"><GmStyleEditor scope="user" /></CSContainer>, <BlackSwanSection key="bs" />, <ExtractorSection key="ext" />, <ClarifySection key="clar" />]}
       {section === "models" && <ModelsSection />}
       {section === "modelparams" && <ModelParamsSection />}
       {section === "modules" && <ModuleModelsSection />}

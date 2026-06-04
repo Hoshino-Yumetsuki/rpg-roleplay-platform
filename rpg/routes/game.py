@@ -18,6 +18,11 @@ import secrets as _secrets
 
 _log = _logging.getLogger(__name__)
 
+_CLIENT_SAFE_RUNTIME_PREFIXES = (
+    "未找到 Vertex AI Service Account。",
+    "Vertex AI 调用被拒(403)。",
+)
+
 
 def _client_safe_error(exc: Exception) -> str:
     """把未预期异常转成对客户端安全的泛化文案 + error_id。
@@ -26,6 +31,10 @@ def _client_safe_error(exc: Exception) -> str:
     绝不能直透进 SSE 给玩家。原始异常带 error_id 写服务端日志,客户端只拿 id 便于排障对账。
     """
     error_id = _secrets.token_hex(4)
+    raw_message = str(exc).strip()
+    if isinstance(exc, RuntimeError) and raw_message.startswith(_CLIENT_SAFE_RUNTIME_PREFIXES):
+        _log.warning("[chat] client-safe stream error (error_id=%s): %s", error_id, raw_message)
+        return f"{raw_message}\n\n如果已经上传,请重新测试凭证或切换到已配置的模型。(错误码 {error_id})"
     _log.exception("[chat] unhandled stream error (error_id=%s)", error_id)
     return f"本轮处理出错,请重试(错误码 {error_id})"
 
