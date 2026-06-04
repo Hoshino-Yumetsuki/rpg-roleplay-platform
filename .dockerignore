@@ -1,6 +1,6 @@
 # Docker build context excludes.
 # The build (deploy/Dockerfile) only needs: frontend/ (npm ci + vite build) and
-# rpg/ (pip install + backend). Everything below is heavy, regenerable, secret,
+# rpg/ (uv sync + backend). Everything below is heavy, regenerable, secret,
 # or build-irrelevant. Keep this in sync with .gitignore where it overlaps.
 
 # ── VCS / editor / tooling ──────────────────────────────────────────────────

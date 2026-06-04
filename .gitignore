@@ -109,8 +109,6 @@ rpg/docs/api_contract_drift.md
 !rust/crates/rpg-agents/src/prompts/*.txt
 
 
-!rpg/requirements.txt
-
 #  数据库
 *.db
 *.sqlite
@@ -136,6 +134,4 @@ rpg/config/*.private.json
 # copyrighted novel test fixtures — never publish
 .test-fixtures/
 
-# 本项目不用 uv
-uv.lock
 .ruff_cache

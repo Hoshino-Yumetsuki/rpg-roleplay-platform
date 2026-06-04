@@ -77,11 +77,11 @@ psql postgres -c "CREATE DATABASE rpg OWNER rpg;"
 psql -U rpg -d rpg -c "CREATE EXTENSION IF NOT EXISTS vector;"
 psql -U rpg -d rpg -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
-# 3. 装 Python 依赖
+# 3. 装 Python 依赖（uv —— 依赖单一来源：pyproject.toml + uv.lock）
 #    !! 重要：在 rpg/ 子目录内运行，不是仓库根 !!
+#    若未装 uv：curl -LsSf https://astral.sh/uv/install.sh | sh
 cd rpg/
-python -m venv .venv
-.venv/bin/pip install -r requirements.txt
+uv sync --extra dev   # 自动建 .venv 并按 lock 安装依赖（含 dev 工具）
 
 # 4. 配 .env
 #    若 rpg/.env.example 不存在，从 deploy/test-server/.env.example 复制
@@ -90,10 +90,10 @@ $EDITOR .env           # 填 DATABASE_URL、RPG_MASTER_KEY、RESEND_API_KEY 等
 
 # 5. 首次跑 migration（fresh DB 必须用 full，不能用 up）
 #    !! 必须在 rpg/ 目录下运行（模块查找依赖工作目录）!!
-.venv/bin/python -m platform_app.migrate full
+uv run python -m platform_app.migrate full
 
 # 6. 起后端
-.venv/bin/uvicorn app:app --port 7860 --reload   # 开发模式
+uv run uvicorn app:app --port 7860 --reload   # 开发模式
 # 或一键起全栈（postgres + backend + frontend）:
 # cd .. && ./scripts/dev.sh start
 

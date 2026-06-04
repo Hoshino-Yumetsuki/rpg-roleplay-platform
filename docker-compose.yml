@@ -49,6 +49,9 @@ services:
       dockerfile: Dockerfile
     restart: always
     command:
+      - "uv"
+      - "run"
+      - "--no-sync"
       - "python"
       - "-m"
       - "scripts.cron_scheduler"

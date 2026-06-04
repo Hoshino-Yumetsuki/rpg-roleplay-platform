@@ -77,11 +77,11 @@ psql postgres -c "CREATE DATABASE rpg OWNER rpg;"
 psql -U rpg -d rpg -c "CREATE EXTENSION IF NOT EXISTS vector;"
 psql -U rpg -d rpg -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
-# 3. Install Python dependencies
+# 3. Install Python dependencies (uv — single source of truth: pyproject.toml + uv.lock)
 #    !! IMPORTANT: run from rpg/ sub-directory, not the repo root !!
+#    Install uv first if needed: curl -LsSf https://astral.sh/uv/install.sh | sh
 cd rpg/
-python -m venv .venv
-.venv/bin/pip install -r requirements.txt
+uv sync --extra dev   # creates .venv and installs locked deps (incl. dev tools)
 
 # 4. Configure .env
 #    No rpg/.env.example yet? Copy from deploy/test-server/.env.example
@@ -90,10 +90,10 @@ $EDITOR .env           # set DATABASE_URL, RPG_MASTER_KEY, RESEND_API_KEY etc.
 
 # 5. Run migrations — fresh DB requires "full", not "up"
 #    !! Must run from rpg/ directory (module resolution depends on cwd) !!
-.venv/bin/python -m platform_app.migrate full
+uv run python -m platform_app.migrate full
 
 # 6. Start the backend
-.venv/bin/uvicorn app:app --port 7860 --reload   # dev
+uv run uvicorn app:app --port 7860 --reload   # dev
 # Or use the one-shot script (starts postgres + backend + frontend):
 # cd .. && ./scripts/dev.sh start
 
