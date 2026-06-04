@@ -1169,9 +1169,9 @@ function ScriptsListView() {
   const onToggleVisibility = async (s) => {
     const next = !s.is_public;
     if (next) {
-      // 发布到公开库前的 KB 复核闸:未复核直接引导去「KB 核查」,不发请求。
+      // 发布到公开库前的设定核对闸:未核对直接引导去「设定核对」,不发请求。
       if ((s.review_status || 'unreviewed') !== 'reviewed') {
-        window.__apiToast?.('分享前需先通过 KB 复核', { kind: 'warn', detail: '已为你打开「KB 核查」,确认实体/世界线/时间锚无误后点「标记已复核」,再回来分享。', duration: 5500 });
+        window.__apiToast?.('分享前需先核对剧本设定', { kind: 'warn', detail: '已为你打开「设定核对」,确认 AI 提取的人物/世界观/时间线无误后点「确认设定无误」,再回来分享。', duration: 5500 });
         setReviewScript(s);
         return;
       }
@@ -1183,9 +1183,9 @@ function ScriptsListView() {
       window.__apiToast?.(next ? t('scripts.toast.published') : t('scripts.toast.unpublished'), { kind: 'ok', duration: 2000 });
       setScripts((arr) => arr.map((x) => x.id === s.id ? { ...x, is_public: next } : x));
     } catch (e) {
-      // 后端复核闸兜底(前端 review_status 陈旧时返回 409 REVIEW_REQUIRED)
+      // 后端核对闸兜底(前端 review_status 陈旧时返回 409 REVIEW_REQUIRED)
       if (e?.payload?.error === 'REVIEW_REQUIRED') {
-        window.__apiToast?.('分享前需先通过 KB 复核', { kind: 'warn', detail: e?.payload?.message || '请先在「KB 核查」标记已复核。', duration: 5500 });
+        window.__apiToast?.('分享前需先核对剧本设定', { kind: 'warn', detail: e?.payload?.message || '请先在「设定核对」确认设定无误。', duration: 5500 });
         setReviewScript(s);
         return;
       }
