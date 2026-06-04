@@ -150,7 +150,9 @@ def export_account(user_id: int, include_chunks: bool = False) -> tuple[bytes, s
                 warnings.append(f"存档 {sid_save} 导出失败,已跳过:{exc}")
                 continue
             member = f"saves/{sid_save}.json"
-            zf.writestr(member, json.dumps(payload, ensure_ascii=False))
+            # default=str:存档 payload 里可能有 datetime(expose 未全转)→ 转字符串,
+            # 防 "datetime is not JSON serializable"。导入侧 timestamptz 接受 ISO 字符串。
+            zf.writestr(member, json.dumps(payload, ensure_ascii=False, default=str))
             manifest_saves.append({
                 "origin_save_id": sid_save,
                 "origin_script_id": (int(sv["script_id"]) if sv.get("script_id") else None),
@@ -162,14 +164,14 @@ def export_account(user_id: int, include_chunks: bool = False) -> tuple[bytes, s
         if cards:
             zf.writestr(
                 "cards.jsonl",
-                "\n".join(json.dumps(c, ensure_ascii=False) for c in cards),
+                "\n".join(json.dumps(c, ensure_ascii=False, default=str) for c in cards),
             )
 
         # 4. profile(偏好 + 模型 overlay)
         zf.writestr("profile.json", json.dumps({
             "preferences": prefs,
             "model_overlay": overlay,
-        }, ensure_ascii=False))
+        }, ensure_ascii=False, default=str))
 
         # 5. manifest
         manifest = {
@@ -191,7 +193,7 @@ def export_account(user_id: int, include_chunks: bool = False) -> tuple[bytes, s
             "has_profile": True,
             "warnings": warnings,
         }
-        zf.writestr("account-manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+        zf.writestr("account-manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2, default=str))
 
         # 6. 人类可读说明
         zf.writestr("README.txt", _README)
