@@ -1,8 +1,6 @@
 // Platform 页面入口 — Vite ESM 版
 import '../web-vitals-rum.js';
 import React from 'react';
-import { useState, useEffect } from 'react';
-import * as ReactDOM from 'react-dom/client';
 
 // 基础设施 side-effect 模块(设置 window.api / window.MOCK_* / SSE bridge 等)
 import '../mock-data.js';
@@ -200,34 +198,11 @@ function PlatformApp() {
   );
 }
 
-const __mount = () => {
-  ReactDOM.createRoot(document.getElementById('root')).render(
+// SPA 路由入口 — 由 main.jsx 懒加载，挂载于 /platform/*。
+export default function PlatformRoute() {
+  return (
     <ErrorBoundary>
       <PlatformApp />
     </ErrorBoundary>
   );
-  // 通知 HTML splash 淡出并移除节点
-  try {
-    document.body.classList.add('platform-mounted');
-    setTimeout(() => {
-      const sp = document.getElementById('platform-splash');
-      if (sp && sp.parentNode) sp.parentNode.removeChild(sp);
-    }, 300);
-  } catch (_) {}
-};
-const __gateThenMount = (info) => {
-  const offline = new URLSearchParams(location.search).has('offline');
-  if (info && info.online && !info.authed && !offline) {
-    const next = encodeURIComponent(
-      location.pathname + location.search + location.hash
-    );
-    location.replace('Login.html?next=' + next);
-    return;
-  }
-  __mount();
-};
-if (window.RPG_DATA_READY) {
-  window.RPG_DATA_READY.then(__gateThenMount);
-} else {
-  __mount();
 }
