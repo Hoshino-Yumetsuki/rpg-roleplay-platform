@@ -82,6 +82,8 @@ def upsert_canon_entity(db, script_id: int, logical_key: str, *, name: str, type
 def read_canon_entities(db, script_id: int, *, progress_chapter: int | None = None,
                         mode: ForeknowledgeMode = "none", entity_type: str | None = None,
                         limit: int | None = None) -> list[dict]:
+    from platform_app.knowledge._pin import effective_kb_script_id
+    script_id = effective_kb_script_id(db, script_id)  # pin 重定向(纯读)
     cols = ", ".join(_CANON_COLS)
     clause, params = _reveal_clause(progress_chapter, mode)
     sql = f"select {cols} from kb_canon_entities where script_id = %s and {clause}"
@@ -98,6 +100,8 @@ def read_canon_entities(db, script_id: int, *, progress_chapter: int | None = No
 
 def lookup_canon_entity(db, script_id: int, logical_key: str, *, progress_chapter: int | None = None,
                         mode: ForeknowledgeMode = "none") -> dict | None:
+    from platform_app.knowledge._pin import effective_kb_script_id
+    script_id = effective_kb_script_id(db, script_id)  # pin 重定向(纯读)
     clause, params = _reveal_clause(progress_chapter, mode)
     row = db.execute(
         f"select {', '.join(_CANON_COLS)} from kb_canon_entities "
@@ -148,6 +152,8 @@ def upsert_worldline_node(db, script_id: int, wl_key: str, node_key: str, *, seq
 
 
 def read_worldlines(db, script_id: int) -> list[dict]:
+    from platform_app.knowledge._pin import effective_kb_script_id
+    script_id = effective_kb_script_id(db, script_id)  # pin 重定向(纯读)
     return db.execute(
         "select wl_key, label, parent_wl, branch_at_node, is_primary, source, metadata "
         "from script_worldlines where script_id=%s order by is_primary desc, wl_key",
@@ -156,6 +162,8 @@ def read_worldlines(db, script_id: int) -> list[dict]:
 
 
 def read_worldline_nodes(db, script_id: int, wl_key: str, *, progress_chapter: int | None = None) -> list[dict]:
+    from platform_app.knowledge._pin import effective_kb_script_id
+    script_id = effective_kb_script_id(db, script_id)  # pin 重定向(纯读)
     sql = (
         "select wl_key, node_key, seq, label, summary, chapter_min, chapter_max, anchor_keys, "
         "must_preserve, may_vary, causal_centrality, first_revealed_chapter "

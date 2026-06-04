@@ -43,6 +43,9 @@ def compute_budget(db, script_id: int) -> int:
 
 def build_constant_layer(db, script_id: int, *, budget_tokens: int | None = None, use_cache: bool = True) -> str:
     """读 constant worldbook,按 priority 拼装到预算上限。这是治 1935 的常驻骨架。"""
+    # pin 重定向:引用剧本(pinned/floating)读 pin 目标的常驻世界书(纯读取)。
+    from platform_app.knowledge._pin import effective_kb_script_id
+    script_id = effective_kb_script_id(db, script_id)
     if budget_tokens is None:
         budget_tokens = compute_budget(db, script_id)
     ckey = (int(script_id), int(budget_tokens))

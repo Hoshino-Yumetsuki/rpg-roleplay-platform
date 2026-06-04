@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from platform_app import runtime
 from platform_app.db import connect, init_db
+from platform_app.knowledge._pin import effective_kb_script_id
 from platform_app.knowledge._search import _search_chunks, _search_entities
 from platform_app.knowledge._utils import _query_tokens
 
@@ -69,6 +70,8 @@ def retrieve_script_context(
         db = cm.__enter__()
     try:
         parts: list[str] = []
+        # pin 重定向:引用剧本(pinned/floating)检索读 pin 目标的数据;非 pin 原样,零影响。
+        script_id = effective_kb_script_id(db, script_id)
         fact_rows = db.execute(
             """
             select chapter, title, story_time_label, summary, events
