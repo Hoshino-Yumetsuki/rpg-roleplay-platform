@@ -13,8 +13,7 @@
     "fmt": "oxfmt",
     "fmt-check": "oxfmt --check",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "gen:types": "cd ../rust && cargo test -p rpg-schemas --features ts-rs && cargo test -p rpg-state --features ts-rs && cargo test -p rpg-llm --features ts-rs && cargo test -p rpg-routes --features ts-rs"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@cloudscape-design/components": "^3.0.1304",
@@ -30,6 +29,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.16",
     "@vitejs/plugin-react": "^6.0.2",
     "jsdom": "^29.1.1",
     "oxfmt": "^0.53.0",

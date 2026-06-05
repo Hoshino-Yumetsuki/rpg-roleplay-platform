@@ -3,7 +3,7 @@
 // 起因:旧规则 /(?<!\w)_(...)_(?!\w)/ 的 \w 不含 CJK,导致「设定_补充_」这类
 // 中文里的下划线被渲染成 <em>。修复后两侧断言扩展到 [\w一-鿿]。
 import { describe, it, expect } from "vitest";
-import { RpgMarkdown } from "../features/console/MarkdownRender";
+import { RpgMarkdown } from "../MarkdownRender";
 
 // 递归收集所有指定 tag 的 React 元素
 function collectTags(nodes, tag, out = []) {

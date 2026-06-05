@@ -11,7 +11,7 @@ import { resolve } from 'path';
 
 // Read the api-client source (IIFE, not ES module — no import)
 const apiClientSource = readFileSync(
-  resolve(__dirname, '../api-client.js'),
+  resolve(__dirname, './api-client.ts'),
   'utf-8',
 );
 

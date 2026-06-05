@@ -41,7 +41,7 @@ i18n
   });
 
 /** 切换语言并同步写 localStorage(prefs save 也会写后端,这里只保证本地立即生效) */
-export function changeLanguage(lng) {
+export function changeLanguage(lng: string) {
   try { localStorage.setItem(STORAGE_KEY, lng); } catch (_) {}
   return i18n.changeLanguage(lng);
 }

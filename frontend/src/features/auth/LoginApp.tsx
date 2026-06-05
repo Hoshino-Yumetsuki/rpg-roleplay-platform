@@ -1,5 +1,4 @@
-
-// login-app.jsx — 独立 Login 页主组件
+// login-app.tsx — 独立 Login 页主组件
 //
 // 设计基线:
 //   1. 视觉系统严格对齐 platform.css 里既有的 `.pl-auth-*` 命名空间(暖灰深色 +
@@ -13,7 +12,7 @@
 //   - 字段循环渲染,不再写死 `username/password/display_name`
 //   - 可作为 Vite 独立入口,跟 PlatformApp 完全解耦
 
-import React from 'react';
+import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -32,7 +31,7 @@ function __resolveNextOrDefault() {
 /// 渲染单个表单字段。`field` 形如:
 ///   { key, label, type, required, autocomplete, placeholder, min_length, max_length }
 /// 当 type === 'boolean' 时渲染为 checkbox。
-function SchemaField({ field, value, onChange }) {
+function SchemaField({ field, value, onChange }: any) {
   const { t } = useTranslation();
   if (field.type === 'boolean') {
     // 为 terms_accepted 字段注入带链接的 label;其余 boolean 字段用纯文本
@@ -65,7 +64,7 @@ function SchemaField({ field, value, onChange }) {
           id={field.key}
           type="checkbox"
           checked={!!value}
-          onChange={(e) => onChange(e.target.checked)}
+          onChange={(e: any) => onChange(e.target.checked)}
           style={{marginTop: 3, flexShrink: 0, accentColor: 'var(--accent)'}}
         />
         <label htmlFor={field.key} style={{fontWeight: 'normal', cursor: 'pointer', fontSize: 13}}>
@@ -88,14 +87,14 @@ function SchemaField({ field, value, onChange }) {
         minLength={field.min_length || undefined}
         maxLength={field.max_length || undefined}
         value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e: any) => onChange(e.target.value)}
       />
     </div>
   );
 }
 
-function OtpInput({ value, onChange, onComplete, length = 6, disabled = false, autoFocus = false, label }) {
-  const inputRef = React.useRef(null);
+function OtpInput({ value, onChange, onComplete, length = 6, disabled = false, autoFocus = false, label }: any) {
+  const inputRef = React.useRef<any>(null);
   const completeRef = React.useRef('');
   const clean = String(value || '').replace(/\D/g, '').slice(0, length);
 
@@ -126,8 +125,8 @@ function OtpInput({ value, onChange, onComplete, length = 6, disabled = false, a
         autoComplete="one-time-code"
         value={clean}
         disabled={disabled}
-        onChange={(e) => onChange(String(e.target.value || '').replace(/\D/g, '').slice(0, length))}
-        onPaste={(e) => {
+        onChange={(e: any) => onChange(String(e.target.value || '').replace(/\D/g, '').slice(0, length))}
+        onPaste={(e: any) => {
           const pasted = e.clipboardData?.getData('text') || '';
           const next = pasted.replace(/\D/g, '').slice(0, length);
           if (next) {
@@ -136,7 +135,7 @@ function OtpInput({ value, onChange, onComplete, length = 6, disabled = false, a
           }
         }}
       />
-      {Array.from({ length }).map((_, i) => (
+      {Array.from({ length }).map((_: any, i: number) => (
         <div key={i} className={`pl-otp-box ${clean[i] ? 'filled' : ''}`}>
           {clean[i] || ''}
         </div>
@@ -148,9 +147,9 @@ function OtpInput({ value, onChange, onComplete, length = 6, disabled = false, a
 function LoginApp() {
   const { t } = useTranslation();
   const [mode, setMode] = useState('login');     // 'login' | 'code-login' | 'register' | 'verify' | 'forgot' | 'reset' | 'magic-otp' | 'needs-profile'
-  const [schema, setSchema] = useState(null);    // { login: [...], register: [...], notes: {...} }
+  const [schema, setSchema] = useState<any>(null); // { login: [...], register: [...], notes: {...} }
   const [schemaErr, setSchemaErr] = useState('');
-  const [values, setValues] = useState({});      // {[fieldKey]: string}
+  const [values, setValues] = useState<Record<string, any>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
@@ -181,7 +180,7 @@ function LoginApp() {
     let cancelled = false;
     (async () => {
       try {
-        const me = await window.api?.auth.me();
+        const me = await (window as any).api?.auth.me();
         if (!cancelled && me && me.user) {
           location.replace(__resolveNextOrDefault());
         }
@@ -195,11 +194,11 @@ function LoginApp() {
     let cancelled = false;
     (async () => {
       try {
-        const base = window.__API_BASE || '';
+        const base = (window as any).__API_BASE || '';
         const r = await fetch(`${base}/api/v1/auth/schema`, { credentials: 'include' });
         const j = await r.json();
         if (!cancelled) setSchema(j);
-      } catch (e) {
+      } catch (e: any) {
         if (!cancelled) setSchemaErr(e?.message || t('auth.schema_fail'));
       }
     })();
@@ -232,7 +231,7 @@ function LoginApp() {
         if (!magicToken || !emailParam) return;
         setBusy(true);
         setNotice('正在验证邀请链接…');
-        const base = window.__API_BASE || '';
+        const base = (window as any).__API_BASE || '';
         const r = await fetch(`${base}/api/auth/magic-consume`, {
           method: 'POST',
           credentials: 'include',
@@ -260,7 +259,7 @@ function LoginApp() {
           setErr(j.error || '邀请链接无效,请检查邮件中的链接');
           setNotice('');
         }
-      } catch (e) {
+      } catch (e: any) {
         if (!cancelled) setErr(e?.message || '邀请链接验证失败');
       } finally {
         if (!cancelled) setBusy(false);
@@ -270,15 +269,15 @@ function LoginApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fields = ['verify', 'code-login', 'forgot', 'reset'].includes(mode) ? [] : (schema?.[mode] || []);
-  const minPw = schema?.notes?.min_password_length || 8;
-  const inviteOnly = !!schema?.notes?.invite_only;
+  const fields: any[] = (['verify', 'code-login', 'forgot', 'reset'] as any).includes(mode) ? [] : (schema?.[mode] || []);
+  const minPw = (schema as any)?.notes?.min_password_length || 8;
+  const inviteOnly = !!(schema as any)?.notes?.invite_only;
 
-  const setField = (k, v) => setValues((prev) => ({ ...prev, [k]: v }));
+  const setField = (k: any, v: any) => setValues((prev: any) => ({ ...prev, [k]: v }));
 
   // 后端 error_key → 友好文案映射(后端 400 时查 'auth.*' key)
   // 前端 field key → 同样文案(前端预校验 boolean 字段时查 'terms_accepted' / 'age_confirmed')
-  const CONSENT_ERRORS = {
+  const CONSENT_ERRORS: Record<string, string> = {
     'auth.terms_not_accepted': t('auth.terms_not_accepted'),
     'auth.age_not_confirmed': t('auth.age_not_confirmed'),
     'terms_accepted': t('auth.terms_not_accepted'),
@@ -288,20 +287,20 @@ function LoginApp() {
   // 倒计时 effect
   React.useEffect(() => {
     if (resendCooldown <= 0) return;
-    const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
+    const tmr = setTimeout(() => setResendCooldown((c: number) => c - 1), 1000);
+    return () => clearTimeout(tmr);
   }, [resendCooldown]);
 
-  const requestLoginCode = async (email, { resend = false } = {}) => {
+  const requestLoginCode = async (email: any, { resend = false }: any = {}) => {
     const cleanEmail = String(email || '').trim();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
+    if (!cleanEmail || !(cleanEmail as any).includes('@')) {
       setErr(t('auth.login_code.email_required'));
       return;
     }
     setBusy(true);
     setErr(''); setNotice('');
     try {
-      const j = await window.api.auth.loginCodeRequest({ email: cleanEmail });
+      const j = await (window as any).api.auth.loginCodeRequest({ email: cleanEmail });
       if (!j || j.ok === false) throw new Error(j?.error || t('auth.login_code.send_fail'));
       setLoginCodeEmail(cleanEmail);
       setLoginCodeEmailMask(j.email_mask || cleanEmail);
@@ -309,7 +308,7 @@ function LoginApp() {
       setLoginCode('');
       setResendCooldown(60);
       setNotice(resend ? t('auth.verify.resend_ok') : t('auth.login_code.sent_notice', { mask: j.email_mask || cleanEmail }));
-    } catch (e) {
+    } catch (e: any) {
       setErr(e?.message || t('auth.login_code.send_fail'));
     } finally {
       setBusy(false);
@@ -325,7 +324,7 @@ function LoginApp() {
     setBusy(true);
     setErr('');
     try {
-      const base = window.__API_BASE || '';
+      const base = (window as any).__API_BASE || '';
       const r = await fetch(`${base}/api/v1/auth/resend-code`, {
         method: 'POST',
         credentials: 'include',
@@ -339,14 +338,14 @@ function LoginApp() {
       } else {
         setErr(j.error || t('auth.verify.resend_fail'));
       }
-    } catch (e) {
+    } catch (e: any) {
       setErr(e?.message || t('auth.verify.resend_fail'));
     } finally {
       setBusy(false);
     }
   };
 
-  const handleVerify = async (e, codeOverride) => {
+  const handleVerify = async (e: any, codeOverride: any) => {
     e?.preventDefault?.();
     if (busy) return;
     const code = String(codeOverride ?? verifyCode).trim();
@@ -357,7 +356,7 @@ function LoginApp() {
     setBusy(true);
     setErr(''); setNotice('');
     try {
-      const base = window.__API_BASE || '';
+      const base = (window as any).__API_BASE || '';
       const r = await fetch(`${base}/api/v1/auth/verify-email`, {
         method: 'POST',
         credentials: 'include',
@@ -371,14 +370,14 @@ function LoginApp() {
       } else {
         setErr(j.error || t('auth.verify.verify_fail'));
       }
-    } catch (e) {
+    } catch (e: any) {
       setErr(e?.message || t('auth.request_fail'));
     } finally {
       setBusy(false);
     }
   };
 
-  const handleLoginCodeVerify = async (e, codeOverride) => {
+  const handleLoginCodeVerify = async (e: any, codeOverride: any) => {
     e?.preventDefault?.();
     if (busy) return;
     const code = String(codeOverride ?? loginCode).trim();
@@ -389,18 +388,18 @@ function LoginApp() {
     setBusy(true);
     setErr(''); setNotice('');
     try {
-      const j = await window.api.auth.loginCodeVerify({ email: loginCodeEmail, code });
+      const j = await (window as any).api.auth.loginCodeVerify({ email: loginCodeEmail, code });
       if (!j || j.ok === false) throw new Error(j?.error || t('auth.login_code.verify_fail'));
       setNotice(t('auth.login_code.verify_ok'));
       setTimeout(() => location.replace(__resolveNextOrDefault()), 200);
-    } catch (e) {
+    } catch (e: any) {
       setErr(e?.message || t('auth.login_code.verify_fail'));
     } finally {
       setBusy(false);
     }
   };
 
-  const handleMagicOtpVerify = async (e, codeOverride) => {
+  const handleMagicOtpVerify = async (e: any, codeOverride: any) => {
     e?.preventDefault?.();
     if (busy) return;
     const code = String(codeOverride ?? magicCode).trim();
@@ -411,7 +410,7 @@ function LoginApp() {
     setBusy(true);
     setErr(''); setNotice('');
     try {
-      const base = window.__API_BASE || '';
+      const base = (window as any).__API_BASE || '';
       const r = await fetch(`${base}/api/auth/passwordless-verify`, {
         method: 'POST',
         credentials: 'include',
@@ -427,14 +426,14 @@ function LoginApp() {
         setNotice('登录成功，跳转中…');
         setTimeout(() => location.replace(__resolveNextOrDefault()), 300);
       }
-    } catch (e) {
+    } catch (e: any) {
       setErr(e?.message || '验证失败，请重试');
     } finally {
       setBusy(false);
     }
   };
 
-  const handleProfileSubmit = async (e) => {
+  const handleProfileSubmit = async (e: any) => {
     e?.preventDefault?.();
     if (busy) return;
     const uname = profileUsername.trim();
@@ -446,7 +445,7 @@ function LoginApp() {
     setBusy(true);
     setErr(''); setNotice('');
     try {
-      const base = window.__API_BASE || '';
+      const base = (window as any).__API_BASE || '';
       const r = await fetch(`${base}/api/me/profile`, {
         method: 'PATCH',
         credentials: 'include',
@@ -460,25 +459,25 @@ function LoginApp() {
       if (!j.ok) throw new Error(j.error || '保存失败');
       setNotice('设置成功，跳转中…');
       setTimeout(() => location.replace(__resolveNextOrDefault()), 300);
-    } catch (e) {
+    } catch (e: any) {
       setErr(e?.message || '保存失败，请重试');
     } finally {
       setBusy(false);
     }
   };
 
-  const handleForgot = async (e) => {
+  const handleForgot = async (e: any) => {
     e.preventDefault();
     if (busy) return;
     const email = forgotEmail.trim();
-    if (!email || !email.includes('@')) {
+    if (!email || !(email as any).includes('@')) {
       setErr(t('auth.forgot_email_required'));
       return;
     }
     setBusy(true);
     setErr(''); setNotice('');
     try {
-      const base = window.__API_BASE || '';
+      const base = (window as any).__API_BASE || '';
       await fetch(`${base}/api/auth/forgot-password`, {
         method: 'POST',
         credentials: 'include',
@@ -494,11 +493,11 @@ function LoginApp() {
     }
   };
 
-  const handleReset = async (e) => {
+  const handleReset = async (e: any) => {
     e.preventDefault();
     if (busy) return;
-    if (resetPw.length < (schema?.notes?.min_password_length || 8)) {
-      setErr(t('auth.field_min_length', { label: t('auth.reset_new_pw'), min: schema?.notes?.min_password_length || 8 }));
+    if (resetPw.length < ((schema as any)?.notes?.min_password_length || 8)) {
+      setErr(t('auth.field_min_length', { label: t('auth.reset_new_pw'), min: (schema as any)?.notes?.min_password_length || 8 }));
       return;
     }
     if (resetPw !== resetPwConfirm) {
@@ -508,7 +507,7 @@ function LoginApp() {
     setBusy(true);
     setErr(''); setNotice('');
     try {
-      const base = window.__API_BASE || '';
+      const base = (window as any).__API_BASE || '';
       const r = await fetch(`${base}/api/auth/reset-password`, {
         method: 'POST',
         credentials: 'include',
@@ -531,7 +530,7 @@ function LoginApp() {
     }
   };
 
-  const submit = async (e) => {
+  const submit = async (e: any) => {
     e.preventDefault();
     if (busy) return;
     setErr(''); setNotice('');
@@ -560,7 +559,7 @@ function LoginApp() {
 
     setBusy(true);
     try {
-      const body = {};
+      const body: any = {};
       for (const f of fields) {
         if (f.type === 'boolean') {
           // boolean 字段：必填直接发；可选且未勾选则跳过
@@ -575,7 +574,7 @@ function LoginApp() {
       }
 
       if (mode === 'register') {
-        const base = window.__API_BASE || '';
+        const base = (window as any).__API_BASE || '';
         const r = await fetch(`${base}/api/v1/auth/register`, {
           method: 'POST',
           credentials: 'include',
@@ -591,18 +590,18 @@ function LoginApp() {
           return;
         }
         // server 模式两步流程：进入验证码步骤
-        setPendingEmail(j.email_mask || body.email || '');
-        setPendingEmailRaw(body.email || '');
+        setPendingEmail(j.email_mask || (body as any).email || '');
+        setPendingEmailRaw((body as any).email || '');
         setVerifyCode('');
         setResendCooldown(60);
         setMode('verify');
         setNotice(t('auth.verify.sent_notice', { mask: j.email_mask }));
       } else {
-        await window.api.auth.login(body);
+        await (window as any).api.auth.login(body);
         setNotice(t('auth.login_ok'));
         setTimeout(() => location.replace(__resolveNextOrDefault()), 200);
       }
-    } catch (e) {
+    } catch (e: any) {
       // 后端返回 error_key 时展示对应文案
       const errKey = e?.detail?.error_key || e?.error_key;
       if (errKey && CONSENT_ERRORS[errKey]) {
@@ -654,7 +653,7 @@ function LoginApp() {
 
         {/* ── 验证码步骤 ─────────────────────────────────────────────── */}
         {mode === 'verify' && (
-          <form className="pl-auth-form" onSubmit={handleVerify}>
+          <form className="pl-auth-form" onSubmit={handleVerify as any}>
             <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
               {t('auth.verify.sent_to')} <strong>{pendingEmail}</strong>{t('auth.verify.expires')}
             </div>
@@ -663,7 +662,7 @@ function LoginApp() {
               <OtpInput
                 value={verifyCode}
                 onChange={setVerifyCode}
-                onComplete={(code) => handleVerify(null, code)}
+                onComplete={(code: any) => handleVerify(null, code)}
                 disabled={busy}
                 autoFocus
                 label={t('auth.verify.code_label')}
@@ -699,7 +698,7 @@ function LoginApp() {
 
         {/* ── Magic-link OTP 步骤 ────────────────────────────────────── */}
         {mode === 'magic-otp' && (
-          <form className="pl-auth-form" onSubmit={handleMagicOtpVerify}>
+          <form className="pl-auth-form" onSubmit={handleMagicOtpVerify as any}>
             <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
               验证码已发送至 <strong>{magicEmail}</strong>，10分钟内有效。
             </div>
@@ -708,7 +707,7 @@ function LoginApp() {
               <OtpInput
                 value={magicCode}
                 onChange={setMagicCode}
-                onComplete={(code) => handleMagicOtpVerify(null, code)}
+                onComplete={(code: any) => handleMagicOtpVerify(null, code)}
                 disabled={busy}
                 autoFocus
                 label="验证码"
@@ -732,7 +731,7 @@ function LoginApp() {
 
         {/* ── 首次注册补昵称 ──────────────────────────────────────────── */}
         {mode === 'needs-profile' && (
-          <form className="pl-auth-form" onSubmit={handleProfileSubmit}>
+          <form className="pl-auth-form" onSubmit={handleProfileSubmit as any}>
             <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
               欢迎加入！请设置用户名以完成注册。
             </div>
@@ -743,7 +742,7 @@ function LoginApp() {
                 type="text"
                 autoComplete="username"
                 value={profileUsername}
-                onChange={(e) => setProfileUsername(e.target.value)}
+                onChange={(e: any) => setProfileUsername(e.target.value)}
                 autoFocus
                 maxLength={32}
               />
@@ -755,7 +754,7 @@ function LoginApp() {
                 type="text"
                 autoComplete="nickname"
                 value={profileDisplayName}
-                onChange={(e) => setProfileDisplayName(e.target.value)}
+                onChange={(e: any) => setProfileDisplayName(e.target.value)}
                 maxLength={64}
               />
             </div>
@@ -778,7 +777,7 @@ function LoginApp() {
 
         {/* ── 邮箱验证码登录 ─────────────────────────────────────────── */}
         {mode === 'code-login' && (
-          <form className="pl-auth-form" onSubmit={(e) => loginCodeSent ? handleLoginCodeVerify(e) : (e.preventDefault(), requestLoginCode(loginCodeEmail))}>
+          <form className="pl-auth-form" onSubmit={(e: any) => loginCodeSent ? (handleLoginCodeVerify as any)(e) : (e.preventDefault(), requestLoginCode(loginCodeEmail))}>
             {!loginCodeSent ? (
               <>
                 <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
@@ -791,7 +790,7 @@ function LoginApp() {
                     type="email"
                     autoComplete="email"
                     value={loginCodeEmail}
-                    onChange={(e) => setLoginCodeEmail(e.target.value)}
+                    onChange={(e: any) => setLoginCodeEmail(e.target.value)}
                     autoFocus
                   />
                 </div>
@@ -806,7 +805,7 @@ function LoginApp() {
                   <OtpInput
                     value={loginCode}
                     onChange={setLoginCode}
-                    onComplete={(code) => handleLoginCodeVerify(null, code)}
+                    onComplete={(code: any) => handleLoginCodeVerify(null, code)}
                     disabled={busy}
                     autoFocus
                     label={t('auth.login_code.code_label')}
@@ -849,7 +848,7 @@ function LoginApp() {
 
         {/* ── 忘记密码表单 ─────────────────────────────────────────── */}
         {mode === 'forgot' && (
-          <form className="pl-auth-form" onSubmit={handleForgot}>
+          <form className="pl-auth-form" onSubmit={handleForgot as any}>
             <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
               {t('auth.forgot_desc')}
             </div>
@@ -860,7 +859,7 @@ function LoginApp() {
                 type="email"
                 autoComplete="email"
                 value={forgotEmail}
-                onChange={(e) => setForgotEmail(e.target.value)}
+                onChange={(e: any) => setForgotEmail(e.target.value)}
                 autoFocus
               />
             </div>
@@ -888,7 +887,7 @@ function LoginApp() {
 
         {/* ── 重置密码表单 ─────────────────────────────────────────── */}
         {mode === 'reset' && (
-          <form className="pl-auth-form" onSubmit={handleReset}>
+          <form className="pl-auth-form" onSubmit={handleReset as any}>
             <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
               {t('auth.reset_desc')}
             </div>
@@ -899,7 +898,7 @@ function LoginApp() {
                 type="password"
                 autoComplete="new-password"
                 value={resetPw}
-                onChange={(e) => setResetPw(e.target.value)}
+                onChange={(e: any) => setResetPw(e.target.value)}
                 autoFocus
               />
             </div>
@@ -910,7 +909,7 @@ function LoginApp() {
                 type="password"
                 autoComplete="new-password"
                 value={resetPwConfirm}
-                onChange={(e) => setResetPwConfirm(e.target.value)}
+                onChange={(e: any) => setResetPwConfirm(e.target.value)}
               />
             </div>
             {err && (
@@ -930,7 +929,7 @@ function LoginApp() {
         )}
 
         {/* ── 登录 / 注册表单 ────────────────────────────────────────── */}
-        {mode !== 'verify' && mode !== 'code-login' && mode !== 'forgot' && mode !== 'reset' && mode !== 'magic-otp' && mode !== 'needs-profile' && <form className="pl-auth-form" onSubmit={submit}>
+        {mode !== 'verify' && mode !== 'code-login' && mode !== 'forgot' && mode !== 'reset' && mode !== 'magic-otp' && mode !== 'needs-profile' && <form className="pl-auth-form" onSubmit={submit as any}>
           {schemaErr && (
             <div className="pl-auth-error"
                  style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>
@@ -944,10 +943,10 @@ function LoginApp() {
             </div>
           )}
 
-          {fields.map((f) => (
+          {fields.map((f: any) => (
             <SchemaField key={f.key} field={f}
                          value={values[f.key]}
-                         onChange={(v) => setField(f.key, v)} />
+                         onChange={(v: any) => setField(f.key, v)} />
           ))}
 
           {err && (
@@ -972,18 +971,18 @@ function LoginApp() {
 
           <div className="pl-auth-foot">
             <span>
-              {schema?.notes?.first_user_is_admin
+              {(schema as any)?.notes?.first_user_is_admin
                 ? t('auth.first_admin')
                 : ''}
-              {schema?.notes?.invite_only
+              {(schema as any)?.notes?.invite_only
                 ? t('auth.invite_only_note')
                 : ''}
-              {!schema?.notes?.invite_only && !schema?.notes?.first_user_is_admin
+              {!(schema as any)?.notes?.invite_only && !(schema as any)?.notes?.first_user_is_admin
                 ? t('auth.min_password', { min: minPw })
                 : ''}
             </span>
             <a href="#"
-               onClick={(e) => {
+               onClick={(e: any) => {
                  e.preventDefault();
                  setForgotEmail('');
                  setErr(''); setNotice('');

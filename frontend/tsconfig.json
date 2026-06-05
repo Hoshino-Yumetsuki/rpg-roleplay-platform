@@ -30,7 +30,7 @@
       "@/i18n/*": ["./src/i18n/*"],
       "@/styles/*": ["./src/styles/*"]
     },
-    "baseUrl": ".",
+    "rootDir": ".",
     "types": []
   },
   "include": [
@@ -40,5 +40,5 @@
     "src/**/*.jsx",
     "src/types/**/*.d.ts"
   ],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["node_modules", "dist", "src/types/rust"]
 }
