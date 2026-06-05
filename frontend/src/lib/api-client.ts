@@ -511,11 +511,7 @@
         return openEventSource(url, handlers);
       },
       // 别名:重建/重做某剧本的完整流水线 — 内部走同一 endpoint /import-jobs/{id}/stream,
-      // wizard 这边语义上叫 "rebuild"。
-      streamRebuild: (jobId, handlers) => {
-        const url = BASE + `${API_PREFIX}/scripts/import-jobs/` + jobId + '/stream';
-        return openEventSource(url, handlers);
-      },
+      // wizard 这边语义上叫 "rebuild"。在下方 streamRebuild 方法中通过 this.streamImport 委托。
       // B3: script overrides CRUD (JSONB)
       getOverrides: (sid) => GET(`${API_PREFIX}/scripts/` + sid + '/overrides'),
       saveOverrides: (sid, data) => POST(`${API_PREFIX}/scripts/` + sid + '/overrides', { data }),

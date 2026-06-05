@@ -18,6 +18,7 @@ import { MODELS_DATA } from '../settings/SettingsPage';
 // platform-app 之前留了返回 null 的 stub 遮蔽它们 → "继续游戏"/"新建存档" 全失效。
 // PlatformShell(本文件)直接渲染这两个组件,必须从真实现 import,不能用 stub。
 import { ContinuePicker, NewGameModal } from '../saves/SavesPage';
+import { BranchGraph } from '../console/BranchGraph';
 import {
   AdminUsersPage,
   AdminGlobalUsagePage,

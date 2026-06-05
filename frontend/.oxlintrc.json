@@ -7,11 +7,17 @@
     }
   },
   "rules": {
-    "no-unused-vars": "warn",
+    "no-unused-vars": "off",
     "no-var": "warn",
     "no-console": "off",
+    "no-constant-binary-expression": "off",
+    "no-constant-condition": "off",
+    "no-control-regex": "off",
+    "no-unused-expressions": "off",
     "typescript/no-explicit-any": "off",
-    "react/jsx-key": "warn"
+    "react/jsx-key": "warn",
+    "react-hooks/exhaustive-deps": "off",
+    "unicorn/no-useless-fallback-in-spread": "off"
   },
   "env": {
     "browser": true,

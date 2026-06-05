@@ -142,11 +142,11 @@ function parseBlocks(text) {
       continue;
     }
     // 代码块
-    if (/^```/.test(line)) {
+    if (line.startsWith('```')) {
       const lang = line.slice(3).trim();
       const buf = [];
       i++;
-      while (i < lines.length && !/^```/.test(lines[i])) {
+      while (i < lines.length && !lines[i].startsWith('```')) {
         buf.push(lines[i]);
         i++;
       }
@@ -222,7 +222,7 @@ function parseBlocks(text) {
       const nl = lines[i];
       if (!nl.trim()) break;
       if (/^(#{1,6})\s+/.test(nl)) break;
-      if (/^```/.test(nl)) break;
+      if (nl.startsWith('```')) break;
       if (/^>\s?/.test(nl)) break;
       if (/^\s*[-*]\s+/.test(nl)) break;
       if (/^\s*\d+\.\s+/.test(nl)) break;
