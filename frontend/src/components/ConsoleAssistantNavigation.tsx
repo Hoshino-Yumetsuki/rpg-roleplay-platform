@@ -28,7 +28,7 @@
 window.__cap_navigation_installed = true;
 
 // ---------- 路由桥 ----------
-import { plNavigate, appNavigate, plPageToPath } from "../app/router";
+import { plNavigate, appNavigate, plPageToPath } from '../app/router';
 
 // ---------- 全局 dirty 表 ----------
 if (!(window.__cap_dirty_pages instanceof Map)) {
@@ -36,7 +36,7 @@ if (!(window.__cap_dirty_pages instanceof Map)) {
 }
 
 // ---------- 注入高亮 CSS ----------
-const CSS_ID = "cap-navigation-styles-v1";
+const CSS_ID = 'cap-navigation-styles-v1';
 if (!document.getElementById(CSS_ID)) {
   const css = `
 .cap-highlight {
@@ -114,7 +114,7 @@ color: #fff;
 .cap-nav-modal button.primary:hover { filter: brightness(1.08); }
 .cap-nav-modal button:hover { background: var(--panel-3, #2f2c28); }
 `;
-  const style = document.createElement("style");
+  const style = document.createElement('style');
   style.id = CSS_ID;
   style.textContent = css;
   document.head.appendChild(style);
@@ -128,49 +128,49 @@ function targetToPageId(target) {
   const t = String(target);
   // 显式映射(target → 平台 pageId)
   const MAP = {
-    "settings": "settings",
-    "settings.preferences": "settings",
-    "settings.models": "settings",
-    "settings.models.gm": "settings",
-    "settings.models.console_assistant": "settings",
-    "settings.modelparams": "settings",
-    "settings.memory": "settings",
-    "settings.permissions": "settings",
-    "settings.deploy": "admin-deploy",
-    "admin.users":        "admin-users",
-    "admin.usage":        "admin-usage",
-    "admin.audit":        "admin-audit",
-    "admin.health":       "admin-health",
-    "admin.logs":         "admin-logs",
-    "admin.registration": "admin-registration",
-    "admin.security":     "admin-security",
-    "admin.maintenance":  "admin-maintenance",
-    "settings.danger": "settings",
-    "settings.profile": "me-edit",
-    "settings.api": "settings",
-    "scripts": "scripts",
-    "scripts.list": "scripts",
-    "scripts.import": "scripts-import",
-    "saves": "saves",
-    "saves.list": "saves",
-    "saves.branches": "saves-branches",
-    "cards": "cards",
-    "cards.user": "cards",
-    "cards.npc": "cards-npc",
-    "personas": "me-settings",
-    "library": "library",
-    "usage": "usage",
-    "modules": "modules",
-    "me": "me",
-    "me.edit": "me-edit",
-    "me.settings": "me-settings",
+    settings: 'settings',
+    'settings.preferences': 'settings',
+    'settings.models': 'settings',
+    'settings.models.gm': 'settings',
+    'settings.models.console_assistant': 'settings',
+    'settings.modelparams': 'settings',
+    'settings.memory': 'settings',
+    'settings.permissions': 'settings',
+    'settings.deploy': 'admin-deploy',
+    'admin.users': 'admin-users',
+    'admin.usage': 'admin-usage',
+    'admin.audit': 'admin-audit',
+    'admin.health': 'admin-health',
+    'admin.logs': 'admin-logs',
+    'admin.registration': 'admin-registration',
+    'admin.security': 'admin-security',
+    'admin.maintenance': 'admin-maintenance',
+    'settings.danger': 'settings',
+    'settings.profile': 'me-edit',
+    'settings.api': 'settings',
+    scripts: 'scripts',
+    'scripts.list': 'scripts',
+    'scripts.import': 'scripts-import',
+    saves: 'saves',
+    'saves.list': 'saves',
+    'saves.branches': 'saves-branches',
+    cards: 'cards',
+    'cards.user': 'cards',
+    'cards.npc': 'cards-npc',
+    personas: 'me-settings',
+    library: 'library',
+    usage: 'usage',
+    modules: 'modules',
+    me: 'me',
+    'me.edit': 'me-edit',
+    'me.settings': 'me-settings',
     // task 110: 跨 SPA 跳转 — Game Console 是独立 SPA, 不是 platform sub-page
-    "game_console": "__GAME_CONSOLE__",
-    "game": "__GAME_CONSOLE__",
+    game_console: '__GAME_CONSOLE__',
+    game: '__GAME_CONSOLE__',
   };
   if (MAP[t]) return MAP[t];
   // 兜底:取第一段
-  const head = t.split(".")[0];
+  const head = t.split('.')[0];
   return head || null;
 }
 
@@ -180,22 +180,24 @@ function targetToPageId(target) {
 // SettingsPage 是否监听由后续 patch。
 function dispatchSubSectionHint(target) {
   try {
-    window.dispatchEvent(new CustomEvent("cap-navigate-subsection", {
-      detail: { target },
-    }));
+    window.dispatchEvent(
+      new CustomEvent('cap-navigate-subsection', {
+        detail: { target },
+      }),
+    );
   } catch (_) {}
 }
 
 // ---------- 弹未保存确认 ----------
 function confirmDirtyNav(reason) {
   return new Promise((resolve) => {
-    const mask = document.createElement("div");
-    mask.className = "cap-nav-modal-mask";
+    const mask = document.createElement('div');
+    mask.className = 'cap-nav-modal-mask';
     mask.innerHTML = `
       <div class="cap-nav-modal" role="alertdialog" aria-label="未保存确认">
         <h3>当前页面有未保存的修改</h3>
         <p>跳转到目标页面会丢失这些修改。继续吗?</p>
-        ${reason ? `<div class="cap-nav-reason">原因: ${escapeHtml(reason)}</div>` : ""}
+        ${reason ? `<div class="cap-nav-reason">原因: ${escapeHtml(reason)}</div>` : ''}
         <div class="cap-nav-actions">
           <button data-cap-act="cancel">取消跳转</button>
           <button class="primary" data-cap-act="confirm">放弃修改并跳转</button>
@@ -203,90 +205,116 @@ function confirmDirtyNav(reason) {
       </div>
     `;
     const cleanup = (decision) => {
-      try { mask.remove(); } catch (_) {}
-      document.removeEventListener("keydown", onKey);
+      try {
+        mask.remove();
+      } catch (_) {}
+      document.removeEventListener('keydown', onKey);
       resolve(decision);
     };
     const onKey = (e) => {
-      if (e.key === "Escape") cleanup(false);
+      if (e.key === 'Escape') cleanup(false);
     };
-    mask.addEventListener("click", (e) => {
+    mask.addEventListener('click', (e) => {
       if (e.target === mask) cleanup(false);
-      const act = e.target && e.target.getAttribute && e.target.getAttribute("data-cap-act");
-      if (act === "cancel") cleanup(false);
-      if (act === "confirm") cleanup(true);
+      const act = e.target && e.target.getAttribute && e.target.getAttribute('data-cap-act');
+      if (act === 'cancel') cleanup(false);
+      if (act === 'confirm') cleanup(true);
     });
-    document.addEventListener("keydown", onKey);
+    document.addEventListener('keydown', onKey);
     document.body.appendChild(mask);
   });
 }
 function escapeHtml(s) {
-  return String(s || "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[c]);
+  return String(s || '').replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[c],
+  );
 }
 
 // ---------- 高亮目标元素 ----------
 function applyHighlight(target) {
   if (!target) return false;
   // 先清掉之前残留的高亮
-  document.querySelectorAll(".cap-highlight").forEach((el) => {
-    el.classList.remove("cap-highlight");
+  document.querySelectorAll('.cap-highlight').forEach((el) => {
+    el.classList.remove('cap-highlight');
   });
   // 找元素;尝试精确,再 fallback 到截短 target 的 prefix
   let el = document.querySelector('[data-cap-anchor="' + cssEscape(target) + '"]');
   if (!el) {
     // 退化:settings.models.gm → settings.models → settings
-    const parts = String(target).split(".");
+    const parts = String(target).split('.');
     for (let i = parts.length - 1; i > 0; i--) {
-      const prefix = parts.slice(0, i).join(".");
+      const prefix = parts.slice(0, i).join('.');
       el = document.querySelector('[data-cap-anchor="' + cssEscape(prefix) + '"]');
       if (el) break;
     }
   }
   if (!el) return false;
-  el.classList.add("cap-highlight");
-  try { el.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (_) {}
+  el.classList.add('cap-highlight');
+  try {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (_) {}
   // 一次性 click listener (capture) 移除高亮
   const off = () => {
-    try { el.classList.remove("cap-highlight"); } catch (_) {}
-    document.removeEventListener("click", off, true);
+    try {
+      el.classList.remove('cap-highlight');
+    } catch (_) {}
+    document.removeEventListener('click', off, true);
   };
   // 用 setTimeout 避免「触发跳转的 click」立刻把高亮清掉
   setTimeout(() => {
-    document.addEventListener("click", off, true);
+    document.addEventListener('click', off, true);
   }, 200);
   return true;
 }
 function cssEscape(s) {
-  if (window.CSS && typeof window.CSS.escape === "function") {
+  if (window.CSS && typeof window.CSS.escape === 'function') {
     return window.CSS.escape(s);
   }
-  return String(s).replace(/["\\]/g, "\\$&");
+  return String(s).replace(/["\\]/g, '\\$&');
 }
 
 // ---------- 触发页面跳转 ----------
 function navigateTo(pageId) {
   // 跨区跳转到 Game Console
-  if (pageId === "__GAME_CONSOLE__") {
-    try { appNavigate("/console"); return true; } catch (_) { return false; }
+  if (pageId === '__GAME_CONSOLE__') {
+    try {
+      appNavigate('/console');
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
-  const onPlatform = location.pathname.startsWith("/platform");
+  const onPlatform = location.pathname.startsWith('/platform');
   if (onPlatform) {
     // 平台内部:走 React Router + pl-navigate(PlatformApp 监听 → 更新 page)
-    try { plNavigate(pageId); return true; } catch (_) { return false; }
+    try {
+      plNavigate(pageId);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
   // 在 Game Console:跨区到平台页 → 新标签页打开,保留游戏标签
   try {
-    window.open(plPageToPath(pageId), "_blank");
+    window.open(plPageToPath(pageId), '_blank');
     return true;
-  } catch (_) { return false; }
+  } catch (_) {
+    return false;
+  }
 }
 
 // ---------- 主入口 ----------
 async function handleAssistantNavigation(target, reason, dirtyCheck) {
-  target = (target || "").trim();
-  if (!target) return { ok: false, error: "target 为空" };
+  target = (target || '').trim();
+  if (!target) return { ok: false, error: 'target 为空' };
 
   // 当前页 dirty 检查
   if (dirtyCheck && window.__cap_dirty_pages instanceof Map) {
@@ -295,7 +323,7 @@ async function handleAssistantNavigation(target, reason, dirtyCheck) {
     if (anyDirty) {
       const proceed = await confirmDirtyNav(reason);
       if (!proceed) {
-        return { ok: false, cancelled: true, error: "用户取消跳转" };
+        return { ok: false, cancelled: true, error: '用户取消跳转' };
       }
       // 用户确认丢弃 → 清表
       window.__cap_dirty_pages.clear();
@@ -304,11 +332,11 @@ async function handleAssistantNavigation(target, reason, dirtyCheck) {
 
   const pageId = targetToPageId(target);
   if (!pageId) {
-    return { ok: false, error: "无法解析 target=" + target };
+    return { ok: false, error: '无法解析 target=' + target };
   }
   navigateTo(pageId);
   // settings 类 target 提示子 section 切换
-  if (target.startsWith("settings.")) {
+  if (target.startsWith('settings.')) {
     dispatchSubSectionHint(target);
   }
   // 等 DOM 渲染完再找锚点;React state 切换需要至少 1 帧

@@ -80,7 +80,9 @@
   bottom: 0;
   width: 2px;
   background: var(--line);
-  transition: width 0.15s ease, background 0.15s ease;
+  transition:
+    width 0.15s ease,
+    background 0.15s ease;
 }
 
 .card:hover {
@@ -100,8 +102,13 @@
 }
 
 @keyframes barPulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.45; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
 }
 
 /* Missing state — danger bar */
@@ -191,7 +198,9 @@
   text-decoration: underline;
   text-decoration-color: transparent;
   text-underline-offset: 2px;
-  transition: color 0.12s ease, text-decoration-color 0.12s ease;
+  transition:
+    color 0.12s ease,
+    text-decoration-color 0.12s ease;
 }
 
 .rebuildBtn:hover:not(:disabled) {
@@ -227,7 +236,9 @@
   text-decoration: underline;
   text-decoration-color: transparent;
   text-underline-offset: 2px;
-  transition: color 0.12s ease, text-decoration-color 0.12s ease;
+  transition:
+    color 0.12s ease,
+    text-decoration-color 0.12s ease;
 }
 
 .detailLink:hover {
@@ -318,11 +329,21 @@
   font-weight: 500;
 }
 
-.statusBadge.ok     { color: var(--ok); }
-.statusBadge.warn   { color: var(--warn); }
-.statusBadge.danger { color: var(--danger); }
-.statusBadge.run    { color: var(--accent); }
-.statusBadge.dim    { color: var(--muted); }
+.statusBadge.ok {
+  color: var(--ok);
+}
+.statusBadge.warn {
+  color: var(--warn);
+}
+.statusBadge.danger {
+  color: var(--danger);
+}
+.statusBadge.run {
+  color: var(--accent);
+}
+.statusBadge.dim {
+  color: var(--muted);
+}
 
 /* ── Progress bar (character-based) ── */
 .progressArea {
@@ -378,15 +399,18 @@
   height: 28px;
   border-radius: 50%;
   background: #b32118;
-  box-shadow: 0 0 0 1.5px rgba(179, 33, 24, 0.55), 0 1px 4px rgba(0,0,0,0.45);
+  box-shadow:
+    0 0 0 1.5px rgba(179, 33, 24, 0.55),
+    0 1px 4px rgba(0, 0, 0, 0.45);
   transform: rotate(-8deg);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   /* Subtle grain texture via radial gradient */
-  background-image: radial-gradient(circle at 38% 35%, rgba(255,255,255,0.12) 0%, transparent 65%),
-                    radial-gradient(circle at 65% 68%, rgba(0,0,0,0.18) 0%, transparent 50%);
+  background-image:
+    radial-gradient(circle at 38% 35%, rgba(255, 255, 255, 0.12) 0%, transparent 65%),
+    radial-gradient(circle at 65% 68%, rgba(0, 0, 0, 0.18) 0%, transparent 50%);
   background-color: #b32118;
 }
 
@@ -398,7 +422,9 @@
   line-height: 1;
   letter-spacing: 0;
   /* Simulate a carved impression by slightly offsetting the drop shadow */
-  text-shadow: 0 1px 0 rgba(0,0,0,0.5), 0 -1px 0 rgba(255,255,255,0.08);
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.5),
+    0 -1px 0 rgba(255, 255, 255, 0.08);
   transform: rotate(0deg);
 }
 
@@ -468,7 +494,9 @@
   font-family: var(--font-sans);
   font-size: 11px;
   color: var(--muted);
-  transition: color 0.1s, border-color 0.1s;
+  transition:
+    color 0.1s,
+    border-color 0.1s;
 }
 
 .bannerCancel:hover {
@@ -597,8 +625,12 @@
   color: var(--text-quiet);
 }
 
-.prereqOk    { color: var(--ok); }
-.prereqWarn  { color: var(--warn); }
+.prereqOk {
+  color: var(--ok);
+}
+.prereqWarn {
+  color: var(--warn);
+}
 
 .estimateBlockAlert {
   background: var(--warn-soft);

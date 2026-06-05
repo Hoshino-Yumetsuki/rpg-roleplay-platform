@@ -20,20 +20,20 @@ const STORAGE_KEY = 'policy_notice_dismissed';
 
 const POLICY_NAMES = {
   'zh-CN': {
-    'privacy-policy':          '隐私政策',
-    'terms-of-service':        '服务条款',
-    'acceptable-use-policy':   '可接受使用政策',
-    'cookie-policy':           'Cookie 政策',
-    'dmca-policy':             'DMCA 版权政策',
-    'adult-content-disclaimer':'成人内容免责声明',
+    'privacy-policy': '隐私政策',
+    'terms-of-service': '服务条款',
+    'acceptable-use-policy': '可接受使用政策',
+    'cookie-policy': 'Cookie 政策',
+    'dmca-policy': 'DMCA 版权政策',
+    'adult-content-disclaimer': '成人内容免责声明',
   },
   en: {
-    'privacy-policy':          'Privacy Policy',
-    'terms-of-service':        'Terms of Service',
-    'acceptable-use-policy':   'Acceptable Use Policy',
-    'cookie-policy':           'Cookie Policy',
-    'dmca-policy':             'DMCA Policy',
-    'adult-content-disclaimer':'Adult Content Disclaimer',
+    'privacy-policy': 'Privacy Policy',
+    'terms-of-service': 'Terms of Service',
+    'acceptable-use-policy': 'Acceptable Use Policy',
+    'cookie-policy': 'Cookie Policy',
+    'dmca-policy': 'DMCA Policy',
+    'adult-content-disclaimer': 'Adult Content Disclaimer',
   },
 };
 
@@ -59,7 +59,9 @@ function setDismissed(id, version) {
   map[id] = version;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
-  } catch { /* storage full, ignore */ }
+  } catch {
+    /* storage full, ignore */
+  }
 }
 
 function isDismissed(notice) {
@@ -152,8 +154,12 @@ export default function PolicyNoticeBanner() {
           setNotices(data.notices);
         }
       })
-      .catch(() => { /* not logged in or network error — silent */ });
-    return () => { cancelled = true; };
+      .catch(() => {
+        /* not logged in or network error — silent */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const visible = notices.filter((n) => !isDismissed(n));
@@ -174,20 +180,11 @@ export default function PolicyNoticeBanner() {
           <div key={notice.id} style={styles.banner} role="alert">
             <span>
               {t.prefix}
-              <strong>{name}</strong>
-              {' '}
-              {t.suffix}
-              {' '}
-              <strong>{notice.new_version}</strong>
+              <strong>{name}</strong> {t.suffix} <strong>{notice.new_version}</strong>
               {' — '}
               {t.countdown(notice.effective_at)}
             </span>
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={styles.link}
-            >
+            <a href={url} target="_blank" rel="noopener noreferrer" style={styles.link}>
               {t.details}
             </a>
             <button

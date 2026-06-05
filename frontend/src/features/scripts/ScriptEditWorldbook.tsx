@@ -88,7 +88,7 @@ export function WorldbookEditorView({ script }) {
   /* ── SplitPanel 状态 ── */
   const [panelOpen, setPanelOpen] = useState(false);
   const [isNew, setIsNew] = useState(false); // 是否新建模式
-  const [draft, setDraft] = useState(null);  // 编辑中的副本
+  const [draft, setDraft] = useState(null); // 编辑中的副本
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false); // inline delete confirm
@@ -108,21 +108,23 @@ export function WorldbookEditorView({ script }) {
     (async () => {
       try {
         const r = await window.api.scripts.worldbook(script.id);
-        if (!cancelled) setEntries(Array.isArray(r) ? r : (r?.items || r?.entries || []));
+        if (!cancelled) setEntries(Array.isArray(r) ? r : r?.items || r?.entries || []);
       } catch (_) {
         if (!cancelled) setEntries([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [script?.id, reloadTick]);
 
   /* ────── 过滤 + 排序 + 分页 ────── */
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let arr = q
-      ? entries.filter(e => {
+      ? entries.filter((e) => {
           const title = String(e.title || e.keyword || e.name || e.key || '');
           const content = String(e.content || e.text || e.description || e.value || '');
           return title.toLowerCase().includes(q) || content.toLowerCase().includes(q);
@@ -151,17 +153,19 @@ export function WorldbookEditorView({ script }) {
     return arr;
   }, [entries, query, sortCol, sortAsc]);
 
-  useEffect(() => { setPage(1); }, [query]);
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / WB_PAGE_SIZE));
   const paged = filtered.slice((page - 1) * WB_PAGE_SIZE, page * WB_PAGE_SIZE);
-  const selectedEntry = entries.find(e => e.id === selectedId) || null;
+  const selectedEntry = entries.find((e) => e.id === selectedId) || null;
 
   /* ────── 打开 SplitPanel ────── */
   const openPanel = useCallback((entry, newMode = false) => {
     setDraft(newMode ? emptyEntry() : cloneEntry(entry));
     setIsNew(newMode);
-    setSelectedId(newMode ? null : entry?.id ?? null);
+    setSelectedId(newMode ? null : (entry?.id ?? null));
     setDirty(false);
     setDeleteConfirm(false);
     setTagInput('');
@@ -178,38 +182,47 @@ export function WorldbookEditorView({ script }) {
   }, []);
 
   /* ────── 选行 → 打开 panel ────── */
-  const onRowSelect = useCallback((items) => {
-    setSelectedItems(items);
-    const item = items[0];
-    if (!item) { closePanel(); return; }
-    openPanel(item, false);
-  }, [openPanel, closePanel]);
+  const onRowSelect = useCallback(
+    (items) => {
+      setSelectedItems(items);
+      const item = items[0];
+      if (!item) {
+        closePanel();
+        return;
+      }
+      openPanel(item, false);
+    },
+    [openPanel, closePanel],
+  );
 
   /* ────── inline edit (title / priority / enabled) ────── */
-  const onSubmitEdit = useCallback(async ({ item, column, newValue }) => {
-    if (!isOwner) return;
-    const field = column.id;
-    const body = {
-      title: item.title || item.keyword || item.name || item.key || '',
-      content: item.content || item.text || item.description || item.value || '',
-      priority: item.priority ?? 50,
-      enabled: item.enabled !== false,
-      tags: item.tags || [],
-    };
-    if (field === 'title') body.title = newValue;
-    if (field === 'priority') body.priority = Number(newValue) || 0;
-    if (field === 'enabled') body.enabled = newValue === true || newValue === 'true';
+  const onSubmitEdit = useCallback(
+    async ({ item, column, newValue }) => {
+      if (!isOwner) return;
+      const field = column.id;
+      const body = {
+        title: item.title || item.keyword || item.name || item.key || '',
+        content: item.content || item.text || item.description || item.value || '',
+        priority: item.priority ?? 50,
+        enabled: item.enabled !== false,
+        tags: item.tags || [],
+      };
+      if (field === 'title') body.title = newValue;
+      if (field === 'priority') body.priority = Number(newValue) || 0;
+      if (field === 'enabled') body.enabled = newValue === true || newValue === 'true';
 
-    try {
-      await _wbPut(script.id, item.id, body);
-      setEntries(arr => arr.map(e => e.id === item.id ? { ...e, ...body } : e));
-      // 如果 panel 里正在编辑同一条,同步更新 draft
-      setDraft(d => d && d.id === item.id ? { ...d, ...body } : d);
-      window.__apiToast?.(t('scripts.toast.saved'), { kind: 'ok', duration: 1500 });
-    } catch (err) {
-      window.__apiToast?.(t('scripts.toast.save_fail'), { kind: 'danger', detail: err?.message });
-    }
-  }, [isOwner, script?.id, t]);
+      try {
+        await _wbPut(script.id, item.id, body);
+        setEntries((arr) => arr.map((e) => (e.id === item.id ? { ...e, ...body } : e)));
+        // 如果 panel 里正在编辑同一条,同步更新 draft
+        setDraft((d) => (d && d.id === item.id ? { ...d, ...body } : d));
+        window.__apiToast?.(t('scripts.toast.saved'), { kind: 'ok', duration: 1500 });
+      } catch (err) {
+        window.__apiToast?.(t('scripts.toast.save_fail'), { kind: 'danger', detail: err?.message });
+      }
+    },
+    [isOwner, script?.id, t],
+  );
 
   /* ────── SplitPanel 保存 ────── */
   const onPanelSave = useCallback(async () => {
@@ -225,11 +238,11 @@ export function WorldbookEditorView({ script }) {
           tags: draft.tags,
         });
         window.__apiToast?.(t('scripts.edit.worldbook.toast_created'), { kind: 'ok' });
-        setReloadTick(x => x + 1);
+        setReloadTick((x) => x + 1);
         const newId = r?.id ?? r?.entry_id ?? null;
         setIsNew(false);
         setSelectedId(newId);
-        setDraft(d => d ? { ...d, id: newId } : d);
+        setDraft((d) => (d ? { ...d, id: newId } : d));
         setDirty(false);
       } else {
         await _wbPut(script.id, draft.id, {
@@ -239,7 +252,7 @@ export function WorldbookEditorView({ script }) {
           enabled: draft.enabled,
           tags: draft.tags,
         });
-        setEntries(arr => arr.map(e => e.id === draft.id ? { ...e, ...draft } : e));
+        setEntries((arr) => arr.map((e) => (e.id === draft.id ? { ...e, ...draft } : e)));
         setDirty(false);
         window.__apiToast?.(t('scripts.toast.saved'), { kind: 'ok', duration: 1500 });
       }
@@ -252,7 +265,10 @@ export function WorldbookEditorView({ script }) {
 
   /* ────── SplitPanel 撤销 ────── */
   const onPanelDiscard = useCallback(() => {
-    if (isNew) { closePanel(); return; }
+    if (isNew) {
+      closePanel();
+      return;
+    }
     setDraft(cloneEntry(selectedEntry));
     setDirty(false);
     setDeleteConfirm(false);
@@ -265,7 +281,7 @@ export function WorldbookEditorView({ script }) {
     try {
       await _wbDelete(script.id, draft.id);
       window.__apiToast?.(t('scripts.edit.worldbook.toast_deleted'), { kind: 'ok' });
-      setEntries(arr => arr.filter(e => e.id !== draft.id));
+      setEntries((arr) => arr.filter((e) => e.id !== draft.id));
       setSelectedId(null);
       setSelectedItems([]);
       closePanel();
@@ -278,31 +294,38 @@ export function WorldbookEditorView({ script }) {
   }, [draft, isOwner, script?.id, t, closePanel]);
 
   /* ────── 批量 enable / disable ────── */
-  const onBatchEnable = useCallback(async (enable) => {
-    if (!isOwner || selectedItems.length === 0) return;
-    const ids = selectedItems.map(i => i.id);
-    try {
-      await Promise.all(ids.map(id => {
-        const e = entries.find(x => x.id === id);
-        if (!e) return Promise.resolve();
-        return _wbPut(script.id, id, {
-          title: e.title || e.keyword || '',
-          content: e.content || e.text || '',
-          priority: e.priority ?? 50,
-          enabled: enable,
-          tags: e.tags || [],
-        });
-      }));
-      setEntries(arr => arr.map(e => ids.includes(e.id) ? { ...e, enabled: enable } : e));
-      window.__apiToast?.(enable
-        ? t('scripts.edit.worldbook.toast_batch_enabled')
-        : t('scripts.edit.worldbook.toast_batch_disabled'),
-        { kind: 'ok', duration: 1500 });
-      setSelectedItems([]);
-    } catch (err) {
-      window.__apiToast?.(t('scripts.toast.op_fail'), { kind: 'danger', detail: err?.message });
-    }
-  }, [isOwner, selectedItems, entries, script?.id, t]);
+  const onBatchEnable = useCallback(
+    async (enable) => {
+      if (!isOwner || selectedItems.length === 0) return;
+      const ids = selectedItems.map((i) => i.id);
+      try {
+        await Promise.all(
+          ids.map((id) => {
+            const e = entries.find((x) => x.id === id);
+            if (!e) return Promise.resolve();
+            return _wbPut(script.id, id, {
+              title: e.title || e.keyword || '',
+              content: e.content || e.text || '',
+              priority: e.priority ?? 50,
+              enabled: enable,
+              tags: e.tags || [],
+            });
+          }),
+        );
+        setEntries((arr) => arr.map((e) => (ids.includes(e.id) ? { ...e, enabled: enable } : e)));
+        window.__apiToast?.(
+          enable
+            ? t('scripts.edit.worldbook.toast_batch_enabled')
+            : t('scripts.edit.worldbook.toast_batch_disabled'),
+          { kind: 'ok', duration: 1500 },
+        );
+        setSelectedItems([]);
+      } catch (err) {
+        window.__apiToast?.(t('scripts.toast.op_fail'), { kind: 'danger', detail: err?.message });
+      }
+    },
+    [isOwner, selectedItems, entries, script?.id, t],
+  );
 
   /* ────── Fork ────── */
   const onFork = useCallback(async () => {
@@ -312,10 +335,15 @@ export function WorldbookEditorView({ script }) {
       const r = await _fork(script.id, { title: newTitle });
       window.__apiToast?.(t('scripts.edit.worldbook.toast_forked'), { kind: 'ok' });
       // 触发剧本列表刷新
-      try { window.dispatchEvent(new CustomEvent('rpg-scripts-updated')); } catch (_) {}
+      try {
+        window.dispatchEvent(new CustomEvent('rpg-scripts-updated'));
+      } catch (_) {}
       return r;
     } catch (err) {
-      window.__apiToast?.(t('scripts.edit.worldbook.toast_fork_fail'), { kind: 'danger', detail: err?.message });
+      window.__apiToast?.(t('scripts.edit.worldbook.toast_fork_fail'), {
+        kind: 'danger',
+        detail: err?.message,
+      });
     } finally {
       setForking(false);
     }
@@ -326,122 +354,139 @@ export function WorldbookEditorView({ script }) {
     const tag = tagInput.trim();
     if (!tag || !draft) return;
     if (!draft.tags.includes(tag)) {
-      setDraft(d => ({ ...d, tags: [...d.tags, tag] }));
+      setDraft((d) => ({ ...d, tags: [...d.tags, tag] }));
       setDirty(true);
     }
     setTagInput('');
   }, [tagInput, draft]);
 
   const removeTag = useCallback((idx) => {
-    setDraft(d => ({ ...d, tags: d.tags.filter((_, i) => i !== idx) }));
+    setDraft((d) => ({ ...d, tags: d.tags.filter((_, i) => i !== idx) }));
     setDirty(true);
   }, []);
 
   /* ────── 列定义 ────── */
-  const columnDefinitions = useMemo(() => [
-    {
-      id: 'title',
-      header: t('scripts.edit.worldbook.col_title'),
-      sortingField: 'title',
-      editConfig: isOwner ? {
-        ariaLabel: t('scripts.edit.worldbook.col_title'),
-        editIconAriaLabel: t('common.edit'),
-        errorIconAriaLabel: t('common.error'),
-        editingCell: (item, { currentValue, setValue }) => (
-          <CSInput
-            autoFocus
-            value={currentValue ?? (item.title || item.keyword || item.name || item.key || '')}
-            onChange={({ detail }) => setValue(detail.value)}
-          />
+  const columnDefinitions = useMemo(
+    () => [
+      {
+        id: 'title',
+        header: t('scripts.edit.worldbook.col_title'),
+        sortingField: 'title',
+        editConfig: isOwner
+          ? {
+              ariaLabel: t('scripts.edit.worldbook.col_title'),
+              editIconAriaLabel: t('common.edit'),
+              errorIconAriaLabel: t('common.error'),
+              editingCell: (item, { currentValue, setValue }) => (
+                <CSInput
+                  autoFocus
+                  value={
+                    currentValue ?? (item.title || item.keyword || item.name || item.key || '')
+                  }
+                  onChange={({ detail }) => setValue(detail.value)}
+                />
+              ),
+            }
+          : undefined,
+        cell: (e) => (
+          <div>
+            <CSBox fontWeight="bold">{e.title || e.keyword || e.name || e.key || '—'}</CSBox>
+            {inferSubtype(e) && (
+              <CSBox fontSize="body-s" color="text-body-secondary">
+                {inferSubtype(e)}
+              </CSBox>
+            )}
+          </div>
         ),
-      } : undefined,
-      cell: (e) => (
-        <div>
-          <CSBox fontWeight="bold">{e.title || e.keyword || e.name || e.key || '—'}</CSBox>
-          {inferSubtype(e) && (
-            <CSBox fontSize="body-s" color="text-body-secondary">{inferSubtype(e)}</CSBox>
-          )}
-        </div>
-      ),
-      minWidth: 180,
-    },
-    {
-      id: 'content',
-      header: t('scripts.edit.worldbook.col_content'),
-      cell: (e) => {
-        const text = String(e.content || e.text || e.description || e.value || '');
-        return (
-          <CSBox color="text-body-secondary" fontSize="body-s">
-            <span style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-              {text.slice(0, 60)}{text.length > 60 ? '…' : ''}
-            </span>
-          </CSBox>
-        );
+        minWidth: 180,
       },
-      minWidth: 240,
-    },
-    {
-      id: 'priority',
-      header: t('scripts.edit.worldbook.col_priority'),
-      sortingField: 'priority',
-      width: 100,
-      editConfig: isOwner ? {
-        ariaLabel: t('scripts.edit.worldbook.col_priority'),
-        editIconAriaLabel: t('common.edit'),
-        errorIconAriaLabel: t('common.error'),
-        editingCell: (item, { currentValue, setValue }) => (
-          <CSInput
-            type="number"
-            autoFocus
-            value={String(currentValue ?? (item.priority ?? 50))}
-            onChange={({ detail }) => setValue(detail.value)}
-          />
-        ),
-      } : undefined,
-      cell: (e) => <CSBox>{e.priority ?? 50}</CSBox>,
-    },
-    {
-      id: 'enabled',
-      header: t('scripts.edit.worldbook.col_enabled'),
-      sortingField: 'enabled',
-      width: 100,
-      editConfig: isOwner ? {
-        ariaLabel: t('scripts.edit.worldbook.col_enabled'),
-        editIconAriaLabel: t('common.edit'),
-        errorIconAriaLabel: t('common.error'),
-        editingCell: (item, { currentValue, setValue }) => {
-          const val = currentValue !== undefined ? currentValue : (item.enabled !== false);
+      {
+        id: 'content',
+        header: t('scripts.edit.worldbook.col_content'),
+        cell: (e) => {
+          const text = String(e.content || e.text || e.description || e.value || '');
           return (
-            <CSToggle
-              checked={val}
-              onChange={({ detail }) => setValue(detail.checked)}
-            />
+            <CSBox color="text-body-secondary" fontSize="body-s">
+              <span style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                {text.slice(0, 60)}
+                {text.length > 60 ? '…' : ''}
+              </span>
+            </CSBox>
           );
         },
-      } : undefined,
-      cell: (e) => e.enabled !== false
-        ? <CSStatusIndicator type="success">{t('common.enabled')}</CSStatusIndicator>
-        : <CSStatusIndicator type="stopped">{t('common.disabled')}</CSStatusIndicator>,
-    },
-    {
-      id: 'actions',
-      header: '',
-      minWidth: 110,
-      // 末尾的不是"编辑"(每列头自己已经有 inline-edit ✏),是"详情"— 打开
-      // drawer 看全条目所有字段。文案改"详情",图标用 ellipsis 避免跟列头 ✏ 撞
-      cell: (e) => (
-        <span style={{ whiteSpace: 'nowrap' }}>
-          <CSButton
-            variant="inline-link"
-            iconName="external"
-            onClick={(ev) => { ev?.stopPropagation?.(); openPanel(e, false); }}
-          >
-            {t('scripts.edit.worldbook.col_detail', { defaultValue: '详情' })}
-          </CSButton>
-        </span>
-      ),
-    },
-  ], [t, isOwner, openPanel]);
+        minWidth: 240,
+      },
+      {
+        id: 'priority',
+        header: t('scripts.edit.worldbook.col_priority'),
+        sortingField: 'priority',
+        width: 100,
+        editConfig: isOwner
+          ? {
+              ariaLabel: t('scripts.edit.worldbook.col_priority'),
+              editIconAriaLabel: t('common.edit'),
+              errorIconAriaLabel: t('common.error'),
+              editingCell: (item, { currentValue, setValue }) => (
+                <CSInput
+                  type="number"
+                  autoFocus
+                  value={String(currentValue ?? item.priority ?? 50)}
+                  onChange={({ detail }) => setValue(detail.value)}
+                />
+              ),
+            }
+          : undefined,
+        cell: (e) => <CSBox>{e.priority ?? 50}</CSBox>,
+      },
+      {
+        id: 'enabled',
+        header: t('scripts.edit.worldbook.col_enabled'),
+        sortingField: 'enabled',
+        width: 100,
+        editConfig: isOwner
+          ? {
+              ariaLabel: t('scripts.edit.worldbook.col_enabled'),
+              editIconAriaLabel: t('common.edit'),
+              errorIconAriaLabel: t('common.error'),
+              editingCell: (item, { currentValue, setValue }) => {
+                const val = currentValue !== undefined ? currentValue : item.enabled !== false;
+                return (
+                  <CSToggle checked={val} onChange={({ detail }) => setValue(detail.checked)} />
+                );
+              },
+            }
+          : undefined,
+        cell: (e) =>
+          e.enabled !== false ? (
+            <CSStatusIndicator type="success">{t('common.enabled')}</CSStatusIndicator>
+          ) : (
+            <CSStatusIndicator type="stopped">{t('common.disabled')}</CSStatusIndicator>
+          ),
+      },
+      {
+        id: 'actions',
+        header: '',
+        minWidth: 110,
+        // 末尾的不是"编辑"(每列头自己已经有 inline-edit ✏),是"详情"— 打开
+        // drawer 看全条目所有字段。文案改"详情",图标用 ellipsis 避免跟列头 ✏ 撞
+        cell: (e) => (
+          <span style={{ whiteSpace: 'nowrap' }}>
+            <CSButton
+              variant="inline-link"
+              iconName="external"
+              onClick={(ev) => {
+                ev?.stopPropagation?.();
+                openPanel(e, false);
+              }}
+            >
+              {t('scripts.edit.worldbook.col_detail', { defaultValue: '详情' })}
+            </CSButton>
+          </span>
+        ),
+      },
+    ],
+    [t, isOwner, openPanel],
+  );
 
   /* ────── render ────── */
 
@@ -470,26 +515,16 @@ export function WorldbookEditorView({ script }) {
         <CSSpaceBetween direction="horizontal" size="xs">
           {isOwner && selectedItems.length > 0 && (
             <>
-              <CSButton
-                iconName="status-positive"
-                onClick={() => onBatchEnable(true)}
-              >
+              <CSButton iconName="status-positive" onClick={() => onBatchEnable(true)}>
                 {t('scripts.edit.worldbook.batch_enable')}
               </CSButton>
-              <CSButton
-                iconName="status-negative"
-                onClick={() => onBatchEnable(false)}
-              >
+              <CSButton iconName="status-negative" onClick={() => onBatchEnable(false)}>
                 {t('scripts.edit.worldbook.batch_disable')}
               </CSButton>
             </>
           )}
           {isOwner && (
-            <CSButton
-              variant="primary"
-              iconName="add-plus"
-              onClick={() => openPanel(null, true)}
-            >
+            <CSButton variant="primary" iconName="add-plus" onClick={() => openPanel(null, true)}>
               {t('scripts.edit.worldbook.btn_new')}
             </CSButton>
           )}
@@ -514,39 +549,26 @@ export function WorldbookEditorView({ script }) {
         >
           {t('common.save')}
         </CSButton>
-        <CSButton
-          disabled={!dirty || saving}
-          onClick={onPanelDiscard}
-        >
+        <CSButton disabled={!dirty || saving} onClick={onPanelDiscard}>
           {t('scripts.edit.worldbook.btn_discard')}
         </CSButton>
-        {!isNew && isOwner && (
-          deleteConfirm ? (
+        {!isNew &&
+          isOwner &&
+          (deleteConfirm ? (
             <CSSpaceBetween direction="horizontal" size="xs">
               <CSBox color="text-status-warning" fontSize="body-s" padding={{ top: 'xs' }}>
                 {t('scripts.edit.worldbook.delete_confirm_msg')}
               </CSBox>
-              <CSButton
-                variant="normal"
-                loading={saving}
-                onClick={onPanelDelete}
-              >
+              <CSButton variant="normal" loading={saving} onClick={onPanelDelete}>
                 {t('scripts.edit.worldbook.delete_confirm_yes')}
               </CSButton>
-              <CSButton onClick={() => setDeleteConfirm(false)}>
-                {t('common.cancel')}
-              </CSButton>
+              <CSButton onClick={() => setDeleteConfirm(false)}>{t('common.cancel')}</CSButton>
             </CSSpaceBetween>
           ) : (
-            <CSButton
-              iconName="remove"
-              disabled={saving}
-              onClick={() => setDeleteConfirm(true)}
-            >
+            <CSButton iconName="remove" disabled={saving} onClick={() => setDeleteConfirm(true)}>
               {t('common.delete')}
             </CSButton>
-          )
-        )}
+          ))}
       </CSSpaceBetween>
 
       {/* 表单字段 */}
@@ -557,7 +579,10 @@ export function WorldbookEditorView({ script }) {
             <CSInput
               value={draft.title}
               disabled={!isOwner}
-              onChange={({ detail }) => { setDraft(d => ({ ...d, title: detail.value })); setDirty(true); }}
+              onChange={({ detail }) => {
+                setDraft((d) => ({ ...d, title: detail.value }));
+                setDirty(true);
+              }}
             />
           </CSFormField>
           <CSFormField label={t('scripts.edit.worldbook.field_content')}>
@@ -565,7 +590,10 @@ export function WorldbookEditorView({ script }) {
               value={draft.content}
               rows={10}
               disabled={!isOwner}
-              onChange={({ detail }) => { setDraft(d => ({ ...d, content: detail.value })); setDirty(true); }}
+              onChange={({ detail }) => {
+                setDraft((d) => ({ ...d, content: detail.value }));
+                setDirty(true);
+              }}
             />
           </CSFormField>
         </CSSpaceBetween>
@@ -577,7 +605,10 @@ export function WorldbookEditorView({ script }) {
               type="number"
               value={String(draft.priority)}
               disabled={!isOwner}
-              onChange={({ detail }) => { setDraft(d => ({ ...d, priority: Number(detail.value) || 0 })); setDirty(true); }}
+              onChange={({ detail }) => {
+                setDraft((d) => ({ ...d, priority: Number(detail.value) || 0 }));
+                setDirty(true);
+              }}
             />
           </CSFormField>
 
@@ -585,7 +616,10 @@ export function WorldbookEditorView({ script }) {
             <CSToggle
               checked={draft.enabled}
               disabled={!isOwner}
-              onChange={({ detail }) => { setDraft(d => ({ ...d, enabled: detail.checked })); setDirty(true); }}
+              onChange={({ detail }) => {
+                setDraft((d) => ({ ...d, enabled: detail.checked }));
+                setDirty(true);
+              }}
             >
               {draft.enabled ? t('common.enabled') : t('common.disabled')}
             </CSToggle>
@@ -602,9 +636,13 @@ export function WorldbookEditorView({ script }) {
                     placeholder={t('scripts.edit.worldbook.tag_placeholder')}
                     value={tagInput}
                     onChange={({ detail }) => setTagInput(detail.value)}
-                    onKeyDown={({ detail }) => { if (detail.key === 'Enter') addTag(); }}
+                    onKeyDown={({ detail }) => {
+                      if (detail.key === 'Enter') addTag();
+                    }}
                   />
-                  <CSButton iconName="add-plus" onClick={addTag}>{t('scripts.edit.worldbook.tag_add')}</CSButton>
+                  <CSButton iconName="add-plus" onClick={addTag}>
+                    {t('scripts.edit.worldbook.tag_add')}
+                  </CSButton>
                 </CSSpaceBetween>
               )}
               {draft.tags.length > 0 && (
@@ -612,7 +650,9 @@ export function WorldbookEditorView({ script }) {
                   disableOuterPadding
                   items={draft.tags.map((tag, i) => ({
                     label: tag,
-                    dismissLabel: isOwner ? t('scripts.edit.worldbook.tag_remove', { tag }) : undefined,
+                    dismissLabel: isOwner
+                      ? t('scripts.edit.worldbook.tag_remove', { tag })
+                      : undefined,
                   }))}
                   onDismiss={isOwner ? ({ detail }) => removeTag(detail.itemIndex) : undefined}
                   readOnly={!isOwner}
@@ -649,7 +689,7 @@ export function WorldbookEditorView({ script }) {
             onSelectionChange={({ detail }) => onRowSelect(detail.selectedItems)}
             onRowClick={({ detail }) => openPanel(detail.item, false)}
             submitEdit={onSubmitEdit}
-            sortingColumn={columnDefinitions.find(c => c.id === sortCol)}
+            sortingColumn={columnDefinitions.find((c) => c.id === sortCol)}
             sortingDescending={!sortAsc}
             onSortingChange={({ detail }) => {
               setSortCol(detail.sortingColumn?.id || 'priority');
@@ -691,7 +731,7 @@ export function WorldbookEditorView({ script }) {
               header={
                 isNew
                   ? t('scripts.edit.worldbook.panel_title_new')
-                  : (draft.title || t('scripts.edit.worldbook.panel_title_edit'))
+                  : draft.title || t('scripts.edit.worldbook.panel_title_edit')
               }
               hidePreferencesButton
               closeBehavior="hide"
@@ -728,8 +768,14 @@ function _wbPut(scriptId, entryId, body) {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }).then(r => {
-    if (!r.ok) return r.json().catch(() => ({})).then(j => { throw new Error(j.detail || j.error || r.statusText); });
+  }).then((r) => {
+    if (!r.ok)
+      return r
+        .json()
+        .catch(() => ({}))
+        .then((j) => {
+          throw new Error(j.detail || j.error || r.statusText);
+        });
     return r.json();
   });
 }
@@ -743,8 +789,14 @@ function _wbPost(scriptId, body) {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }).then(r => {
-    if (!r.ok) return r.json().catch(() => ({})).then(j => { throw new Error(j.detail || j.error || r.statusText); });
+  }).then((r) => {
+    if (!r.ok)
+      return r
+        .json()
+        .catch(() => ({}))
+        .then((j) => {
+          throw new Error(j.detail || j.error || r.statusText);
+        });
     return r.json();
   });
 }
@@ -756,8 +808,14 @@ function _wbDelete(scriptId, entryId) {
   return fetch(`/api/v1/scripts/${scriptId}/worldbook/${entryId}`, {
     method: 'DELETE',
     credentials: 'include',
-  }).then(r => {
-    if (!r.ok) return r.json().catch(() => ({})).then(j => { throw new Error(j.detail || j.error || r.statusText); });
+  }).then((r) => {
+    if (!r.ok)
+      return r
+        .json()
+        .catch(() => ({}))
+        .then((j) => {
+          throw new Error(j.detail || j.error || r.statusText);
+        });
     return r.json().catch(() => ({}));
   });
 }
@@ -771,8 +829,14 @@ function _fork(scriptId, body) {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }).then(r => {
-    if (!r.ok) return r.json().catch(() => ({})).then(j => { throw new Error(j.detail || j.error || r.statusText); });
+  }).then((r) => {
+    if (!r.ok)
+      return r
+        .json()
+        .catch(() => ({}))
+        .then((j) => {
+          throw new Error(j.detail || j.error || r.statusText);
+        });
     return r.json();
   });
 }

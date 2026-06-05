@@ -32,15 +32,27 @@ function NavigationBridge() {
 
 function Splash() {
   return (
-    <div style={{
-      position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'var(--bg, #121110)', color: 'var(--text, #c8c2b7)',
-    }}>
-      <div style={{
-        width: 38, height: 38, border: '3px solid rgba(201,100,66,.25)',
-        borderTopColor: 'var(--accent, #c96442)', borderRadius: '50%',
-        animation: 'app-spin .85s linear infinite',
-      }} />
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--bg, #121110)',
+        color: 'var(--text, #c8c2b7)',
+      }}
+    >
+      <div
+        style={{
+          width: 38,
+          height: 38,
+          border: '3px solid rgba(201,100,66,.25)',
+          borderTopColor: 'var(--accent, #c96442)',
+          borderRadius: '50%',
+          animation: 'app-spin .85s linear infinite',
+        }}
+      />
     </div>
   );
 }
@@ -66,7 +78,7 @@ function App() {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <ErrorBoundary>
     <App />
-  </ErrorBoundary>
+  </ErrorBoundary>,
 );
 
 // HTML splash 淡出 + 移除

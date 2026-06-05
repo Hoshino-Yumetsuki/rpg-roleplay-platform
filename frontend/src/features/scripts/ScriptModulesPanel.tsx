@@ -88,7 +88,11 @@ export function useScriptRebuild(scriptId) {
               return {
                 job_id: jid,
                 kind: j.kind,
-                module: j.module || (j.kind && !String(j.kind).startsWith('rebuild_') ? null : String(j.kind || '').replace(/^rebuild_/, '')),
+                module:
+                  j.module ||
+                  (j.kind && !String(j.kind).startsWith('rebuild_')
+                    ? null
+                    : String(j.kind || '').replace(/^rebuild_/, '')),
                 status: j.status || 'running',
                 overall_progress: j.overall_progress || 0,
                 overall_total: j.overall_total || 100,
@@ -103,24 +107,29 @@ export function useScriptRebuild(scriptId) {
     } catch (_) {}
   }, [scriptId]);
 
-  React.useEffect(() => { reload(); }, [reload]);
+  React.useEffect(() => {
+    reload();
+  }, [reload]);
 
-  const openEstimate = React.useCallback(async ({ module, options }) => {
-    if (!module || !scriptId) return;
-    setPendingModule(module);
-    setPendingOptions(options || null);
-    setEstimate(null);
-    setEstimateLoading(true);
-    try {
-      const r = await window.api?.scripts?.rebuildEstimate?.(scriptId, module, options || {});
-      setEstimate(r || { ok: false, error: 'no_response' });
-    } catch (e) {
-      const payload = (e && e.payload) || {};
-      setEstimate({ ok: false, error: payload.error || e?.message || 'estimate_failed' });
-    } finally {
-      setEstimateLoading(false);
-    }
-  }, [scriptId]);
+  const openEstimate = React.useCallback(
+    async ({ module, options }) => {
+      if (!module || !scriptId) return;
+      setPendingModule(module);
+      setPendingOptions(options || null);
+      setEstimate(null);
+      setEstimateLoading(true);
+      try {
+        const r = await window.api?.scripts?.rebuildEstimate?.(scriptId, module, options || {});
+        setEstimate(r || { ok: false, error: 'no_response' });
+      } catch (e) {
+        const payload = (e && e.payload) || {};
+        setEstimate({ ok: false, error: payload.error || e?.message || 'estimate_failed' });
+      } finally {
+        setEstimateLoading(false);
+      }
+    },
+    [scriptId],
+  );
 
   const closeEstimate = React.useCallback(() => {
     setPendingModule(null);
@@ -139,47 +148,81 @@ export function useScriptRebuild(scriptId) {
       }
       const jid = r && (r.job_id || r.id);
       if (jid) {
-        setActiveJob({ job_id: jid, kind: `rebuild_${pendingModule}`, module: pendingModule, status: 'running', overall_progress: 0, overall_total: 100 });
-        window.__apiToast?.(t('modules.toast.dispatched', { defaultValue: '重做任务已派发' }), { kind: 'ok', duration: 2400 });
+        setActiveJob({
+          job_id: jid,
+          kind: `rebuild_${pendingModule}`,
+          module: pendingModule,
+          status: 'running',
+          overall_progress: 0,
+          overall_total: 100,
+        });
+        window.__apiToast?.(t('modules.toast.dispatched', { defaultValue: '重做任务已派发' }), {
+          kind: 'ok',
+          duration: 2400,
+        });
       } else {
-        window.__apiToast?.(t('modules.toast.dispatch_fail', { defaultValue: '派发失败' }), { kind: 'danger', detail: (r && r.error) || '' });
+        window.__apiToast?.(t('modules.toast.dispatch_fail', { defaultValue: '派发失败' }), {
+          kind: 'danger',
+          detail: (r && r.error) || '',
+        });
       }
     } catch (e) {
       const p = (e && e.payload) || {};
       if (p.job_id) {
         // 409 conflict — 复用已在跑的 job
-        setActiveJob({ job_id: p.job_id, kind: `rebuild_${pendingModule}`, module: pendingModule, status: 'running', overall_progress: 0, overall_total: 100 });
+        setActiveJob({
+          job_id: p.job_id,
+          kind: `rebuild_${pendingModule}`,
+          module: pendingModule,
+          status: 'running',
+          overall_progress: 0,
+          overall_total: 100,
+        });
       } else {
-        window.__apiToast?.(t('modules.toast.dispatch_fail', { defaultValue: '派发失败' }), { kind: 'danger', detail: p.error || e?.message || '' });
+        window.__apiToast?.(t('modules.toast.dispatch_fail', { defaultValue: '派发失败' }), {
+          kind: 'danger',
+          detail: p.error || e?.message || '',
+        });
       }
     } finally {
       closeEstimate();
     }
   }, [pendingModule, pendingOptions, scriptId, closeEstimate, t]);
 
-  const onBannerDone = React.useCallback((finalJob) => {
-    setActiveJob(null);
-    // reload status → 让所有卡片刷新计数
-    reload();
-    try { window.dispatchEvent(new CustomEvent('rpg-scripts-updated')); } catch (_) {}
-    window.__apiToast?.(t('modules.toast.rebuild_done', { defaultValue: '重做完成' }), { kind: 'ok', duration: 2800 });
-  }, [reload, t]);
+  const onBannerDone = React.useCallback(
+    (finalJob) => {
+      setActiveJob(null);
+      // reload status → 让所有卡片刷新计数
+      reload();
+      try {
+        window.dispatchEvent(new CustomEvent('rpg-scripts-updated'));
+      } catch (_) {}
+      window.__apiToast?.(t('modules.toast.rebuild_done', { defaultValue: '重做完成' }), {
+        kind: 'ok',
+        duration: 2800,
+      });
+    },
+    [reload, t],
+  );
 
-  const cardProps = React.useCallback((module) => {
-    const m = (statusPayload && statusPayload.modules && statusPayload.modules[module]) || {};
-    return {
-      module,
-      scriptId,
-      status: m.status || 'unknown',
-      doneCount: m.done_count,
-      totalCount: m.total_count,
-      lastJobId: m.last_job_id,
-      lastRebuiltAt: m.last_rebuilt_at,
-      source: m.source,
-      activeJobId: activeJob ? (activeJob.job_id || activeJob.id) : null,
-      onRebuild: openEstimate,
-    };
-  }, [statusPayload, scriptId, activeJob, openEstimate]);
+  const cardProps = React.useCallback(
+    (module) => {
+      const m = (statusPayload && statusPayload.modules && statusPayload.modules[module]) || {};
+      return {
+        module,
+        scriptId,
+        status: m.status || 'unknown',
+        doneCount: m.done_count,
+        totalCount: m.total_count,
+        lastJobId: m.last_job_id,
+        lastRebuiltAt: m.last_rebuilt_at,
+        source: m.source,
+        activeJobId: activeJob ? activeJob.job_id || activeJob.id : null,
+        onRebuild: openEstimate,
+      };
+    },
+    [statusPayload, scriptId, activeJob, openEstimate],
+  );
 
   const bannerProps = {
     scriptId,
@@ -191,7 +234,7 @@ export function useScriptRebuild(scriptId) {
     scriptId,
     status: statusPayload,
     loading: statusLoading,
-    activeJobId: activeJob ? (activeJob.job_id || activeJob.id) : null,
+    activeJobId: activeJob ? activeJob.job_id || activeJob.id : null,
     onRebuild: openEstimate,
   };
   const modalProps = {

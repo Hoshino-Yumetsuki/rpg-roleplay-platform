@@ -30,8 +30,8 @@ async function fetchCatalog() {
   try {
     const res = await (window.api && window.api.models && window.api.models.catalog
       ? window.api.models.catalog()
-      : fetch("/api/models/catalog", { credentials: "include" }).then((r) => r.json()));
-    const arr = (res && Array.isArray(res.models)) ? res.models : [];
+      : fetch('/api/models/catalog', { credentials: 'include' }).then((r) => r.json()));
+    const arr = res && Array.isArray(res.models) ? res.models : [];
     _cache.data = arr;
     _cache.ts = now;
     return arr;
@@ -42,69 +42,69 @@ async function fetchCatalog() {
 
 // ── Provider 显示名 ───────────────────────────────────────────────────────────
 const PROVIDER_LABELS = {
-  OpenAI:        "OpenAI",
-  Anthropic:     "Anthropic",
-  GoogleAIStudio:"Google AI Studio",
-  AgentPlatform: "Agent Platform",
-  OpenRouter:    "OpenRouter",
-  DeepSeek:      "DeepSeek",
-  XAi:           "xAI",
-  XiaomiMimo:    "MiMo",
-  AlibabaQwen:   "Qwen",
-  TencentHunyuan:"Hunyuan",
+  OpenAI: 'OpenAI',
+  Anthropic: 'Anthropic',
+  GoogleAIStudio: 'Google AI Studio',
+  AgentPlatform: 'Agent Platform',
+  OpenRouter: 'OpenRouter',
+  DeepSeek: 'DeepSeek',
+  XAi: 'xAI',
+  XiaomiMimo: 'MiMo',
+  AlibabaQwen: 'Qwen',
+  TencentHunyuan: 'Hunyuan',
 };
 
 // 固定分组顺序
 const PROVIDER_ORDER = [
-  "Anthropic",
-  "OpenAI",
-  "GoogleAIStudio",
-  "AgentPlatform",
-  "OpenRouter",
-  "DeepSeek",
-  "XAi",
-  "XiaomiMimo",
-  "AlibabaQwen",
-  "TencentHunyuan",
+  'Anthropic',
+  'OpenAI',
+  'GoogleAIStudio',
+  'AgentPlatform',
+  'OpenRouter',
+  'DeepSeek',
+  'XAi',
+  'XiaomiMimo',
+  'AlibabaQwen',
+  'TencentHunyuan',
 ];
 
 // ── Capability filter chip 定义 ───────────────────────────────────────────────
 const CAP_CHIPS = [
-  { key: "streaming",        label: "流式" },
-  { key: "tools",            label: "工具" },
-  { key: "vision",           label: "视觉" },
-  { key: "extended_thinking",label: "深度思考" },
-  { key: "function_calling", label: "函数调用" },
-  { key: "web_search",       label: "联网搜索" },
+  { key: 'streaming', label: '流式' },
+  { key: 'tools', label: '工具' },
+  { key: 'vision', label: '视觉' },
+  { key: 'extended_thinking', label: '深度思考' },
+  { key: 'function_calling', label: '函数调用' },
+  { key: 'web_search', label: '联网搜索' },
 ];
 
 // ── Source icon ───────────────────────────────────────────────────────────────
 function sourceIcon(source) {
-  if (source === "LiveApi")        return "🟢";
-  if (source === "OpenRouterProxy")return "🔀";
-  return "📋";
+  if (source === 'LiveApi') return '🟢';
+  if (source === 'OpenRouterProxy') return '🔀';
+  return '📋';
 }
 function sourceTitle(source) {
-  if (source === "LiveApi")        return "Live API";
-  if (source === "OpenRouterProxy")return "OpenRouter Proxy";
-  return "Static Catalog";
+  if (source === 'LiveApi') return 'Live API';
+  if (source === 'OpenRouterProxy') return 'OpenRouter Proxy';
+  return 'Static Catalog';
 }
 
 // ── Context window 大标签 ─────────────────────────────────────────────────────
 function ctxLabel(tokens) {
   if (!tokens) return null;
-  if (tokens >= 900000)  return "1M";
-  if (tokens >= 150000)  return "200K";
-  if (tokens >= 100000)  return "128K";
-  if (tokens >= 50000)   return "64K";
-  if (tokens >= 30000)   return "32K";
-  return (tokens / 1000).toFixed(0) + "K";
+  if (tokens >= 900000) return '1M';
+  if (tokens >= 150000) return '200K';
+  if (tokens >= 100000) return '128K';
+  if (tokens >= 50000) return '64K';
+  if (tokens >= 30000) return '32K';
+  return (tokens / 1000).toFixed(0) + 'K';
 }
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
 function fmtPrice(v) {
-  if (v === null || v === undefined) return "—";
-  return "$" + (Number(v)).toFixed(2);
+  if (v === null || v === undefined) return '—';
+  return '$' + Number(v).toFixed(2);
 }
 
 // ── fuzzy match ───────────────────────────────────────────────────────────────
@@ -122,8 +122,8 @@ function fuzzyMatch(text, query) {
 }
 
 // ── 注入样式(只注一次) ────────────────────────────────────────────────────────
-const MP_STYLE_ID = "mp-styles-v1";
-if (typeof document !== "undefined" && !document.getElementById(MP_STYLE_ID)) {
+const MP_STYLE_ID = 'mp-styles-v1';
+if (typeof document !== 'undefined' && !document.getElementById(MP_STYLE_ID)) {
   const css = `
 /* ModelPicker — Wave 11-D */
 .mp-wrap{
@@ -285,7 +285,7 @@ if (typeof document !== "undefined" && !document.getElementById(MP_STYLE_ID)) {
   font-size:12px;
 }
 `;
-  const el = document.createElement("style");
+  const el = document.createElement('style');
   el.id = MP_STYLE_ID;
   el.textContent = css;
   document.head.appendChild(el);
@@ -302,11 +302,13 @@ if (typeof document !== "undefined" && !document.getElementById(MP_STYLE_ID)) {
 function ModelPicker({ value, onChange, filter }) {
   const { useState, useEffect, useMemo } = React;
 
-  const [models, setModels] = useState(/** @type {ModelInfo[]} */  ([]));
+  const [models, setModels] = useState(/** @type {ModelInfo[]} */ ([]));
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState('');
   const [capFilter, setCapFilter] = useState(
-    /** @type {keyof ModelCapabilities | null} */ (filter && filter.capability ? filter.capability : null)
+    /** @type {keyof ModelCapabilities | null} */ (
+      filter && filter.capability ? filter.capability : null
+    ),
   );
 
   // 首次加载 catalog
@@ -318,7 +320,9 @@ function ModelPicker({ value, onChange, filter }) {
       setModels(data);
       setLoading(false);
     });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // Wave 11.5-A: 通过 catalog-helpers.getCaps 归一化,兼容老 array shape。
@@ -327,10 +331,10 @@ function ModelPicker({ value, onChange, filter }) {
   // 应用 filter prop 的 capability + kind
   const baseFiltered = useMemo(() => {
     let list = models;
-    if (filter && filter.kind === "embedding") {
-      list = list.filter((m) => _getCaps(m).includes("embedding"));
-    } else if (filter && filter.kind === "chat") {
-      list = list.filter((m) => !_getCaps(m).includes("embedding"));
+    if (filter && filter.kind === 'embedding') {
+      list = list.filter((m) => _getCaps(m).includes('embedding'));
+    } else if (filter && filter.kind === 'chat') {
+      list = list.filter((m) => !_getCaps(m).includes('embedding'));
     }
     return list;
   }, [models, filter]);
@@ -343,9 +347,7 @@ function ModelPicker({ value, onChange, filter }) {
     }
     if (search.trim()) {
       const q = search.trim();
-      list = list.filter(
-        (m) => fuzzyMatch(m.id, q) || fuzzyMatch(m.display_name || "", q)
-      );
+      list = list.filter((m) => fuzzyMatch(m.id, q) || fuzzyMatch(m.display_name || '', q));
     }
     return list;
   }, [baseFiltered, capFilter, search]);
@@ -356,7 +358,7 @@ function ModelPicker({ value, onChange, filter }) {
   const grouped = useMemo(() => {
     const map = {};
     for (const m of displayed) {
-      const p = _normProvider(m.provider) || "Unknown";
+      const p = _normProvider(m.provider) || 'Unknown';
       if (!map[p]) map[p] = [];
       map[p].push(m);
     }
@@ -366,7 +368,8 @@ function ModelPicker({ value, onChange, filter }) {
       if (map[p] && map[p].length > 0) result.push({ provider: p, models: map[p] });
     }
     for (const p of Object.keys(map)) {
-      if (!PROVIDER_ORDER.includes(p) && map[p].length > 0) result.push({ provider: p, models: map[p] });
+      if (!PROVIDER_ORDER.includes(p) && map[p].length > 0)
+        result.push({ provider: p, models: map[p] });
     }
     return result;
   }, [displayed]);
@@ -380,8 +383,13 @@ function ModelPicker({ value, onChange, filter }) {
       {/* 搜索框 */}
       <div className="mp-search-bar">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-          <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.5"/>
-          <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.5" />
+          <path
+            d="M10.5 10.5L14 14"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
         </svg>
         <input
           type="text"
@@ -391,10 +399,19 @@ function ModelPicker({ value, onChange, filter }) {
         />
         {search && (
           <button
-            style={{ background: "transparent", border: 0, color: "var(--muted-2)", cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}
-            onClick={() => setSearch("")}
+            style={{
+              background: 'transparent',
+              border: 0,
+              color: 'var(--muted-2)',
+              cursor: 'pointer',
+              padding: '2px 4px',
+              lineHeight: 1,
+            }}
+            onClick={() => setSearch('')}
             title="清除"
-          >✕</button>
+          >
+            ✕
+          </button>
         )}
       </div>
 
@@ -403,9 +420,9 @@ function ModelPicker({ value, onChange, filter }) {
         {CAP_CHIPS.map((c) => (
           <span
             key={c.key}
-            className={"mp-chip" + (capFilter === c.key ? " mp-chip-on" : "")}
+            className={'mp-chip' + (capFilter === c.key ? ' mp-chip-on' : '')}
             onClick={() => toggleCap(c.key)}
-            title={capFilter === c.key ? "取消筛选" : `只看支持「${c.label}」的模型`}
+            title={capFilter === c.key ? '取消筛选' : `只看支持「${c.label}」的模型`}
           >
             {c.label}
           </span>
@@ -413,78 +430,94 @@ function ModelPicker({ value, onChange, filter }) {
         {capFilter && (
           <span
             className="mp-chip"
-            style={{ borderStyle: "dashed", color: "var(--danger,#c8675d)" }}
+            style={{ borderStyle: 'dashed', color: 'var(--danger,#c8675d)' }}
             onClick={() => setCapFilter(null)}
             title="清除 capability 筛选"
-          >✕ 清除</span>
+          >
+            ✕ 清除
+          </span>
         )}
       </div>
 
       {/* 模型列表 */}
       <div className="mp-list">
         {loading && <div className="mp-loading">加载模型目录…</div>}
-        {!loading && grouped.length === 0 && (
-          <div className="mp-empty">没有符合条件的模型</div>
-        )}
-        {!loading && grouped.map(({ provider, models: grpModels }) => (
-          <div key={provider}>
-            <div className="mp-group-head">
-              {PROVIDER_LABELS[provider] || provider}
-              <span style={{ color: "var(--muted-3,#4d4842)", fontWeight: "normal", textTransform: "none", letterSpacing: 0 }}>
-                {grpModels.length}
-              </span>
-            </div>
-            {grpModels.map((m) => {
-              const isSelected = m.id === value;
-              const isDeprecated = !!m.deprecated_at;
-              return (
-                <div
-                  key={m.id}
-                  className={
-                    "mp-model-row" +
-                    (isSelected ? " mp-selected" : "") +
-                    (isDeprecated ? " mp-deprecated" : "")
-                  }
-                  onClick={() => onChange && onChange(m.id, m.provider)}
-                  title={isDeprecated && m.retiring_at
-                    ? `已弃用。停服时间: ${m.retiring_at}`
-                    : isDeprecated ? "已弃用"
-                    : m.id}
+        {!loading && grouped.length === 0 && <div className="mp-empty">没有符合条件的模型</div>}
+        {!loading &&
+          grouped.map(({ provider, models: grpModels }) => (
+            <div key={provider}>
+              <div className="mp-group-head">
+                {PROVIDER_LABELS[provider] || provider}
+                <span
+                  style={{
+                    color: 'var(--muted-3,#4d4842)',
+                    fontWeight: 'normal',
+                    textTransform: 'none',
+                    letterSpacing: 0,
+                  }}
                 >
-                  {/* 名称 + id + deprecated 警告 */}
-                  <div className="mp-model-cell">
-                    <span className="mp-model-name">{m.display_name || m.id}</span>
-                    <span className="mp-model-id">{m.id}</span>
-                    {isDeprecated && (
-                      <span className="mp-deprecated-tag">
-                        弃用于 {m.deprecated_at}
-                        {m.retiring_at && ` · 停服 ${m.retiring_at}`}
-                      </span>
-                    )}
-                  </div>
+                  {grpModels.length}
+                </span>
+              </div>
+              {grpModels.map((m) => {
+                const isSelected = m.id === value;
+                const isDeprecated = !!m.deprecated_at;
+                return (
+                  <div
+                    key={m.id}
+                    className={
+                      'mp-model-row' +
+                      (isSelected ? ' mp-selected' : '') +
+                      (isDeprecated ? ' mp-deprecated' : '')
+                    }
+                    onClick={() => onChange && onChange(m.id, m.provider)}
+                    title={
+                      isDeprecated && m.retiring_at
+                        ? `已弃用。停服时间: ${m.retiring_at}`
+                        : isDeprecated
+                          ? '已弃用'
+                          : m.id
+                    }
+                  >
+                    {/* 名称 + id + deprecated 警告 */}
+                    <div className="mp-model-cell">
+                      <span className="mp-model-name">{m.display_name || m.id}</span>
+                      <span className="mp-model-id">{m.id}</span>
+                      {isDeprecated && (
+                        <span className="mp-deprecated-tag">
+                          弃用于 {m.deprecated_at}
+                          {m.retiring_at && ` · 停服 ${m.retiring_at}`}
+                        </span>
+                      )}
+                    </div>
 
-                  {/* pricing */}
-                  <div className="mp-price-cell">
-                    <span title="input / 1M tokens">{fmtPrice(m.input_cost_per_million)}</span>
-                    <span title="output / 1M tokens" style={{ color: "var(--muted-2,#6b655e)" }}>{fmtPrice(m.output_cost_per_million)}</span>
-                  </div>
-
-                  {/* ctx badge + source icon */}
-                  <div className="mp-meta-cell">
-                    {m.context_window && (
-                      <span className="mp-ctx-badge" title={`Context: ${m.context_window.toLocaleString()} tokens`}>
-                        {ctxLabel(m.context_window)}
+                    {/* pricing */}
+                    <div className="mp-price-cell">
+                      <span title="input / 1M tokens">{fmtPrice(m.input_cost_per_million)}</span>
+                      <span title="output / 1M tokens" style={{ color: 'var(--muted-2,#6b655e)' }}>
+                        {fmtPrice(m.output_cost_per_million)}
                       </span>
-                    )}
-                    <span className="mp-source-icon" title={sourceTitle(m.source)}>
-                      {sourceIcon(m.source)}
-                    </span>
+                    </div>
+
+                    {/* ctx badge + source icon */}
+                    <div className="mp-meta-cell">
+                      {m.context_window && (
+                        <span
+                          className="mp-ctx-badge"
+                          title={`Context: ${m.context_window.toLocaleString()} tokens`}
+                        >
+                          {ctxLabel(m.context_window)}
+                        </span>
+                      )}
+                      <span className="mp-source-icon" title={sourceTitle(m.source)}>
+                        {sourceIcon(m.source)}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        ))}
+                );
+              })}
+            </div>
+          ))}
       </div>
     </div>
   );

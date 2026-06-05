@@ -17,9 +17,9 @@
  *   Vite 5 原生支持 { query: '?raw', eager: true },无需改 vite.config.js。
  */
 import React from 'react';
-import CSModal  from '@cloudscape-design/components/modal';
-import Box      from '@cloudscape-design/components/box';
-import Button   from '@cloudscape-design/components/button';
+import CSModal from '@cloudscape-design/components/modal';
+import Box from '@cloudscape-design/components/box';
+import Button from '@cloudscape-design/components/button';
 import { RpgMarkdown } from '../features/console/MarkdownRender';
 import INDEX from '../../help/__index.json';
 
@@ -40,8 +40,8 @@ function resolveContent(slug) {
 
 // ── HelpDrawer ──────────────────────────────────────────────────────────────
 export function HelpDrawer({ open, slug, onClose }) {
-  const entry   = INDEX[slug] ?? null;
-  const title   = entry?.title ?? slug ?? '帮助';
+  const entry = INDEX[slug] ?? null;
+  const title = entry?.title ?? slug ?? '帮助';
   const content = slug ? resolveContent(slug) : null;
 
   // 帮助文档之间用 [文字](xxx.md) 互链。RpgMarkdown 渲染成 <a href="xxx.md">,直接点会导航到
@@ -65,7 +65,13 @@ export function HelpDrawer({ open, slug, onClose }) {
       onDismiss={onClose}
       header={
         <Box variant="h2">
-          <span style={{ fontSize: '0.8em', color: 'var(--color-text-body-secondary, #687078)', marginRight: 8 }}>
+          <span
+            style={{
+              fontSize: '0.8em',
+              color: 'var(--color-text-body-secondary, #687078)',
+              marginRight: 8,
+            }}
+          >
             帮助
           </span>
           {title}
@@ -73,17 +79,22 @@ export function HelpDrawer({ open, slug, onClose }) {
       }
       footer={
         <Box float="right">
-          <Button variant="primary" onClick={onClose}>关闭</Button>
+          <Button variant="primary" onClick={onClose}>
+            关闭
+          </Button>
         </Box>
       }
       size="large"
     >
-      {content != null
-        ? <div onClick={onHelpLinkClick}><RpgMarkdown.Block text={content} streaming={false} /></div>
-        : <Box color="text-body-secondary">
-            {slug ? `未找到帮助文档: ${slug}` : '请指定帮助主题。'}
-          </Box>
-      }
+      {content != null ? (
+        <div onClick={onHelpLinkClick}>
+          <RpgMarkdown.Block text={content} streaming={false} />
+        </div>
+      ) : (
+        <Box color="text-body-secondary">
+          {slug ? `未找到帮助文档: ${slug}` : '请指定帮助主题。'}
+        </Box>
+      )}
     </CSModal>
   );
 }
@@ -107,15 +118,9 @@ export function HelpDrawerRoot() {
     };
   }, []);
 
-  const handleClose = React.useCallback(() => setState(s => ({ ...s, open: false })), []);
+  const handleClose = React.useCallback(() => setState((s) => ({ ...s, open: false })), []);
 
-  return (
-    <HelpDrawer
-      open={state.open}
-      slug={state.slug}
-      onClose={handleClose}
-    />
-  );
+  return <HelpDrawer open={state.open} slug={state.slug} onClose={handleClose} />;
 }
 
 export default HelpDrawerRoot;

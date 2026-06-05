@@ -27,7 +27,9 @@ const PLATFORM_BASE = '/platform';
 
 // React Router 的 navigate(由 main.jsx 在挂载后注入);未注入时退回 history API / location。
 let __routerNavigate = null;
-export function setRouterNavigate(fn) { __routerNavigate = fn; }
+export function setRouterNavigate(fn) {
+  __routerNavigate = fn;
+}
 
 // page id → 路径段(首个连字符换成斜杠)
 function idToSeg(id) {
@@ -50,10 +52,13 @@ export function plPageToPath(id) {
 // 当前 URL → page id(无效返回 null;/platform 根 / 入口 → 'profile')。
 export function plPathToPage(validIds) {
   let raw = '';
-  try { raw = decodeURIComponent(location.pathname || '/'); }
-  catch (_) { raw = location.pathname || '/'; }
-  raw = raw.replace(/^\/+/, '').replace(/\/+$/, '');   // 去首尾斜杠
-  raw = raw.replace(/^platform(\/|$)/, '');            // 去掉 platform 段前缀
+  try {
+    raw = decodeURIComponent(location.pathname || '/');
+  } catch (_) {
+    raw = location.pathname || '/';
+  }
+  raw = raw.replace(/^\/+/, '').replace(/\/+$/, ''); // 去首尾斜杠
+  raw = raw.replace(/^platform(\/|$)/, ''); // 去掉 platform 段前缀
   // 旧 Platform.html#x 深链 / 残留 hash → 从 hash 抢救
   if ((!raw || raw === 'platform') && location.hash) {
     raw = location.hash.replace(/^#/, '').split('?')[0];
@@ -72,9 +77,13 @@ export function plNavigate(id, opts = {}) {
   if (__routerNavigate) {
     __routerNavigate(url, { replace });
   } else {
-    try { history[replace ? 'replaceState' : 'pushState'](null, '', url); } catch (_) {}
+    try {
+      history[replace ? 'replaceState' : 'pushState'](null, '', url);
+    } catch (_) {}
   }
-  try { window.dispatchEvent(new CustomEvent('pl-navigate', { detail: id })); } catch (_) {}
+  try {
+    window.dispatchEvent(new CustomEvent('pl-navigate', { detail: id }));
+  } catch (_) {}
 }
 
 // 跨区导航(/login、/console、/platform/...):走 React Router 触发懒加载切块。
@@ -87,7 +96,9 @@ export function appNavigate(path, opts = {}) {
   try {
     if (replace) location.replace(path);
     else location.assign(path);
-  } catch (_) { location.href = path; }
+  } catch (_) {
+    location.href = path;
+  }
 }
 
 // 整页导航:登出 / 会话过期等需要彻底清空运行时(React state、在途 SSE)的场景。

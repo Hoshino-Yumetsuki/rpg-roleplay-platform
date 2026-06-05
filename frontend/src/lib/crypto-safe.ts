@@ -13,14 +13,18 @@ export function safeUUID() {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
       return crypto.randomUUID();
     }
-  } catch (_) { /* fallthrough */ }
+  } catch (_) {
+    /* fallthrough */
+  }
   // getRandomValues 不属于 SecureContext-gated API,明文 HTTP 也可用
   let bytes;
   try {
     if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
       bytes = crypto.getRandomValues(new Uint8Array(16));
     }
-  } catch (_) { bytes = undefined; }
+  } catch (_) {
+    bytes = undefined;
+  }
   if (!bytes) {
     bytes = new Uint8Array(16);
     for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
@@ -30,8 +34,26 @@ export function safeUUID() {
   const h = [];
   for (let i = 0; i < bytes.length; i++) h.push((bytes[i] + 0x100).toString(16).slice(1));
   return (
-    h[0] + h[1] + h[2] + h[3] + '-' + h[4] + h[5] + '-' + h[6] + h[7] + '-' +
-    h[8] + h[9] + '-' + h[10] + h[11] + h[12] + h[13] + h[14] + h[15]
+    h[0] +
+    h[1] +
+    h[2] +
+    h[3] +
+    '-' +
+    h[4] +
+    h[5] +
+    '-' +
+    h[6] +
+    h[7] +
+    '-' +
+    h[8] +
+    h[9] +
+    '-' +
+    h[10] +
+    h[11] +
+    h[12] +
+    h[13] +
+    h[14] +
+    h[15]
   );
 }
 
@@ -41,12 +63,20 @@ export function safeUUID() {
 // 不校验等于 SHA-256(CONSENT_TEXT),故兜底产出确定性 64-hex 即满足契约与语义。
 export async function sha256hex(text) {
   try {
-    if (typeof crypto !== 'undefined' && crypto.subtle && typeof crypto.subtle.digest === 'function') {
+    if (
+      typeof crypto !== 'undefined' &&
+      crypto.subtle &&
+      typeof crypto.subtle.digest === 'function'
+    ) {
       const data = new TextEncoder().encode(text);
       const buf = await crypto.subtle.digest('SHA-256', data);
-      return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+      return Array.from(new Uint8Array(buf))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
     }
-  } catch (_) { /* fallthrough */ }
+  } catch (_) {
+    /* fallthrough */
+  }
   return _fallbackHex64(text);
 }
 
@@ -54,8 +84,9 @@ export async function sha256hex(text) {
 // 8 个独立种子的 32-bit FNV-1a 变体拼成 64 hex(8×8)。
 function _fallbackHex64(text) {
   const s = String(text);
-  const seeds = [0x811c9dc5, 0x01000193, 0xdeadbeef, 0xcafebabe,
-                 0x12345678, 0x9e3779b9, 0x7f4a7c15, 0xa5a5a5a5];
+  const seeds = [
+    0x811c9dc5, 0x01000193, 0xdeadbeef, 0xcafebabe, 0x12345678, 0x9e3779b9, 0x7f4a7c15, 0xa5a5a5a5,
+  ];
   let out = '';
   for (let k = 0; k < seeds.length; k++) {
     let hsh = seeds[k] >>> 0;

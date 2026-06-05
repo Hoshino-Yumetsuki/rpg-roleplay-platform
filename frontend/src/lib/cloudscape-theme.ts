@@ -34,17 +34,28 @@ const theme = {
     fontFamilyHeading: "'Noto Serif SC', 'Noto Sans SC', serif",
 
     // ── 字号阶梯整体调小(中文 + Cloudscape 默认偏大,挤压密度)──────────
-    fontSizeBodyM: '13px', lineHeightBodyM: '19px',
-    fontSizeBodyS: '12px', lineHeightBodyS: '16px',
-    fontSizeHeadingXl: '19px', lineHeightHeadingXl: '25px',   // 页面标题 H1
-    fontSizeHeadingL: '16px', lineHeightHeadingL: '21px',     // 容器标题 H2
-    fontSizeHeadingM: '14px', lineHeightHeadingM: '19px',     // 卡片/区块 H3
-    fontSizeHeadingS: '13px', lineHeightHeadingS: '18px',
-    fontSizeHeadingXs: '12.5px', lineHeightHeadingXs: '17px',
-    fontSizeDisplayL: '28px', lineHeightDisplayL: '34px',
-    fontSizeFormLabel: '12.5px', lineHeightFormLabel: '17px',
-    fontSizeTabs: '13px', lineHeightTabs: '18px',
-    fontSizeKeyValuePairsLabel: '11.5px', lineHeightKeyValuePairsLabel: '16px',
+    fontSizeBodyM: '13px',
+    lineHeightBodyM: '19px',
+    fontSizeBodyS: '12px',
+    lineHeightBodyS: '16px',
+    fontSizeHeadingXl: '19px',
+    lineHeightHeadingXl: '25px', // 页面标题 H1
+    fontSizeHeadingL: '16px',
+    lineHeightHeadingL: '21px', // 容器标题 H2
+    fontSizeHeadingM: '14px',
+    lineHeightHeadingM: '19px', // 卡片/区块 H3
+    fontSizeHeadingS: '13px',
+    lineHeightHeadingS: '18px',
+    fontSizeHeadingXs: '12.5px',
+    lineHeightHeadingXs: '17px',
+    fontSizeDisplayL: '28px',
+    lineHeightDisplayL: '34px',
+    fontSizeFormLabel: '12.5px',
+    lineHeightFormLabel: '17px',
+    fontSizeTabs: '13px',
+    lineHeightTabs: '18px',
+    fontSizeKeyValuePairsLabel: '11.5px',
+    lineHeightKeyValuePairsLabel: '16px',
 
     // ── 背景层 ──────────────────────────────────────────────
     colorBackgroundLayoutMain: dual(C.bg),
@@ -108,7 +119,7 @@ const theme = {
     colorBorderButtonNormalDefault: dual(C.lineStrong),
     colorBorderButtonNormalHover: dual(C.muted),
     colorBorderItemFocused: dual(C.accent),
-    colorBorderItemSelected: dual(C.accent),          // 表格/卡片选中行描边 → 暖色(原 AWS 蓝)
+    colorBorderItemSelected: dual(C.accent), // 表格/卡片选中行描边 → 暖色(原 AWS 蓝)
     // 分段控件(SegmentedControl)选中态 → 暖色(原 AWS 蓝)
     colorBackgroundSegmentActive: dual(C.accent),
     colorBorderSegmentActive: dual(C.accent),

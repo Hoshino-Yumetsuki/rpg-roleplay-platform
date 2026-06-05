@@ -7,7 +7,7 @@
 import React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 
-const API = () => (window.__API_BASE || '');
+const API = () => window.__API_BASE || '';
 
 async function getGraph(scriptId) {
   const r = await fetch(`${API()}/api/scripts/${scriptId}/graph`, { credentials: 'include' });
@@ -24,20 +24,24 @@ async function getReviewStatus(scriptId) {
 }
 async function markReviewed(scriptId) {
   const r = await fetch(`${API()}/api/scripts/${scriptId}/mark-reviewed`, {
-    method: 'POST', credentials: 'include',
+    method: 'POST',
+    credentials: 'include',
   });
   return r.json().catch(() => ({ ok: r.ok }));
 }
 async function unmarkReviewed(scriptId) {
   const r = await fetch(`${API()}/api/scripts/${scriptId}/unmark-reviewed`, {
-    method: 'POST', credentials: 'include',
+    method: 'POST',
+    credentials: 'include',
   });
   return r.json().catch(() => ({ ok: r.ok }));
 }
 async function patchCanon(scriptId, body) {
   const r = await fetch(`${API()}/api/scripts/${scriptId}/canon`, {
-    method: 'PATCH', credentials: 'include',
-    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
   return r.json();
 }
@@ -46,7 +50,10 @@ function ReviewFlags({ flags }) {
   if (!flags) return null;
   const f = flags;
   return (
-    <div className="sr-flags" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '8px 0' }}>
+    <div
+      className="sr-flags"
+      style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '8px 0' }}
+    >
       <span className={f.needs_review ? 'sr-flag warn' : 'sr-flag ok'}>
         {f.needs_review ? '⚠ 需核对' : '✓ 提取正常'}
       </span>
@@ -66,13 +73,19 @@ function ReviewStatusBanner({ scriptId, status, busy, onChange }) {
     ? new Date(reviewedAt).toLocaleString('zh-CN', { hour12: false })
     : null;
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      gap: 16, padding: '12px 16px', margin: '8px 0 16px 0',
-      borderRadius: 8,
-      background: isReviewed ? 'rgba(80,160,90,0.10)' : 'rgba(201,100,66,0.10)',
-      border: isReviewed ? '1px solid rgba(80,160,90,0.4)' : '1px solid rgba(201,100,66,0.4)',
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 16,
+        padding: '12px 16px',
+        margin: '8px 0 16px 0',
+        borderRadius: 8,
+        background: isReviewed ? 'rgba(80,160,90,0.10)' : 'rgba(201,100,66,0.10)',
+        border: isReviewed ? '1px solid rgba(80,160,90,0.4)' : '1px solid rgba(201,100,66,0.4)',
+      }}
+    >
       <div style={{ display: 'grid', gap: 4 }}>
         <div style={{ fontWeight: 600, fontSize: 14 }}>
           {isReviewed
@@ -92,13 +105,18 @@ function ReviewStatusBanner({ scriptId, status, busy, onChange }) {
           try {
             const r = isReviewed ? await unmarkReviewed(scriptId) : await markReviewed(scriptId);
             onChange?.(r);
-          } finally { setActing(false); }
+          } finally {
+            setActing(false);
+          }
         }}
         style={{
           flexShrink: 0,
           padding: '8px 16px',
-          fontSize: 13, fontWeight: 600,
-          border: 'none', borderRadius: 6, cursor: (busy || acting) ? 'wait' : 'pointer',
+          fontSize: 13,
+          fontWeight: 600,
+          border: 'none',
+          borderRadius: 6,
+          cursor: busy || acting ? 'wait' : 'pointer',
           background: isReviewed ? 'rgba(150,143,133,0.25)' : 'var(--accent, #c96442)',
           color: isReviewed ? 'var(--text, #ebe7df)' : '#fff',
         }}
@@ -119,26 +137,48 @@ export function ScriptReview({ scriptId, initialStatus, onReviewedChange }) {
   const [draft, setDraft] = useState('');
 
   const reload = useCallback(async () => {
-    setBusy(true); setErr('');
+    setBusy(true);
+    setErr('');
     try {
       const [d, st] = await Promise.all([getGraph(scriptId), getReviewStatus(scriptId)]);
-      if (!d.ok) { setErr(d.error || '加载失败'); }
-      else setData(d);
+      if (!d.ok) {
+        setErr(d.error || '加载失败');
+      } else setData(d);
       if (st) setStatus(st);
-    } catch (e) { setErr(String(e)); }
+    } catch (e) {
+      setErr(String(e));
+    }
     setBusy(false);
   }, [scriptId]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   const saveSummary = async (lk) => {
     const r = await patchCanon(scriptId, { op: 'update_entity', logical_key: lk, summary: draft });
-    if (r.ok) { setEditing(null); reload(); } else { setErr(r.error || '保存失败'); }
+    if (r.ok) {
+      setEditing(null);
+      reload();
+    } else {
+      setErr(r.error || '保存失败');
+    }
   };
   const delEntity = async (lk) => {
-    if (!(window.__confirm ? await window.__confirm({ title: '删除实体', message: `删除实体「${lk}」?`, danger: true, confirmText: '删除' }) : window.confirm(`删除实体「${lk}」?`))) return;
+    if (
+      !(window.__confirm
+        ? await window.__confirm({
+            title: '删除实体',
+            message: `删除实体「${lk}」?`,
+            danger: true,
+            confirmText: '删除',
+          })
+        : window.confirm(`删除实体「${lk}」?`))
+    )
+      return;
     const r = await patchCanon(scriptId, { op: 'delete_entity', logical_key: lk });
-    if (r.ok) reload(); else setErr(r.error || '删除失败');
+    if (r.ok) reload();
+    else setErr(r.error || '删除失败');
   };
 
   if (busy) return <div className="sr-loading">加载设定核对…</div>;
@@ -158,16 +198,30 @@ export function ScriptReview({ scriptId, initialStatus, onReviewedChange }) {
           // 用 mark/unmark 的权威 POST 响应更新 banner(不再依赖 /scripts/my 的 find,
           // 那是 UI 卡在「需复核」的根因)+ 回调父列表同步 review_status。
           if (r && r.review_status) {
-            setStatus({ review_status: r.review_status, reviewed_at: r.review_status === 'reviewed' ? new Date().toISOString() : null });
+            setStatus({
+              review_status: r.review_status,
+              reviewed_at: r.review_status === 'reviewed' ? new Date().toISOString() : null,
+            });
             onReviewedChange?.(scriptId, r.review_status);
-          } else { reload(); }
+          } else {
+            reload();
+          }
         }}
       />
       <ReviewFlags flags={data.review_flags} />
 
       <h3>规范实体({ents.length})</h3>
       <table className="sr-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead><tr><th>名称</th><th>类型</th><th>首现章</th><th>重要度</th><th>摘要</th><th></th></tr></thead>
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>类型</th>
+            <th>首现章</th>
+            <th>重要度</th>
+            <th>摘要</th>
+            <th></th>
+          </tr>
+        </thead>
         <tbody>
           {ents.map((e) => (
             <tr key={e.logical_key}>
@@ -177,8 +231,14 @@ export function ScriptReview({ scriptId, initialStatus, onReviewedChange }) {
               <td>{e.importance}</td>
               <td>
                 {editing === e.logical_key ? (
-                  <input value={draft} onChange={(ev) => setDraft(ev.target.value)} style={{ width: '90%' }} />
-                ) : (e.summary || <span style={{ opacity: 0.4 }}>—</span>)}
+                  <input
+                    value={draft}
+                    onChange={(ev) => setDraft(ev.target.value)}
+                    style={{ width: '90%' }}
+                  />
+                ) : (
+                  e.summary || <span style={{ opacity: 0.4 }}>—</span>
+                )}
               </td>
               <td>
                 {editing === e.logical_key ? (
@@ -188,7 +248,14 @@ export function ScriptReview({ scriptId, initialStatus, onReviewedChange }) {
                   </>
                 ) : (
                   <>
-                    <button onClick={() => { setEditing(e.logical_key); setDraft(e.summary || ''); }}>改摘要</button>
+                    <button
+                      onClick={() => {
+                        setEditing(e.logical_key);
+                        setDraft(e.summary || '');
+                      }}
+                    >
+                      改摘要
+                    </button>
                     <button onClick={() => delEntity(e.logical_key)}>删</button>
                   </>
                 )}
@@ -202,10 +269,16 @@ export function ScriptReview({ scriptId, initialStatus, onReviewedChange }) {
       <ul>
         {wls.map((w) => (
           <li key={w.wl_key}>
-            {w.is_primary ? '★ ' : ''}{w.label} ({w.wl_key})
-            {(data.nodes || []).filter((n) => n.wl_key === w.wl_key).map((n) => (
-              <span key={n.node_key} className="sr-node"> · {n.seq}.{n.label}</span>
-            ))}
+            {w.is_primary ? '★ ' : ''}
+            {w.label} ({w.wl_key})
+            {(data.nodes || [])
+              .filter((n) => n.wl_key === w.wl_key)
+              .map((n) => (
+                <span key={n.node_key} className="sr-node">
+                  {' '}
+                  · {n.seq}.{n.label}
+                </span>
+              ))}
           </li>
         ))}
       </ul>

@@ -26,7 +26,11 @@ import CSKeyValuePairs from '@cloudscape-design/components/key-value-pairs';
 /* ── 通用工具 ─────────────────────────────────────────────────── */
 function fmtTime(iso) {
   if (!iso) return '—';
-  try { return new Date(iso).toLocaleString('zh-CN', { hour12: false }); } catch (_) { return iso; }
+  try {
+    return new Date(iso).toLocaleString('zh-CN', { hour12: false });
+  } catch (_) {
+    return iso;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -41,8 +45,14 @@ export function AdminUsersPage() {
   const [page, setPage] = React.useState(1);
   const limit = 20;
   const [search, setSearch] = React.useState('');
-  const [roleFilter, setRoleFilter] = React.useState({ value: '', label: t('admin_page.users.role_all') });
-  const [statusFilter, setStatusFilter] = React.useState({ value: '', label: t('admin_page.users.status_all') });
+  const [roleFilter, setRoleFilter] = React.useState({
+    value: '',
+    label: t('admin_page.users.role_all'),
+  });
+  const [statusFilter, setStatusFilter] = React.useState({
+    value: '',
+    label: t('admin_page.users.status_all'),
+  });
 
   // 确认 modal 状态
   const [confirmModal, setConfirmModal] = React.useState(null); // { action, user, title, body }
@@ -50,27 +60,32 @@ export function AdminUsersPage() {
 
   const me = window.RPG_AUTH && window.RPG_AUTH.user;
 
-  const load = React.useCallback(async (p = page) => {
-    setLoading(true);
-    setErr(null);
-    let cancelled = false;
-    try {
-      const params = { page: p, limit };
-      if (search) params.search = search;
-      if (roleFilter.value) params.role = roleFilter.value;
-      if (statusFilter.value) params.status = statusFilter.value;
-      const res = await window.api.admin.users(params);
-      if (!cancelled) {
-        setUsers(res.users || res.items || res || []);
-        setTotal(res.total || (res.users || res.items || res || []).length);
+  const load = React.useCallback(
+    async (p = page) => {
+      setLoading(true);
+      setErr(null);
+      let cancelled = false;
+      try {
+        const params = { page: p, limit };
+        if (search) params.search = search;
+        if (roleFilter.value) params.role = roleFilter.value;
+        if (statusFilter.value) params.status = statusFilter.value;
+        const res = await window.api.admin.users(params);
+        if (!cancelled) {
+          setUsers(res.users || res.items || res || []);
+          setTotal(res.total || (res.users || res.items || res || []).length);
+        }
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || t('admin_page.common.load_fail'));
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch (e) {
-      if (!cancelled) setErr(e?.message || t('admin_page.common.load_fail'));
-    } finally {
-      if (!cancelled) setLoading(false);
-    }
-    return () => { cancelled = true; };
-  }, [page, search, roleFilter.value, statusFilter.value]);
+      return () => {
+        cancelled = true;
+      };
+    },
+    [page, search, roleFilter.value, statusFilter.value],
+  );
 
   React.useEffect(() => {
     let cancelled = false;
@@ -93,7 +108,9 @@ export function AdminUsersPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [page, roleFilter.value, statusFilter.value]);
 
   async function doAction() {
@@ -104,13 +121,16 @@ export function AdminUsersPage() {
       if (action === 'deactivate') await window.api.admin.deactivateUser(user.id);
       else if (action === 'reactivate') await window.api.admin.reactivateUser(user.id);
       else if (action === 'force-logout') await window.api.admin.forceLogout(user.id);
-      else if (action === 'set-admin') await window.api.admin.updateUser(user.id, { role: 'admin' });
+      else if (action === 'set-admin')
+        await window.api.admin.updateUser(user.id, { role: 'admin' });
       else if (action === 'set-user') await window.api.admin.updateUser(user.id, { role: 'user' });
       window.toast?.(t('admin_page.common.op_ok'), { kind: 'ok' });
       setConfirmModal(null);
       load(page);
     } catch (e) {
-      window.toast?.(t('admin_page.common.op_fail') + ': ' + (e?.message || t('common.unknown')), { kind: 'danger' });
+      window.toast?.(t('admin_page.common.op_fail') + ': ' + (e?.message || t('common.unknown')), {
+        kind: 'danger',
+      });
     } finally {
       setActionBusy(false);
     }
@@ -129,7 +149,11 @@ export function AdminUsersPage() {
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
       <CSContainer
         header={
           <CSHeader
@@ -137,7 +161,9 @@ export function AdminUsersPage() {
             description={t('admin_page.users.description')}
             actions={
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton iconName="refresh" onClick={() => load(page)} loading={loading}>{t('admin_page.common.refresh')}</CSButton>
+                <CSButton iconName="refresh" onClick={() => load(page)} loading={loading}>
+                  {t('admin_page.common.refresh')}
+                </CSButton>
               </CSSpaceBetween>
             }
           >
@@ -151,18 +177,29 @@ export function AdminUsersPage() {
               placeholder={t('admin_page.users.search_placeholder')}
               value={search}
               onChange={({ detail }) => setSearch(detail.value)}
-              onKeyDown={({ detail }) => { if (detail.key === 'Enter') { setPage(1); load(1); } }}
+              onKeyDown={({ detail }) => {
+                if (detail.key === 'Enter') {
+                  setPage(1);
+                  load(1);
+                }
+              }}
               type="search"
             />
             <CSSelect
               selectedOption={roleFilter}
               options={roleOptions}
-              onChange={({ detail }) => { setRoleFilter(detail.selectedOption); setPage(1); }}
+              onChange={({ detail }) => {
+                setRoleFilter(detail.selectedOption);
+                setPage(1);
+              }}
             />
             <CSSelect
               selectedOption={statusFilter}
               options={statusOptions}
-              onChange={({ detail }) => { setStatusFilter(detail.selectedOption); setPage(1); }}
+              onChange={({ detail }) => {
+                setStatusFilter(detail.selectedOption);
+                setPage(1);
+              }}
             />
           </CSSpaceBetween>
           <CSTable
@@ -172,35 +209,66 @@ export function AdminUsersPage() {
             items={users}
             empty={
               <CSBox textAlign="center" color="inherit">
-                <CSBox padding={{ bottom: 's' }} variant="p" color="inherit">{t('admin_page.users.empty')}</CSBox>
+                <CSBox padding={{ bottom: 's' }} variant="p" color="inherit">
+                  {t('admin_page.users.empty')}
+                </CSBox>
               </CSBox>
             }
             columnDefinitions={[
-              { id: 'username', header: t('admin_page.users.col_username'), cell: (u) => u.username || u.name || '—' },
-              { id: 'display_name', header: t('admin_page.users.col_display_name'), cell: (u) => u.display_name || '—' },
               {
-                id: 'role', header: t('admin_page.users.col_role'),
-                cell: (u) => u.role === 'admin'
-                  ? <CSBadge color="severity-medium">{t('admin_page.users.role_admin')}</CSBadge>
-                  : <CSBadge color="grey">{t('admin_page.users.role_user')}</CSBadge>,
+                id: 'username',
+                header: t('admin_page.users.col_username'),
+                cell: (u) => u.username || u.name || '—',
               },
               {
-                id: 'status', header: t('admin_page.users.col_status'),
-                cell: (u) => u.deactivated_at
-                  ? <CSStatusIndicator type="stopped">{t('admin_page.users.status_stopped')}</CSStatusIndicator>
-                  : <CSStatusIndicator type="success">{t('admin_page.users.status_active_label')}</CSStatusIndicator>,
-              },
-              { id: 'last_login', header: t('admin_page.users.col_last_login'), cell: (u) => fmtTime(u.last_login_at || u.last_login) },
-              {
-                id: 'token_30d', header: t('admin_page.users.col_token_30d'),
-                cell: (u) => typeof u.token_usage_30d === 'number' ? u.token_usage_30d.toLocaleString() : '—',
+                id: 'display_name',
+                header: t('admin_page.users.col_display_name'),
+                cell: (u) => u.display_name || '—',
               },
               {
-                id: 'sessions', header: t('admin_page.users.col_sessions'),
-                cell: (u) => typeof u.active_session_count === 'number' ? u.active_session_count : '—',
+                id: 'role',
+                header: t('admin_page.users.col_role'),
+                cell: (u) =>
+                  u.role === 'admin' ? (
+                    <CSBadge color="severity-medium">{t('admin_page.users.role_admin')}</CSBadge>
+                  ) : (
+                    <CSBadge color="grey">{t('admin_page.users.role_user')}</CSBadge>
+                  ),
               },
               {
-                id: 'actions', header: t('admin_page.common.actions'),
+                id: 'status',
+                header: t('admin_page.users.col_status'),
+                cell: (u) =>
+                  u.deactivated_at ? (
+                    <CSStatusIndicator type="stopped">
+                      {t('admin_page.users.status_stopped')}
+                    </CSStatusIndicator>
+                  ) : (
+                    <CSStatusIndicator type="success">
+                      {t('admin_page.users.status_active_label')}
+                    </CSStatusIndicator>
+                  ),
+              },
+              {
+                id: 'last_login',
+                header: t('admin_page.users.col_last_login'),
+                cell: (u) => fmtTime(u.last_login_at || u.last_login),
+              },
+              {
+                id: 'token_30d',
+                header: t('admin_page.users.col_token_30d'),
+                cell: (u) =>
+                  typeof u.token_usage_30d === 'number' ? u.token_usage_30d.toLocaleString() : '—',
+              },
+              {
+                id: 'sessions',
+                header: t('admin_page.users.col_sessions'),
+                cell: (u) =>
+                  typeof u.active_session_count === 'number' ? u.active_session_count : '—',
+              },
+              {
+                id: 'actions',
+                header: t('admin_page.common.actions'),
                 cell: (u) => {
                   const isSelf = me && (me.id === u.id || me.username === u.username);
                   return (
@@ -209,50 +277,85 @@ export function AdminUsersPage() {
                         <CSButton
                           variant="inline-link"
                           disabled={isSelf}
-                          onClick={() => setConfirmModal({
-                            action: 'deactivate', user: u,
-                            title: t('admin_page.users.confirm_deactivate_title', { name: u.username }),
-                            body: t('admin_page.users.confirm_deactivate_body'),
-                          })}
-                        >{t('admin_page.users.deactivate')}</CSButton>
+                          onClick={() =>
+                            setConfirmModal({
+                              action: 'deactivate',
+                              user: u,
+                              title: t('admin_page.users.confirm_deactivate_title', {
+                                name: u.username,
+                              }),
+                              body: t('admin_page.users.confirm_deactivate_body'),
+                            })
+                          }
+                        >
+                          {t('admin_page.users.deactivate')}
+                        </CSButton>
                       )}
                       {u.deactivated_at && (
                         <CSButton
                           variant="inline-link"
-                          onClick={() => setConfirmModal({
-                            action: 'reactivate', user: u,
-                            title: t('admin_page.users.confirm_reactivate_title', { name: u.username }),
-                            body: t('admin_page.users.confirm_reactivate_body'),
-                          })}
-                        >{t('admin_page.users.reactivate')}</CSButton>
+                          onClick={() =>
+                            setConfirmModal({
+                              action: 'reactivate',
+                              user: u,
+                              title: t('admin_page.users.confirm_reactivate_title', {
+                                name: u.username,
+                              }),
+                              body: t('admin_page.users.confirm_reactivate_body'),
+                            })
+                          }
+                        >
+                          {t('admin_page.users.reactivate')}
+                        </CSButton>
                       )}
                       <CSButton
                         variant="inline-link"
-                        onClick={() => setConfirmModal({
-                          action: 'force-logout', user: u,
-                          title: t('admin_page.users.confirm_force_logout_title', { name: u.username }),
-                          body: t('admin_page.users.confirm_force_logout_body'),
-                        })}
-                      >{t('admin_page.users.force_logout')}</CSButton>
+                        onClick={() =>
+                          setConfirmModal({
+                            action: 'force-logout',
+                            user: u,
+                            title: t('admin_page.users.confirm_force_logout_title', {
+                              name: u.username,
+                            }),
+                            body: t('admin_page.users.confirm_force_logout_body'),
+                          })
+                        }
+                      >
+                        {t('admin_page.users.force_logout')}
+                      </CSButton>
                       {u.role === 'user' && !isSelf && (
                         <CSButton
                           variant="inline-link"
-                          onClick={() => setConfirmModal({
-                            action: 'set-admin', user: u,
-                            title: t('admin_page.users.confirm_set_admin_title', { name: u.username }),
-                            body: t('admin_page.users.confirm_set_admin_body'),
-                          })}
-                        >{t('admin_page.users.set_admin')}</CSButton>
+                          onClick={() =>
+                            setConfirmModal({
+                              action: 'set-admin',
+                              user: u,
+                              title: t('admin_page.users.confirm_set_admin_title', {
+                                name: u.username,
+                              }),
+                              body: t('admin_page.users.confirm_set_admin_body'),
+                            })
+                          }
+                        >
+                          {t('admin_page.users.set_admin')}
+                        </CSButton>
                       )}
                       {u.role === 'admin' && !isSelf && (
                         <CSButton
                           variant="inline-link"
-                          onClick={() => setConfirmModal({
-                            action: 'set-user', user: u,
-                            title: t('admin_page.users.confirm_set_user_title', { name: u.username }),
-                            body: t('admin_page.users.confirm_set_user_body'),
-                          })}
-                        >{t('admin_page.users.set_user')}</CSButton>
+                          onClick={() =>
+                            setConfirmModal({
+                              action: 'set-user',
+                              user: u,
+                              title: t('admin_page.users.confirm_set_user_title', {
+                                name: u.username,
+                              }),
+                              body: t('admin_page.users.confirm_set_user_body'),
+                            })
+                          }
+                        >
+                          {t('admin_page.users.set_user')}
+                        </CSButton>
                       )}
                     </CSSpaceBetween>
                   );
@@ -261,9 +364,15 @@ export function AdminUsersPage() {
             ]}
             pagination={
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton disabled={page <= 1} onClick={() => setPage(p => p - 1)}>{t('admin_page.common.prev_page')}</CSButton>
-                <CSBox padding="xs">{t('admin_page.common.page_info', { page, total: Math.ceil(total / limit) })}</CSBox>
-                <CSButton disabled={users.length < limit} onClick={() => setPage(p => p + 1)}>{t('admin_page.common.next_page')}</CSButton>
+                <CSButton disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                  {t('admin_page.common.prev_page')}
+                </CSButton>
+                <CSBox padding="xs">
+                  {t('admin_page.common.page_info', { page, total: Math.ceil(total / limit) })}
+                </CSBox>
+                <CSButton disabled={users.length < limit} onClick={() => setPage((p) => p + 1)}>
+                  {t('admin_page.common.next_page')}
+                </CSButton>
               </CSSpaceBetween>
             }
           />
@@ -278,8 +387,16 @@ export function AdminUsersPage() {
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={actionBusy} onClick={() => setConfirmModal(null)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={actionBusy} onClick={doAction}>{t('admin_page.common.confirm')}</CSButton>
+                <CSButton
+                  variant="link"
+                  disabled={actionBusy}
+                  onClick={() => setConfirmModal(null)}
+                >
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton variant="primary" loading={actionBusy} onClick={doAction}>
+                  {t('admin_page.common.confirm')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
@@ -322,7 +439,9 @@ export function AdminGlobalUsagePage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [days.value]);
 
   const summary = data?.summary || {};
@@ -333,7 +452,11 @@ export function AdminGlobalUsagePage() {
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
 
       <CSContainer
         header={
@@ -352,21 +475,34 @@ export function AdminGlobalUsagePage() {
           </CSHeader>
         }
       >
-        {loading
-          ? <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
-          : !data
-            ? <CSBox color="inherit" textAlign="center">{t('admin_page.usage.empty')}</CSBox>
-            : (
-              <CSKeyValuePairs
-                columns={3}
-                items={[
-                  { label: t('admin_page.usage.kv_requests'), value: (summary.total_requests || 0).toLocaleString() },
-                  { label: t('admin_page.usage.kv_tokens'), value: (summary.total_tokens || 0).toLocaleString() },
-                  { label: t('admin_page.usage.kv_cost'), value: typeof summary.total_cost === 'number' ? `$${summary.total_cost.toFixed(4)}` : '—' },
-                ]}
-              />
-            )
-        }
+        {loading ? (
+          <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
+        ) : !data ? (
+          <CSBox color="inherit" textAlign="center">
+            {t('admin_page.usage.empty')}
+          </CSBox>
+        ) : (
+          <CSKeyValuePairs
+            columns={3}
+            items={[
+              {
+                label: t('admin_page.usage.kv_requests'),
+                value: (summary.total_requests || 0).toLocaleString(),
+              },
+              {
+                label: t('admin_page.usage.kv_tokens'),
+                value: (summary.total_tokens || 0).toLocaleString(),
+              },
+              {
+                label: t('admin_page.usage.kv_cost'),
+                value:
+                  typeof summary.total_cost === 'number'
+                    ? `$${summary.total_cost.toFixed(4)}`
+                    : '—',
+              },
+            ]}
+          />
+        )}
       </CSContainer>
 
       <CSContainer header={<CSHeader variant="h2">{t('admin_page.usage.by_user')}</CSHeader>}>
@@ -375,20 +511,59 @@ export function AdminGlobalUsagePage() {
           loadingText={t('admin_page.common.loading')}
           trackBy="user_id"
           items={byUser}
-          empty={<CSBox textAlign="center" color="inherit">{t('admin_page.usage.empty_generic')}</CSBox>}
+          empty={
+            <CSBox textAlign="center" color="inherit">
+              {t('admin_page.usage.empty_generic')}
+            </CSBox>
+          }
           columnDefinitions={[
-            { id: 'rank', header: t('admin_page.usage.col_rank'), cell: (_, idx) => idx + 1, width: 50 },
-            { id: 'username', header: t('admin_page.usage.col_username'), cell: (u) => u.username || u.user_id || '—' },
-            { id: 'tokens', header: t('admin_page.usage.col_tokens'), cell: (u) => (u.tokens || 0).toLocaleString() },
-            { id: 'cost', header: t('admin_page.usage.col_cost'), cell: (u) => typeof u.cost === 'number' ? `$${u.cost.toFixed(4)}` : '—' },
             {
-              id: 'pct', header: t('admin_page.usage.col_pct'),
+              id: 'rank',
+              header: t('admin_page.usage.col_rank'),
+              cell: (_, idx) => idx + 1,
+              width: 50,
+            },
+            {
+              id: 'username',
+              header: t('admin_page.usage.col_username'),
+              cell: (u) => u.username || u.user_id || '—',
+            },
+            {
+              id: 'tokens',
+              header: t('admin_page.usage.col_tokens'),
+              cell: (u) => (u.tokens || 0).toLocaleString(),
+            },
+            {
+              id: 'cost',
+              header: t('admin_page.usage.col_cost'),
+              cell: (u) => (typeof u.cost === 'number' ? `$${u.cost.toFixed(4)}` : '—'),
+            },
+            {
+              id: 'pct',
+              header: t('admin_page.usage.col_pct'),
               cell: (u) => {
-                const pct = summary.total_tokens > 0 ? Math.round((u.tokens / summary.total_tokens) * 100) : 0;
+                const pct =
+                  summary.total_tokens > 0
+                    ? Math.round((u.tokens / summary.total_tokens) * 100)
+                    : 0;
                 return (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ flex: 1, height: 6, background: 'var(--color-background-status-inactive, #d1d5db)', borderRadius: 3 }}>
-                      <div style={{ width: `${pct}%`, height: '100%', background: 'var(--color-background-status-positive, #037f0c)', borderRadius: 3 }} />
+                    <div
+                      style={{
+                        flex: 1,
+                        height: 6,
+                        background: 'var(--color-background-status-inactive, #d1d5db)',
+                        borderRadius: 3,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${pct}%`,
+                          height: '100%',
+                          background: 'var(--color-background-status-positive, #037f0c)',
+                          borderRadius: 3,
+                        }}
+                      />
                     </div>
                     <span style={{ fontSize: 12, minWidth: 30 }}>{pct}%</span>
                   </div>
@@ -405,37 +580,77 @@ export function AdminGlobalUsagePage() {
           loadingText={t('admin_page.common.loading')}
           trackBy="api_id"
           items={byApi}
-          empty={<CSBox textAlign="center" color="inherit">{t('admin_page.usage.empty_generic')}</CSBox>}
+          empty={
+            <CSBox textAlign="center" color="inherit">
+              {t('admin_page.usage.empty_generic')}
+            </CSBox>
+          }
           columnDefinitions={[
-            { id: 'api_id', header: t('admin_page.usage.col_api'), cell: (a) => a.api_id || a.api || '—' },
-            { id: 'tokens', header: t('admin_page.usage.col_token'), cell: (a) => (a.tokens || 0).toLocaleString() },
-            { id: 'cost', header: t('admin_page.usage.col_cost'), cell: (a) => typeof a.cost === 'number' ? `$${a.cost.toFixed(4)}` : '—' },
+            {
+              id: 'api_id',
+              header: t('admin_page.usage.col_api'),
+              cell: (a) => a.api_id || a.api || '—',
+            },
+            {
+              id: 'tokens',
+              header: t('admin_page.usage.col_token'),
+              cell: (a) => (a.tokens || 0).toLocaleString(),
+            },
+            {
+              id: 'cost',
+              header: t('admin_page.usage.col_cost'),
+              cell: (a) => (typeof a.cost === 'number' ? `$${a.cost.toFixed(4)}` : '—'),
+            },
           ]}
         />
       </CSContainer>
 
       <CSContainer header={<CSHeader variant="h2">{t('admin_page.usage.by_day')}</CSHeader>}>
-        {loading
-          ? <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
-          : byDay.length === 0
-            ? <CSBox textAlign="center" color="inherit">{t('admin_page.usage.empty_generic')}</CSBox>
-            : (
-              <CSSpaceBetween size="xs">
-                {byDay.map((d) => {
-                  const barPct = Math.max(2, Math.round((d.tokens || 0) / maxDayTokens * 100));
-                  return (
-                    <div key={d.date} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
-                      <span style={{ minWidth: 90, color: 'var(--color-text-body-secondary, #5f6b7a)' }}>{d.date}</span>
-                      <div style={{ flex: 1, height: 14, background: 'var(--color-background-status-inactive, #d1d5db)', borderRadius: 3 }}>
-                        <div style={{ width: `${barPct}%`, height: '100%', background: 'var(--color-background-status-info, #0972d3)', borderRadius: 3 }} />
-                      </div>
-                      <span style={{ minWidth: 80, textAlign: 'right' }}>{(d.tokens || 0).toLocaleString()}</span>
-                    </div>
-                  );
-                })}
-              </CSSpaceBetween>
-            )
-        }
+        {loading ? (
+          <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
+        ) : byDay.length === 0 ? (
+          <CSBox textAlign="center" color="inherit">
+            {t('admin_page.usage.empty_generic')}
+          </CSBox>
+        ) : (
+          <CSSpaceBetween size="xs">
+            {byDay.map((d) => {
+              const barPct = Math.max(2, Math.round(((d.tokens || 0) / maxDayTokens) * 100));
+              return (
+                <div
+                  key={d.date}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}
+                >
+                  <span
+                    style={{ minWidth: 90, color: 'var(--color-text-body-secondary, #5f6b7a)' }}
+                  >
+                    {d.date}
+                  </span>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 14,
+                      background: 'var(--color-background-status-inactive, #d1d5db)',
+                      borderRadius: 3,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${barPct}%`,
+                        height: '100%',
+                        background: 'var(--color-background-status-info, #0972d3)',
+                        borderRadius: 3,
+                      }}
+                    />
+                  </div>
+                  <span style={{ minWidth: 80, textAlign: 'right' }}>
+                    {(d.tokens || 0).toLocaleString()}
+                  </span>
+                </div>
+              );
+            })}
+          </CSSpaceBetween>
+        )}
       </CSContainer>
     </CSSpaceBetween>
   );
@@ -452,7 +667,10 @@ export function AdminAuditPage() {
   const [err, setErr] = React.useState(null);
   const [page, setPage] = React.useState(1);
   const limit = 50;
-  const [actionFilter, setActionFilter] = React.useState({ value: '', label: t('admin_page.audit.filter_all') });
+  const [actionFilter, setActionFilter] = React.useState({
+    value: '',
+    label: t('admin_page.audit.filter_all'),
+  });
   const [expandedDetail, setExpandedDetail] = React.useState(null);
 
   const actionOptions = [
@@ -482,12 +700,18 @@ export function AdminAuditPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [page, actionFilter.value]);
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
       <CSContainer
         header={
           <CSHeader
@@ -497,7 +721,10 @@ export function AdminAuditPage() {
               <CSSelect
                 selectedOption={actionFilter}
                 options={actionOptions}
-                onChange={({ detail }) => { setActionFilter(detail.selectedOption); setPage(1); }}
+                onChange={({ detail }) => {
+                  setActionFilter(detail.selectedOption);
+                  setPage(1);
+                }}
               />
             }
           >
@@ -511,17 +738,35 @@ export function AdminAuditPage() {
             loadingText={t('admin_page.common.loading')}
             trackBy="id"
             items={items}
-            empty={<CSBox textAlign="center" color="inherit">{t('admin_page.audit.empty')}</CSBox>}
+            empty={
+              <CSBox textAlign="center" color="inherit">
+                {t('admin_page.audit.empty')}
+              </CSBox>
+            }
             columnDefinitions={[
-              { id: 'created_at', header: t('admin_page.audit.col_time'), cell: (r) => fmtTime(r.created_at || r.timestamp) },
-              { id: 'operator', header: t('admin_page.audit.col_operator'), cell: (r) => r.operator || r.user || r.username || '—' },
               {
-                id: 'action_type', header: t('admin_page.audit.col_action_type'),
+                id: 'created_at',
+                header: t('admin_page.audit.col_time'),
+                cell: (r) => fmtTime(r.created_at || r.timestamp),
+              },
+              {
+                id: 'operator',
+                header: t('admin_page.audit.col_operator'),
+                cell: (r) => r.operator || r.user || r.username || '—',
+              },
+              {
+                id: 'action_type',
+                header: t('admin_page.audit.col_action_type'),
                 cell: (r) => <CSBadge color="blue">{r.action_type || r.action || '—'}</CSBadge>,
               },
-              { id: 'target', header: t('admin_page.audit.col_target'), cell: (r) => r.target || r.resource || '—' },
               {
-                id: 'detail', header: t('admin_page.audit.col_detail'),
+                id: 'target',
+                header: t('admin_page.audit.col_target'),
+                cell: (r) => r.target || r.resource || '—',
+              },
+              {
+                id: 'detail',
+                header: t('admin_page.audit.col_detail'),
                 cell: (r) => {
                   const key = r.id || r.created_at;
                   const raw = r.detail || r.meta || r.extra;
@@ -530,21 +775,46 @@ export function AdminAuditPage() {
                   const isExpanded = expandedDetail === key;
                   return (
                     <div>
-                      <CSButton variant="inline-link" onClick={() => setExpandedDetail(isExpanded ? null : key)}>
-                        {isExpanded ? t('admin_page.common.collapse') : t('admin_page.common.expand')}
+                      <CSButton
+                        variant="inline-link"
+                        onClick={() => setExpandedDetail(isExpanded ? null : key)}
+                      >
+                        {isExpanded
+                          ? t('admin_page.common.collapse')
+                          : t('admin_page.common.expand')}
                       </CSButton>
-                      {isExpanded && <pre style={{ fontSize: 11, maxWidth: 400, whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: '4px 0 0' }}>{str}</pre>}
+                      {isExpanded && (
+                        <pre
+                          style={{
+                            fontSize: 11,
+                            maxWidth: 400,
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-all',
+                            margin: '4px 0 0',
+                          }}
+                        >
+                          {str}
+                        </pre>
+                      )}
                     </div>
                   );
                 },
               },
-              { id: 'ip', header: t('admin_page.audit.col_ip'), cell: (r) => r.ip || r.ip_address || '—' },
+              {
+                id: 'ip',
+                header: t('admin_page.audit.col_ip'),
+                cell: (r) => r.ip || r.ip_address || '—',
+              },
             ]}
             pagination={
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton disabled={page <= 1} onClick={() => setPage(p => p - 1)}>{t('admin_page.common.prev_page')}</CSButton>
+                <CSButton disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                  {t('admin_page.common.prev_page')}
+                </CSButton>
                 <CSBox padding="xs">{t('admin_page.common.page_simple', { page })}</CSBox>
-                <CSButton disabled={items.length < limit} onClick={() => setPage(p => p + 1)}>{t('admin_page.common.next_page')}</CSButton>
+                <CSButton disabled={items.length < limit} onClick={() => setPage((p) => p + 1)}>
+                  {t('admin_page.common.next_page')}
+                </CSButton>
               </CSSpaceBetween>
             }
           />
@@ -601,7 +871,11 @@ export function AdminHealthPage() {
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
       <CSContainer
         header={
           <CSHeader
@@ -611,10 +885,14 @@ export function AdminHealthPage() {
               <CSSpaceBetween direction="horizontal" size="xs">
                 {lastUpdate && (
                   <CSBox color="text-body-secondary" variant="small">
-                    {t('admin_page.health.last_update', { time: lastUpdate.toLocaleTimeString('zh-CN', { hour12: false }) })}
+                    {t('admin_page.health.last_update', {
+                      time: lastUpdate.toLocaleTimeString('zh-CN', { hour12: false }),
+                    })}
                   </CSBox>
                 )}
-                <CSButton iconName="refresh" loading={refreshing} onClick={() => fetchHealth(true)}>{t('admin_page.common.refresh')}</CSButton>
+                <CSButton iconName="refresh" loading={refreshing} onClick={() => fetchHealth(true)}>
+                  {t('admin_page.common.refresh')}
+                </CSButton>
               </CSSpaceBetween>
             }
           >
@@ -622,68 +900,92 @@ export function AdminHealthPage() {
           </CSHeader>
         }
       >
-        {loading && !data
-          ? <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
-          : !data
-            ? <CSBox textAlign="center" color="inherit">{t('admin_page.health.empty')}</CSBox>
-            : (
-              <CSColumnLayout columns={2} variant="text-grid">
+        {loading && !data ? (
+          <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
+        ) : !data ? (
+          <CSBox textAlign="center" color="inherit">
+            {t('admin_page.health.empty')}
+          </CSBox>
+        ) : (
+          <CSColumnLayout columns={2} variant="text-grid">
+            <div>
+              <CSSpaceBetween size="s">
                 <div>
-                  <CSSpaceBetween size="s">
-                    <div>
-                      <strong>{t('admin_page.health.db_title')}</strong>
-                      <div>
-                        <CSStatusIndicator type={db.ok === false ? 'error' : 'success'}>
-                          {db.ok === false ? t('admin_page.health.db_fail') : t('admin_page.health.db_ok')}
-                        </CSStatusIndicator>
-                        {typeof db.latency_ms === 'number' && (
-                          <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-text-body-secondary)' }}>
-                            {t('admin_page.health.db_latency', { ms: db.latency_ms })}
+                  <strong>{t('admin_page.health.db_title')}</strong>
+                  <div>
+                    <CSStatusIndicator type={db.ok === false ? 'error' : 'success'}>
+                      {db.ok === false
+                        ? t('admin_page.health.db_fail')
+                        : t('admin_page.health.db_ok')}
+                    </CSStatusIndicator>
+                    {typeof db.latency_ms === 'number' && (
+                      <span
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 12,
+                          color: 'var(--color-text-body-secondary)',
+                        }}
+                      >
+                        {t('admin_page.health.db_latency', { ms: db.latency_ms })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <strong>{t('admin_page.health.mem_title')}</strong>
+                  <div>
+                    {typeof mem.rss_mb === 'number' ? (
+                      <CSStatusIndicator type="success">RSS {mem.rss_mb} MB</CSStatusIndicator>
+                    ) : (
+                      <CSStatusIndicator type="pending">
+                        {t('admin_page.health.mem_no_data')}
+                      </CSStatusIndicator>
+                    )}
+                  </div>
+                </div>
+              </CSSpaceBetween>
+            </div>
+            <div>
+              <CSSpaceBetween size="s">
+                <div>
+                  <strong>{t('admin_page.health.disk_title')}</strong>
+                  <div>
+                    {diskPct !== null ? (
+                      <CSStatusIndicator type={diskPct > 90 ? 'warning' : 'success'}>
+                        {t('admin_page.health.disk_used', { pct: diskPct })}
+                      </CSStatusIndicator>
+                    ) : (
+                      <CSStatusIndicator type="pending">
+                        {t('admin_page.health.disk_no_data')}
+                      </CSStatusIndicator>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <strong>{t('admin_page.health.proc_title')}</strong>
+                  <div>
+                    {proc.pid ? (
+                      <CSStatusIndicator type="success">
+                        PID {proc.pid}
+                        {proc.uptime_s && (
+                          <span style={{ marginLeft: 8, fontSize: 12 }}>
+                            {t('admin_page.health.proc_uptime', {
+                              min: Math.round(proc.uptime_s / 60),
+                            })}
                           </span>
                         )}
-                      </div>
-                    </div>
-                    <div>
-                      <strong>{t('admin_page.health.mem_title')}</strong>
-                      <div>
-                        {typeof mem.rss_mb === 'number'
-                          ? <CSStatusIndicator type="success">RSS {mem.rss_mb} MB</CSStatusIndicator>
-                          : <CSStatusIndicator type="pending">{t('admin_page.health.mem_no_data')}</CSStatusIndicator>
-                        }
-                      </div>
-                    </div>
-                  </CSSpaceBetween>
+                      </CSStatusIndicator>
+                    ) : (
+                      <CSStatusIndicator type="pending">
+                        {t('admin_page.health.proc_no_data')}
+                      </CSStatusIndicator>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <CSSpaceBetween size="s">
-                    <div>
-                      <strong>{t('admin_page.health.disk_title')}</strong>
-                      <div>
-                        {diskPct !== null
-                          ? <CSStatusIndicator type={diskPct > 90 ? 'warning' : 'success'}>
-                              {t('admin_page.health.disk_used', { pct: diskPct })}
-                            </CSStatusIndicator>
-                          : <CSStatusIndicator type="pending">{t('admin_page.health.disk_no_data')}</CSStatusIndicator>
-                        }
-                      </div>
-                    </div>
-                    <div>
-                      <strong>{t('admin_page.health.proc_title')}</strong>
-                      <div>
-                        {proc.pid
-                          ? <CSStatusIndicator type="success">
-                              PID {proc.pid}
-                              {proc.uptime_s && <span style={{ marginLeft: 8, fontSize: 12 }}>{t('admin_page.health.proc_uptime', { min: Math.round(proc.uptime_s / 60) })}</span>}
-                            </CSStatusIndicator>
-                          : <CSStatusIndicator type="pending">{t('admin_page.health.proc_no_data')}</CSStatusIndicator>
-                        }
-                      </div>
-                    </div>
-                  </CSSpaceBetween>
-                </div>
-              </CSColumnLayout>
-            )
-        }
+              </CSSpaceBetween>
+            </div>
+          </CSColumnLayout>
+        )}
       </CSContainer>
     </CSSpaceBetween>
   );
@@ -697,8 +999,14 @@ export function AdminLogsPage() {
   const [lines, setLines] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState(null);
-  const [linesCount, setLinesCount] = React.useState({ value: '100', label: t('admin_page.logs.lines_100') });
-  const [levelFilter, setLevelFilter] = React.useState({ value: '', label: t('admin_page.logs.level_all') });
+  const [linesCount, setLinesCount] = React.useState({
+    value: '100',
+    label: t('admin_page.logs.lines_100'),
+  });
+  const [levelFilter, setLevelFilter] = React.useState({
+    value: '',
+    label: t('admin_page.logs.level_all'),
+  });
 
   const linesOptions = [
     { value: '50', label: t('admin_page.logs.lines_50') },
@@ -740,7 +1048,9 @@ export function AdminLogsPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [linesCount.value]);
 
   const filtered = levelFilter.value
@@ -770,7 +1080,11 @@ export function AdminLogsPage() {
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
       <CSContainer
         header={
           <CSHeader
@@ -788,8 +1102,12 @@ export function AdminLogsPage() {
                   options={levelOptions}
                   onChange={({ detail }) => setLevelFilter(detail.selectedOption)}
                 />
-                <CSButton iconName="download" onClick={handleDownload} disabled={!lines.length}>{t('admin_page.common.download')}</CSButton>
-                <CSButton iconName="refresh" onClick={fetchLogs} loading={loading}>{t('admin_page.common.refresh')}</CSButton>
+                <CSButton iconName="download" onClick={handleDownload} disabled={!lines.length}>
+                  {t('admin_page.common.download')}
+                </CSButton>
+                <CSButton iconName="refresh" onClick={fetchLogs} loading={loading}>
+                  {t('admin_page.common.refresh')}
+                </CSButton>
               </CSSpaceBetween>
             }
           >
@@ -797,24 +1115,37 @@ export function AdminLogsPage() {
           </CSHeader>
         }
       >
-        {loading
-          ? <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
-          : filtered.length === 0
-            ? <CSBox textAlign="center" color="inherit">{t('admin_page.logs.empty')}</CSBox>
-            : (
-              <pre style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6, height: 500, overflowY: 'auto', margin: 0, padding: 8, background: 'var(--color-background-container-content, #fff)', borderRadius: 4 }}>
-                {filtered.map((line, i) => {
-                  const s = typeof line === 'string' ? line : String(line);
-                  const color = lineColor(s);
-                  return (
-                    <span key={i} style={color ? { color, display: 'block' } : { display: 'block' }}>
-                      {s}
-                    </span>
-                  );
-                })}
-              </pre>
-            )
-        }
+        {loading ? (
+          <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
+        ) : filtered.length === 0 ? (
+          <CSBox textAlign="center" color="inherit">
+            {t('admin_page.logs.empty')}
+          </CSBox>
+        ) : (
+          <pre
+            style={{
+              fontFamily: 'monospace',
+              fontSize: 12,
+              lineHeight: 1.6,
+              height: 500,
+              overflowY: 'auto',
+              margin: 0,
+              padding: 8,
+              background: 'var(--color-background-container-content, #fff)',
+              borderRadius: 4,
+            }}
+          >
+            {filtered.map((line, i) => {
+              const s = typeof line === 'string' ? line : String(line);
+              const color = lineColor(s);
+              return (
+                <span key={i} style={color ? { color, display: 'block' } : { display: 'block' }}>
+                  {s}
+                </span>
+              );
+            })}
+          </pre>
+        )}
       </CSContainer>
     </CSSpaceBetween>
   );
@@ -862,7 +1193,9 @@ export function AdminRegistrationPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function saveReg(patch) {
@@ -873,7 +1206,9 @@ export function AdminRegistrationPage() {
       setRegConfig(next);
       window.toast?.(t('admin_page.registration.save_ok'), { kind: 'ok' });
     } catch (e) {
-      window.toast?.(t('admin_page.registration.save_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.registration.save_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setSavingReg(false);
     }
@@ -892,7 +1227,9 @@ export function AdminRegistrationPage() {
       const codes = await window.api.admin.inviteCodes();
       setInviteCodes(codes.items || codes.codes || codes || []);
     } catch (e) {
-      window.toast?.(t('admin_page.registration.create_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.registration.create_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setCreating(false);
     }
@@ -907,7 +1244,9 @@ export function AdminRegistrationPage() {
       const codes = await window.api.admin.inviteCodes();
       setInviteCodes(codes.items || codes.codes || codes || []);
     } catch (e) {
-      window.toast?.(t('admin_page.registration.delete_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.registration.delete_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setDeleting(false);
     }
@@ -915,48 +1254,59 @@ export function AdminRegistrationPage() {
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
 
-      <CSContainer header={<CSHeader variant="h2">{t('admin_page.registration.config_title')}</CSHeader>}>
-        {loading
-          ? <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
-          : !regConfig
-            ? <CSBox textAlign="center" color="inherit">{t('admin_page.registration.empty')}</CSBox>
-            : (
-              <CSSpaceBetween size="m">
-                <CSFormField label={t('admin_page.registration.field_mode')}>
-                  <CSSpaceBetween direction="horizontal" size="xs">
-                    {modeOptions.map((opt) => (
-                      <CSButton
-                        key={opt.value}
-                        variant={regConfig.mode === opt.value ? 'primary' : 'normal'}
-                        onClick={() => saveReg({ mode: opt.value })}
-                        loading={savingReg && regConfig.mode !== opt.value}
-                      >
-                        {opt.label}
-                      </CSButton>
-                    ))}
-                  </CSSpaceBetween>
-                </CSFormField>
-                <CSFormField label={t('admin_page.registration.field_email_verify')}>
-                  <CSToggle
-                    checked={!!regConfig.email_verification}
-                    onChange={({ detail }) => saveReg({ email_verification: detail.checked })}
+      <CSContainer
+        header={<CSHeader variant="h2">{t('admin_page.registration.config_title')}</CSHeader>}
+      >
+        {loading ? (
+          <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
+        ) : !regConfig ? (
+          <CSBox textAlign="center" color="inherit">
+            {t('admin_page.registration.empty')}
+          </CSBox>
+        ) : (
+          <CSSpaceBetween size="m">
+            <CSFormField label={t('admin_page.registration.field_mode')}>
+              <CSSpaceBetween direction="horizontal" size="xs">
+                {modeOptions.map((opt) => (
+                  <CSButton
+                    key={opt.value}
+                    variant={regConfig.mode === opt.value ? 'primary' : 'normal'}
+                    onClick={() => saveReg({ mode: opt.value })}
+                    loading={savingReg && regConfig.mode !== opt.value}
                   >
-                    {regConfig.email_verification ? t('admin_page.common.toggle_on') : t('admin_page.common.toggle_off')}
-                  </CSToggle>
-                </CSFormField>
-                <CSFormField label={t('admin_page.registration.field_auto_approve')}>
-                  <CSToggle
-                    checked={!!regConfig.auto_approve}
-                    onChange={({ detail }) => saveReg({ auto_approve: detail.checked })}
-                  >
-                    {regConfig.auto_approve ? t('admin_page.common.toggle_on') : t('admin_page.common.toggle_off')}
-                  </CSToggle>
-                </CSFormField>
+                    {opt.label}
+                  </CSButton>
+                ))}
               </CSSpaceBetween>
-            )
-        }
+            </CSFormField>
+            <CSFormField label={t('admin_page.registration.field_email_verify')}>
+              <CSToggle
+                checked={!!regConfig.email_verification}
+                onChange={({ detail }) => saveReg({ email_verification: detail.checked })}
+              >
+                {regConfig.email_verification
+                  ? t('admin_page.common.toggle_on')
+                  : t('admin_page.common.toggle_off')}
+              </CSToggle>
+            </CSFormField>
+            <CSFormField label={t('admin_page.registration.field_auto_approve')}>
+              <CSToggle
+                checked={!!regConfig.auto_approve}
+                onChange={({ detail }) => saveReg({ auto_approve: detail.checked })}
+              >
+                {regConfig.auto_approve
+                  ? t('admin_page.common.toggle_on')
+                  : t('admin_page.common.toggle_off')}
+              </CSToggle>
+            </CSFormField>
+          </CSSpaceBetween>
+        )}
       </CSContainer>
 
       <CSContainer
@@ -965,7 +1315,9 @@ export function AdminRegistrationPage() {
             variant="h2"
             description={t('admin_page.registration.invite_description')}
             actions={
-              <CSButton variant="primary" onClick={() => setCreateModal(true)}>{t('admin_page.registration.invite_create_btn')}</CSButton>
+              <CSButton variant="primary" onClick={() => setCreateModal(true)}>
+                {t('admin_page.registration.invite_create_btn')}
+              </CSButton>
             }
           >
             {t('admin_page.registration.invite_title')}
@@ -977,25 +1329,55 @@ export function AdminRegistrationPage() {
           loadingText={t('admin_page.common.loading')}
           trackBy="code"
           items={inviteCodes}
-          empty={<CSBox textAlign="center" color="inherit">{t('admin_page.registration.invite_empty')}</CSBox>}
+          empty={
+            <CSBox textAlign="center" color="inherit">
+              {t('admin_page.registration.invite_empty')}
+            </CSBox>
+          }
           columnDefinitions={[
-            { id: 'code', header: t('admin_page.registration.col_code'), cell: (c) => <code>{c.code}</code> },
-            { id: 'note', header: t('admin_page.registration.col_note'), cell: (c) => c.note || '—' },
             {
-              id: 'status', header: t('admin_page.registration.col_status'),
-              cell: (c) => c.used_by
-                ? <CSBadge color="grey">{t('admin_page.registration.status_used', { user: c.used_by })}</CSBadge>
-                : c.expired_at && new Date(c.expired_at) < new Date()
-                  ? <CSBadge color="red">{t('admin_page.registration.status_expired')}</CSBadge>
-                  : <CSBadge color="green">{t('admin_page.registration.status_available')}</CSBadge>,
+              id: 'code',
+              header: t('admin_page.registration.col_code'),
+              cell: (c) => <code>{c.code}</code>,
             },
-            { id: 'expires', header: t('admin_page.registration.col_expires'), cell: (c) => fmtTime(c.expires_at || c.expired_at) },
-            { id: 'created', header: t('admin_page.common.created_at'), cell: (c) => fmtTime(c.created_at) },
             {
-              id: 'actions', header: t('admin_page.common.actions'),
-              cell: (c) => !c.used_by
-                ? <CSButton variant="inline-link" onClick={() => setDeleteTarget(c.code)}>{t('common.delete')}</CSButton>
-                : null,
+              id: 'note',
+              header: t('admin_page.registration.col_note'),
+              cell: (c) => c.note || '—',
+            },
+            {
+              id: 'status',
+              header: t('admin_page.registration.col_status'),
+              cell: (c) =>
+                c.used_by ? (
+                  <CSBadge color="grey">
+                    {t('admin_page.registration.status_used', { user: c.used_by })}
+                  </CSBadge>
+                ) : c.expired_at && new Date(c.expired_at) < new Date() ? (
+                  <CSBadge color="red">{t('admin_page.registration.status_expired')}</CSBadge>
+                ) : (
+                  <CSBadge color="green">{t('admin_page.registration.status_available')}</CSBadge>
+                ),
+            },
+            {
+              id: 'expires',
+              header: t('admin_page.registration.col_expires'),
+              cell: (c) => fmtTime(c.expires_at || c.expired_at),
+            },
+            {
+              id: 'created',
+              header: t('admin_page.common.created_at'),
+              cell: (c) => fmtTime(c.created_at),
+            },
+            {
+              id: 'actions',
+              header: t('admin_page.common.actions'),
+              cell: (c) =>
+                !c.used_by ? (
+                  <CSButton variant="inline-link" onClick={() => setDeleteTarget(c.code)}>
+                    {t('common.delete')}
+                  </CSButton>
+                ) : null,
             },
           ]}
         />
@@ -1009,8 +1391,12 @@ export function AdminRegistrationPage() {
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={creating} onClick={() => setCreateModal(false)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={creating} onClick={handleCreateCodes}>{t('admin_page.registration.create_btn')}</CSButton>
+                <CSButton variant="link" disabled={creating} onClick={() => setCreateModal(false)}>
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton variant="primary" loading={creating} onClick={handleCreateCodes}>
+                  {t('admin_page.registration.create_btn')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
@@ -1025,9 +1411,17 @@ export function AdminRegistrationPage() {
             </CSFormField>
             <CSFormField label={t('admin_page.registration.create_field_expires')}>
               <CSSelect
-                selectedOption={{ value: createForm.expires_days, label: t('admin_page.registration.expires_days', { d: createForm.expires_days }) }}
-                options={[7, 14, 30, 90, 180, 365].map((d) => ({ value: String(d), label: t('admin_page.registration.expires_days', { d }) }))}
-                onChange={({ detail }) => setCreateForm((f) => ({ ...f, expires_days: detail.selectedOption.value }))}
+                selectedOption={{
+                  value: createForm.expires_days,
+                  label: t('admin_page.registration.expires_days', { d: createForm.expires_days }),
+                }}
+                options={[7, 14, 30, 90, 180, 365].map((d) => ({
+                  value: String(d),
+                  label: t('admin_page.registration.expires_days', { d }),
+                }))}
+                onChange={({ detail }) =>
+                  setCreateForm((f) => ({ ...f, expires_days: detail.selectedOption.value }))
+                }
               />
             </CSFormField>
             <CSFormField label={t('admin_page.registration.create_field_note')}>
@@ -1049,8 +1443,16 @@ export function AdminRegistrationPage() {
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={deleting} onClick={() => setDeleteTarget(null)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={deleting} onClick={() => handleDelete(deleteTarget)}>{t('admin_page.registration.delete_btn')}</CSButton>
+                <CSButton variant="link" disabled={deleting} onClick={() => setDeleteTarget(null)}>
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton
+                  variant="primary"
+                  loading={deleting}
+                  onClick={() => handleDelete(deleteTarget)}
+                >
+                  {t('admin_page.registration.delete_btn')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
@@ -1090,7 +1492,9 @@ export function AdminSecurityPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function upd(path, val) {
@@ -1116,7 +1520,9 @@ export function AdminSecurityPage() {
       setConfig(draft);
       window.toast?.(t('admin_page.security.save_ok'), { kind: 'ok' });
     } catch (e) {
-      window.toast?.(t('admin_page.security.save_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.security.save_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setSaving(false);
     }
@@ -1126,14 +1532,25 @@ export function AdminSecurityPage() {
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
-      {loading
-        ? <CSBox key="loading" color="inherit">{t('admin_page.common.loading')}</CSBox>
-        : !draft
-          ? <CSBox key="empty" textAlign="center" color="inherit">{t('admin_page.security.empty')}</CSBox>
-          : null}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
+      {loading ? (
+        <CSBox key="loading" color="inherit">
+          {t('admin_page.common.loading')}
+        </CSBox>
+      ) : !draft ? (
+        <CSBox key="empty" textAlign="center" color="inherit">
+          {t('admin_page.security.empty')}
+        </CSBox>
+      ) : null}
       {!loading && draft && (
-        <CSContainer key="rate-limit" header={<CSHeader variant="h2">{t('admin_page.security.rate_limit_title')}</CSHeader>}>
+        <CSContainer
+          key="rate-limit"
+          header={<CSHeader variant="h2">{t('admin_page.security.rate_limit_title')}</CSHeader>}
+        >
           <CSAlert type="info">{t('admin_page.security.rate_limit_notice')}</CSAlert>
           <CSSpaceBetween size="m">
             <CSColumnLayout columns={3} variant="text-grid">
@@ -1163,7 +1580,10 @@ export function AdminSecurityPage() {
         </CSContainer>
       )}
       {!loading && draft && (
-        <CSContainer key="password" header={<CSHeader variant="h2">{t('admin_page.security.password_title')}</CSHeader>}>
+        <CSContainer
+          key="password"
+          header={<CSHeader variant="h2">{t('admin_page.security.password_title')}</CSHeader>}
+        >
           <CSSpaceBetween size="m">
             <CSColumnLayout columns={2} variant="text-grid">
               <CSFormField label={t('admin_page.security.field_min_length')}>
@@ -1178,7 +1598,9 @@ export function AdminSecurityPage() {
                   checked={!!d.password?.require_digit}
                   onChange={({ detail }) => upd('password.require_digit', detail.checked)}
                 >
-                  {d.password?.require_digit ? t('admin_page.security.digit_yes') : t('admin_page.security.digit_no')}
+                  {d.password?.require_digit
+                    ? t('admin_page.security.digit_yes')
+                    : t('admin_page.security.digit_no')}
                 </CSToggle>
               </CSFormField>
             </CSColumnLayout>
@@ -1186,7 +1608,10 @@ export function AdminSecurityPage() {
         </CSContainer>
       )}
       {!loading && draft && (
-        <CSContainer key="session" header={<CSHeader variant="h2">{t('admin_page.security.session_title')}</CSHeader>}>
+        <CSContainer
+          key="session"
+          header={<CSHeader variant="h2">{t('admin_page.security.session_title')}</CSHeader>}
+        >
           <CSFormField label={t('admin_page.security.field_session_timeout')}>
             <CSInput
               type="number"
@@ -1198,7 +1623,10 @@ export function AdminSecurityPage() {
         </CSContainer>
       )}
       {!loading && draft && (
-        <CSContainer key="lockout" header={<CSHeader variant="h2">{t('admin_page.security.lockout_title')}</CSHeader>}>
+        <CSContainer
+          key="lockout"
+          header={<CSHeader variant="h2">{t('admin_page.security.lockout_title')}</CSHeader>}
+        >
           <CSColumnLayout columns={2} variant="text-grid">
             <CSFormField label={t('admin_page.security.field_max_attempts')}>
               <CSInput
@@ -1218,11 +1646,24 @@ export function AdminSecurityPage() {
         </CSContainer>
       )}
       {!loading && draft && (
-        <CSContainer key="ip-blocklist" header={<CSHeader variant="h2">{t('admin_page.security.ip_blocklist_title')}</CSHeader>}>
+        <CSContainer
+          key="ip-blocklist"
+          header={<CSHeader variant="h2">{t('admin_page.security.ip_blocklist_title')}</CSHeader>}
+        >
           <CSFormField label={t('admin_page.security.field_ip_blocklist')}>
             <CSTextarea
-              value={Array.isArray(d.ip_blocklist) ? d.ip_blocklist.join('\n') : (d.ip_blocklist || '')}
-              onChange={({ detail }) => upd('ip_blocklist', detail.value.split('\n').map((s) => s.trim()).filter(Boolean))}
+              value={
+                Array.isArray(d.ip_blocklist) ? d.ip_blocklist.join('\n') : d.ip_blocklist || ''
+              }
+              onChange={({ detail }) =>
+                upd(
+                  'ip_blocklist',
+                  detail.value
+                    .split('\n')
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                )
+              }
               rows={6}
               placeholder="192.168.1.1&#10;10.0.0.0/8"
             />
@@ -1231,7 +1672,9 @@ export function AdminSecurityPage() {
       )}
       {!loading && draft && (
         <CSBox key="save-btn" float="right">
-          <CSButton variant="primary" loading={saving} onClick={save}>{t('admin_page.security.save_btn')}</CSButton>
+          <CSButton variant="primary" loading={saving} onClick={save}>
+            {t('admin_page.security.save_btn')}
+          </CSButton>
         </CSBox>
       )}
     </CSSpaceBetween>
@@ -1246,13 +1689,19 @@ export function AdminDmcaTakedownsPage() {
   const [items, setItems] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState(null);
-  const [statusFilter, setStatusFilter] = React.useState({ value: 'open', label: t('admin_page.dmca_takedowns.status_open') });
+  const [statusFilter, setStatusFilter] = React.useState({
+    value: 'open',
+    label: t('admin_page.dmca_takedowns.status_open'),
+  });
   const [actionModal, setActionModal] = React.useState(null); // { item, action }
   const [actionReason, setActionReason] = React.useState('');
   const [actionBusy, setActionBusy] = React.useState(false);
   const [createModal, setCreateModal] = React.useState(false);
   const [createForm, setCreateForm] = React.useState({
-    complainant_name: '', complainant_email: '', infringing_url: '', original_work_desc: '',
+    complainant_name: '',
+    complainant_email: '',
+    infringing_url: '',
+    original_work_desc: '',
   });
   const [creating, setCreating] = React.useState(false);
   const [counterModal, setCounterModal] = React.useState(null); // item
@@ -1281,21 +1730,26 @@ export function AdminDmcaTakedownsPage() {
     }
   }, [statusFilter.value]);
 
-  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
 
   async function doAction() {
     if (!actionModal) return;
     setActionBusy(true);
     try {
       await window.api.admin.dmcaTakedowns.action(actionModal.item.id, {
-        action: actionModal.action, reason: actionReason,
+        action: actionModal.action,
+        reason: actionReason,
       });
       window.toast?.(t('admin_page.dmca_takedowns.op_ok'), { kind: 'ok' });
       setActionModal(null);
       setActionReason('');
       load();
     } catch (e) {
-      window.toast?.(t('admin_page.dmca_takedowns.op_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.dmca_takedowns.op_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setActionBusy(false);
     }
@@ -1307,10 +1761,17 @@ export function AdminDmcaTakedownsPage() {
       await window.api.admin.dmcaTakedowns.create(createForm);
       window.toast?.(t('admin_page.dmca_takedowns.create_ok'), { kind: 'ok' });
       setCreateModal(false);
-      setCreateForm({ complainant_name: '', complainant_email: '', infringing_url: '', original_work_desc: '' });
+      setCreateForm({
+        complainant_name: '',
+        complainant_email: '',
+        infringing_url: '',
+        original_work_desc: '',
+      });
       load();
     } catch (e) {
-      window.toast?.(t('admin_page.dmca_takedowns.create_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.dmca_takedowns.create_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setCreating(false);
     }
@@ -1326,7 +1787,9 @@ export function AdminDmcaTakedownsPage() {
       setCounterNotes('');
       load();
     } catch (e) {
-      window.toast?.(t('admin_page.common.op_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.common.op_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setCounterBusy(false);
     }
@@ -1346,7 +1809,11 @@ export function AdminDmcaTakedownsPage() {
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
       <CSContainer
         header={
           <CSHeader
@@ -1359,8 +1826,12 @@ export function AdminDmcaTakedownsPage() {
                   options={statusOptions}
                   onChange={({ detail }) => setStatusFilter(detail.selectedOption)}
                 />
-                <CSButton variant="primary" onClick={() => setCreateModal(true)}>{t('admin_page.dmca_takedowns.create_btn')}</CSButton>
-                <CSButton iconName="refresh" onClick={load} loading={loading}>{t('admin_page.common.refresh')}</CSButton>
+                <CSButton variant="primary" onClick={() => setCreateModal(true)}>
+                  {t('admin_page.dmca_takedowns.create_btn')}
+                </CSButton>
+                <CSButton iconName="refresh" onClick={load} loading={loading}>
+                  {t('admin_page.common.refresh')}
+                </CSButton>
               </CSSpaceBetween>
             }
           >
@@ -1373,30 +1844,107 @@ export function AdminDmcaTakedownsPage() {
           loadingText={t('admin_page.common.loading')}
           trackBy="id"
           items={items}
-          empty={<CSBox textAlign="center" color="inherit">{t('admin_page.dmca_takedowns.empty')}</CSBox>}
+          empty={
+            <CSBox textAlign="center" color="inherit">
+              {t('admin_page.dmca_takedowns.empty')}
+            </CSBox>
+          }
           columnDefinitions={[
-            { id: 'id', header: t('admin_page.dmca_takedowns.col_id'), cell: (r) => `#${r.id}`, width: 60 },
-            { id: 'complainant', header: t('admin_page.dmca_takedowns.col_complainant'), cell: (r) => `${r.complainant_name || '—'} <${r.complainant_email || '—'}>` },
-            { id: 'url', header: t('admin_page.dmca_takedowns.col_url'), cell: (r) => <a href={r.infringing_url} target="_blank" rel="noopener noreferrer" style={{ wordBreak: 'break-all' }}>{r.infringing_url}</a> },
-            { id: 'status', header: t('admin_page.dmca_takedowns.col_status'), cell: (r) => statusBadge(r.status) },
-            { id: 'restore_after', header: t('admin_page.dmca_takedowns.col_restore_after'), cell: (r) => r.restore_after ? fmtTime(r.restore_after) : '—' },
-            { id: 'created_at', header: t('admin_page.dmca_takedowns.col_created_at'), cell: (r) => fmtTime(r.created_at) },
             {
-              id: 'actions', header: t('admin_page.common.actions'),
+              id: 'id',
+              header: t('admin_page.dmca_takedowns.col_id'),
+              cell: (r) => `#${r.id}`,
+              width: 60,
+            },
+            {
+              id: 'complainant',
+              header: t('admin_page.dmca_takedowns.col_complainant'),
+              cell: (r) => `${r.complainant_name || '—'} <${r.complainant_email || '—'}>`,
+            },
+            {
+              id: 'url',
+              header: t('admin_page.dmca_takedowns.col_url'),
+              cell: (r) => (
+                <a
+                  href={r.infringing_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ wordBreak: 'break-all' }}
+                >
+                  {r.infringing_url}
+                </a>
+              ),
+            },
+            {
+              id: 'status',
+              header: t('admin_page.dmca_takedowns.col_status'),
+              cell: (r) => statusBadge(r.status),
+            },
+            {
+              id: 'restore_after',
+              header: t('admin_page.dmca_takedowns.col_restore_after'),
+              cell: (r) => (r.restore_after ? fmtTime(r.restore_after) : '—'),
+            },
+            {
+              id: 'created_at',
+              header: t('admin_page.dmca_takedowns.col_created_at'),
+              cell: (r) => fmtTime(r.created_at),
+            },
+            {
+              id: 'actions',
+              header: t('admin_page.common.actions'),
               cell: (r) => (
                 <CSSpaceBetween direction="horizontal" size="xs">
                   {r.status === 'open' && (
-                    <CSButton key="takedown" variant="inline-link" onClick={() => { setActionModal({ item: r, action: 'takedown' }); setActionReason(''); }}>{t('admin_page.dmca_takedowns.btn_takedown')}</CSButton>
+                    <CSButton
+                      key="takedown"
+                      variant="inline-link"
+                      onClick={() => {
+                        setActionModal({ item: r, action: 'takedown' });
+                        setActionReason('');
+                      }}
+                    >
+                      {t('admin_page.dmca_takedowns.btn_takedown')}
+                    </CSButton>
                   )}
                   {r.status === 'open' && (
-                    <CSButton key="reject" variant="inline-link" onClick={() => { setActionModal({ item: r, action: 'reject' }); setActionReason(''); }}>{t('admin_page.dmca_takedowns.btn_reject')}</CSButton>
+                    <CSButton
+                      key="reject"
+                      variant="inline-link"
+                      onClick={() => {
+                        setActionModal({ item: r, action: 'reject' });
+                        setActionReason('');
+                      }}
+                    >
+                      {t('admin_page.dmca_takedowns.btn_reject')}
+                    </CSButton>
                   )}
                   {r.status === 'closed' && (
-                    <CSButton key="counter" variant="inline-link" onClick={() => { setCounterModal(r); setCounterNotes(''); }}>{t('admin_page.dmca_takedowns.btn_counter')}</CSButton>
+                    <CSButton
+                      key="counter"
+                      variant="inline-link"
+                      onClick={() => {
+                        setCounterModal(r);
+                        setCounterNotes('');
+                      }}
+                    >
+                      {t('admin_page.dmca_takedowns.btn_counter')}
+                    </CSButton>
                   )}
-                  {r.status === 'counter_received' && r.restore_after && new Date(r.restore_after) <= new Date() && (
-                    <CSButton key="restore" variant="inline-link" onClick={() => { setActionModal({ item: r, action: 'restore' }); setActionReason(t('admin_page.dmca_takedowns.restore_default_reason')); }}>{t('admin_page.dmca_takedowns.btn_restore')}</CSButton>
-                  )}
+                  {r.status === 'counter_received' &&
+                    r.restore_after &&
+                    new Date(r.restore_after) <= new Date() && (
+                      <CSButton
+                        key="restore"
+                        variant="inline-link"
+                        onClick={() => {
+                          setActionModal({ item: r, action: 'restore' });
+                          setActionReason(t('admin_page.dmca_takedowns.restore_default_reason'));
+                        }}
+                      >
+                        {t('admin_page.dmca_takedowns.btn_restore')}
+                      </CSButton>
+                    )}
                 </CSSpaceBetween>
               ),
             },
@@ -1413,24 +1961,51 @@ export function AdminDmcaTakedownsPage() {
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={creating} onClick={() => setCreateModal(false)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={creating} onClick={doCreate}>{t('admin_page.common.submit')}</CSButton>
+                <CSButton variant="link" disabled={creating} onClick={() => setCreateModal(false)}>
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton variant="primary" loading={creating} onClick={doCreate}>
+                  {t('admin_page.common.submit')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
         >
           <CSSpaceBetween size="m">
             <CSFormField label={t('admin_page.dmca_takedowns.field_complainant_name')}>
-              <CSInput value={createForm.complainant_name} onChange={({ detail }) => setCreateForm((f) => ({ ...f, complainant_name: detail.value }))} />
+              <CSInput
+                value={createForm.complainant_name}
+                onChange={({ detail }) =>
+                  setCreateForm((f) => ({ ...f, complainant_name: detail.value }))
+                }
+              />
             </CSFormField>
             <CSFormField label={t('admin_page.dmca_takedowns.field_complainant_email')}>
-              <CSInput value={createForm.complainant_email} onChange={({ detail }) => setCreateForm((f) => ({ ...f, complainant_email: detail.value }))} type="email" />
+              <CSInput
+                value={createForm.complainant_email}
+                onChange={({ detail }) =>
+                  setCreateForm((f) => ({ ...f, complainant_email: detail.value }))
+                }
+                type="email"
+              />
             </CSFormField>
             <CSFormField label={t('admin_page.dmca_takedowns.field_infringing_url')}>
-              <CSInput value={createForm.infringing_url} onChange={({ detail }) => setCreateForm((f) => ({ ...f, infringing_url: detail.value }))} placeholder="https://play.stellatrix.icu/..." />
+              <CSInput
+                value={createForm.infringing_url}
+                onChange={({ detail }) =>
+                  setCreateForm((f) => ({ ...f, infringing_url: detail.value }))
+                }
+                placeholder="https://play.stellatrix.icu/..."
+              />
             </CSFormField>
             <CSFormField label={t('admin_page.dmca_takedowns.field_original_work')}>
-              <CSTextarea value={createForm.original_work_desc} onChange={({ detail }) => setCreateForm((f) => ({ ...f, original_work_desc: detail.value }))} rows={3} />
+              <CSTextarea
+                value={createForm.original_work_desc}
+                onChange={({ detail }) =>
+                  setCreateForm((f) => ({ ...f, original_work_desc: detail.value }))
+                }
+                rows={3}
+              />
             </CSFormField>
           </CSSpaceBetween>
         </CSModal>
@@ -1441,20 +2016,41 @@ export function AdminDmcaTakedownsPage() {
         <CSModal
           visible
           onDismiss={() => !actionBusy && setActionModal(null)}
-          header={t('admin_page.dmca_takedowns.action_modal_title', { action: actionModal.action === 'takedown' ? t('admin_page.dmca_takedowns.action_takedown_label') : actionModal.action === 'restore' ? t('admin_page.dmca_takedowns.action_restore_label') : t('admin_page.dmca_takedowns.action_reject_label') })}
+          header={t('admin_page.dmca_takedowns.action_modal_title', {
+            action:
+              actionModal.action === 'takedown'
+                ? t('admin_page.dmca_takedowns.action_takedown_label')
+                : actionModal.action === 'restore'
+                  ? t('admin_page.dmca_takedowns.action_restore_label')
+                  : t('admin_page.dmca_takedowns.action_reject_label'),
+          })}
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={actionBusy} onClick={() => setActionModal(null)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={actionBusy} onClick={doAction}>{t('admin_page.common.confirm')}</CSButton>
+                <CSButton variant="link" disabled={actionBusy} onClick={() => setActionModal(null)}>
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton variant="primary" loading={actionBusy} onClick={doAction}>
+                  {t('admin_page.common.confirm')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
         >
           <CSSpaceBetween size="m">
-            <CSBox>{t('admin_page.dmca_takedowns.action_record_label', { id: actionModal.item.id, url: actionModal.item.infringing_url })}</CSBox>
+            <CSBox>
+              {t('admin_page.dmca_takedowns.action_record_label', {
+                id: actionModal.item.id,
+                url: actionModal.item.infringing_url,
+              })}
+            </CSBox>
             <CSFormField label={t('admin_page.dmca_takedowns.action_reason_label')}>
-              <CSTextarea value={actionReason} onChange={({ detail }) => setActionReason(detail.value)} rows={3} placeholder={t('admin_page.dmca_takedowns.action_reason_placeholder')} />
+              <CSTextarea
+                value={actionReason}
+                onChange={({ detail }) => setActionReason(detail.value)}
+                rows={3}
+                placeholder={t('admin_page.dmca_takedowns.action_reason_placeholder')}
+              />
             </CSFormField>
           </CSSpaceBetween>
         </CSModal>
@@ -1469,8 +2065,16 @@ export function AdminDmcaTakedownsPage() {
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={counterBusy} onClick={() => setCounterModal(null)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={counterBusy} onClick={doCounter}>{t('admin_page.common.submit')}</CSButton>
+                <CSButton
+                  variant="link"
+                  disabled={counterBusy}
+                  onClick={() => setCounterModal(null)}
+                >
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton variant="primary" loading={counterBusy} onClick={doCounter}>
+                  {t('admin_page.common.submit')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
@@ -1478,7 +2082,12 @@ export function AdminDmcaTakedownsPage() {
           <CSSpaceBetween size="m">
             <CSAlert type="info">{t('admin_page.dmca_takedowns.counter_info')}</CSAlert>
             <CSFormField label={t('admin_page.dmca_takedowns.counter_notes_label')}>
-              <CSTextarea value={counterNotes} onChange={({ detail }) => setCounterNotes(detail.value)} rows={3} placeholder={t('admin_page.dmca_takedowns.counter_notes_placeholder')} />
+              <CSTextarea
+                value={counterNotes}
+                onChange={({ detail }) => setCounterNotes(detail.value)}
+                rows={3}
+                placeholder={t('admin_page.dmca_takedowns.counter_notes_placeholder')}
+              />
             </CSFormField>
           </CSSpaceBetween>
         </CSModal>
@@ -1513,23 +2122,34 @@ export function AdminDmcaStrikesPage() {
     }
   }, []);
 
-  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
 
   async function doStrike() {
     if (!strikeModal) return;
     setStrikeBusy(true);
     try {
-      const res = await window.api.admin.dmcaStrikes.increment(strikeModal.user_id, { reason: strikeReason });
+      const res = await window.api.admin.dmcaStrikes.increment(strikeModal.user_id, {
+        reason: strikeReason,
+      });
       if (res.terminate) {
-        window.toast?.(t('admin_page.dmca_strikes.strike_added_terminated', { count: res.strike_count }), { kind: 'danger', duration: 8000 });
+        window.toast?.(
+          t('admin_page.dmca_strikes.strike_added_terminated', { count: res.strike_count }),
+          { kind: 'danger', duration: 8000 },
+        );
       } else {
-        window.toast?.(t('admin_page.dmca_strikes.strike_added_ok', { count: res.strike_count }), { kind: 'ok' });
+        window.toast?.(t('admin_page.dmca_strikes.strike_added_ok', { count: res.strike_count }), {
+          kind: 'ok',
+        });
       }
       setStrikeModal(null);
       setStrikeReason('');
       load();
     } catch (e) {
-      window.toast?.(t('admin_page.dmca_strikes.op_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.dmca_strikes.op_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setStrikeBusy(false);
     }
@@ -1543,13 +2163,21 @@ export function AdminDmcaStrikesPage() {
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
       <CSContainer
         header={
           <CSHeader
             variant="h2"
             description={t('admin_page.dmca_strikes.description')}
-            actions={<CSButton iconName="refresh" onClick={load} loading={loading}>{t('admin_page.common.refresh')}</CSButton>}
+            actions={
+              <CSButton iconName="refresh" onClick={load} loading={loading}>
+                {t('admin_page.common.refresh')}
+              </CSButton>
+            }
           >
             {t('admin_page.dmca_strikes.title')}
           </CSHeader>
@@ -1560,26 +2188,43 @@ export function AdminDmcaStrikesPage() {
           loadingText={t('admin_page.common.loading')}
           trackBy="user_id"
           items={users}
-          empty={<CSBox textAlign="center" color="inherit">{t('admin_page.dmca_strikes.empty')}</CSBox>}
+          empty={
+            <CSBox textAlign="center" color="inherit">
+              {t('admin_page.dmca_strikes.empty')}
+            </CSBox>
+          }
           columnDefinitions={[
-            { id: 'username', header: t('admin_page.dmca_strikes.col_username'), cell: (u) => u.username || `uid:${u.user_id}` },
             {
-              id: 'count', header: t('admin_page.dmca_strikes.col_count'),
-              cell: (u) => <CSBadge color={strikeBadgeColor(u.strike_count)}>{u.strike_count} / 3</CSBadge>,
+              id: 'username',
+              header: t('admin_page.dmca_strikes.col_username'),
+              cell: (u) => u.username || `uid:${u.user_id}`,
             },
             {
-              id: 'history', header: t('admin_page.dmca_strikes.col_history'),
+              id: 'count',
+              header: t('admin_page.dmca_strikes.col_count'),
+              cell: (u) => (
+                <CSBadge color={strikeBadgeColor(u.strike_count)}>{u.strike_count} / 3</CSBadge>
+              ),
+            },
+            {
+              id: 'history',
+              header: t('admin_page.dmca_strikes.col_history'),
               cell: (u) => {
                 const isExp = expanded === u.user_id;
                 return (
                   <div>
-                    <CSButton variant="inline-link" onClick={() => setExpanded(isExp ? null : u.user_id)}>
+                    <CSButton
+                      variant="inline-link"
+                      onClick={() => setExpanded(isExp ? null : u.user_id)}
+                    >
                       {isExp ? t('admin_page.common.collapse') : t('admin_page.common.expand')}
                     </CSButton>
                     {isExp && (
                       <ul style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 12 }}>
                         {(u.strikes || []).map((s) => (
-                          <li key={s.id}><code>{fmtTime(s.created_at)}</code> — {s.reason}</li>
+                          <li key={s.id}>
+                            <code>{fmtTime(s.created_at)}</code> — {s.reason}
+                          </li>
                         ))}
                       </ul>
                     )}
@@ -1588,15 +2233,20 @@ export function AdminDmcaStrikesPage() {
               },
             },
             {
-              id: 'actions', header: t('admin_page.common.actions'),
-              cell: (u) => u.strike_count < 3 && (
-                <CSButton
-                  variant="inline-link"
-                  onClick={() => { setStrikeModal({ user_id: u.user_id, username: u.username }); setStrikeReason(''); }}
-                >
-                  {t('admin_page.dmca_strikes.btn_add')}
-                </CSButton>
-              ),
+              id: 'actions',
+              header: t('admin_page.common.actions'),
+              cell: (u) =>
+                u.strike_count < 3 && (
+                  <CSButton
+                    variant="inline-link"
+                    onClick={() => {
+                      setStrikeModal({ user_id: u.user_id, username: u.username });
+                      setStrikeReason('');
+                    }}
+                  >
+                    {t('admin_page.dmca_strikes.btn_add')}
+                  </CSButton>
+                ),
             },
           ]}
         />
@@ -1610,8 +2260,12 @@ export function AdminDmcaStrikesPage() {
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={strikeBusy} onClick={() => setStrikeModal(null)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={strikeBusy} onClick={doStrike}>{t('admin_page.dmca_strikes.strike_confirm_btn')}</CSButton>
+                <CSButton variant="link" disabled={strikeBusy} onClick={() => setStrikeModal(null)}>
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton variant="primary" loading={strikeBusy} onClick={doStrike}>
+                  {t('admin_page.dmca_strikes.strike_confirm_btn')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
@@ -1641,7 +2295,10 @@ export function AdminCsamReportsPage() {
   const [reports, setReports] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState(null);
-  const [statusFilter, setStatusFilter] = React.useState({ value: 'pending', label: t('admin_page.csam.status_pending') });
+  const [statusFilter, setStatusFilter] = React.useState({
+    value: 'pending',
+    label: t('admin_page.csam.status_pending'),
+  });
   const [decisionModal, setDecisionModal] = React.useState(null); // report item
   const [decisionForm, setDecisionForm] = React.useState({ decision: '', notes: '' });
   const [deciding, setDeciding] = React.useState(false);
@@ -1670,7 +2327,9 @@ export function AdminCsamReportsPage() {
     }
   }, [statusFilter.value]);
 
-  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
 
   async function doDecision() {
     if (!decisionModal || !decisionForm.decision) return;
@@ -1700,7 +2359,11 @@ export function AdminCsamReportsPage() {
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
       <CSAlert type="warning">{t('admin_page.csam.warning')}</CSAlert>
       <CSContainer
         header={
@@ -1714,7 +2377,9 @@ export function AdminCsamReportsPage() {
                   options={statusOptions}
                   onChange={({ detail }) => setStatusFilter(detail.selectedOption)}
                 />
-                <CSButton iconName="refresh" onClick={load} loading={loading}>{t('admin_page.common.refresh')}</CSButton>
+                <CSButton iconName="refresh" onClick={load} loading={loading}>
+                  {t('admin_page.common.refresh')}
+                </CSButton>
               </CSSpaceBetween>
             }
           >
@@ -1727,25 +2392,63 @@ export function AdminCsamReportsPage() {
           loadingText={t('admin_page.common.loading')}
           trackBy="id"
           items={reports}
-          empty={<CSBox textAlign="center" color="inherit">{t('admin_page.csam.empty')}</CSBox>}
+          empty={
+            <CSBox textAlign="center" color="inherit">
+              {t('admin_page.csam.empty')}
+            </CSBox>
+          }
           columnDefinitions={[
             { id: 'id', header: t('admin_page.csam.col_id'), cell: (r) => `#${r.id}`, width: 60 },
-            { id: 'reported_user', header: t('admin_page.csam.col_reported_user'), cell: (r) => r.reported_username || `uid:${r.reported_user_id}` || '—' },
-            { id: 'content_url', header: t('admin_page.csam.col_content'), cell: (r) => r.content_url || t('admin_page.csam.content_no_url') },
-            { id: 'status', header: t('admin_page.csam.col_status'), cell: (r) => r.status === 'pending' ? <CSBadge color="red">{t('admin_page.csam.badge_pending')}</CSBadge> : <CSBadge color="grey">{t('admin_page.csam.badge_decided')}</CSBadge> },
-            { id: 'decision', header: t('admin_page.csam.col_decision'), cell: (r) => r.decision ? decisionBadge(r.decision) : '—' },
-            { id: 'cybertip', header: t('admin_page.csam.col_cybertip'), cell: (r) => r.cybertip_report_id || '—' },
-            { id: 'created_at', header: t('admin_page.csam.col_created_at'), cell: (r) => fmtTime(r.created_at) },
             {
-              id: 'actions', header: t('admin_page.common.actions'),
-              cell: (r) => r.status === 'pending' && (
-                <CSButton
-                  variant="inline-link"
-                  onClick={() => { setDecisionModal(r); setDecisionForm({ decision: '', notes: '' }); }}
-                >
-                  {t('admin_page.csam.btn_decide')}
-                </CSButton>
-              ),
+              id: 'reported_user',
+              header: t('admin_page.csam.col_reported_user'),
+              cell: (r) => r.reported_username || `uid:${r.reported_user_id}` || '—',
+            },
+            {
+              id: 'content_url',
+              header: t('admin_page.csam.col_content'),
+              cell: (r) => r.content_url || t('admin_page.csam.content_no_url'),
+            },
+            {
+              id: 'status',
+              header: t('admin_page.csam.col_status'),
+              cell: (r) =>
+                r.status === 'pending' ? (
+                  <CSBadge color="red">{t('admin_page.csam.badge_pending')}</CSBadge>
+                ) : (
+                  <CSBadge color="grey">{t('admin_page.csam.badge_decided')}</CSBadge>
+                ),
+            },
+            {
+              id: 'decision',
+              header: t('admin_page.csam.col_decision'),
+              cell: (r) => (r.decision ? decisionBadge(r.decision) : '—'),
+            },
+            {
+              id: 'cybertip',
+              header: t('admin_page.csam.col_cybertip'),
+              cell: (r) => r.cybertip_report_id || '—',
+            },
+            {
+              id: 'created_at',
+              header: t('admin_page.csam.col_created_at'),
+              cell: (r) => fmtTime(r.created_at),
+            },
+            {
+              id: 'actions',
+              header: t('admin_page.common.actions'),
+              cell: (r) =>
+                r.status === 'pending' && (
+                  <CSButton
+                    variant="inline-link"
+                    onClick={() => {
+                      setDecisionModal(r);
+                      setDecisionForm({ decision: '', notes: '' });
+                    }}
+                  >
+                    {t('admin_page.csam.btn_decide')}
+                  </CSButton>
+                ),
             },
           ]}
         />
@@ -1759,8 +2462,17 @@ export function AdminCsamReportsPage() {
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={deciding} onClick={() => setDecisionModal(null)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={deciding} disabled={!decisionForm.decision} onClick={doDecision}>{t('admin_page.common.confirm')}</CSButton>
+                <CSButton variant="link" disabled={deciding} onClick={() => setDecisionModal(null)}>
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton
+                  variant="primary"
+                  loading={deciding}
+                  disabled={!decisionForm.decision}
+                  onClick={doDecision}
+                >
+                  {t('admin_page.common.confirm')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
@@ -1769,9 +2481,16 @@ export function AdminCsamReportsPage() {
             <CSAlert type="warning">{t('admin_page.csam.decision_warning')}</CSAlert>
             <CSFormField label={t('admin_page.csam.decision_field')}>
               <CSSelect
-                selectedOption={decisionOptions.find((o) => o.value === decisionForm.decision) || { value: '', label: t('admin_page.csam.decision_select_placeholder') }}
+                selectedOption={
+                  decisionOptions.find((o) => o.value === decisionForm.decision) || {
+                    value: '',
+                    label: t('admin_page.csam.decision_select_placeholder'),
+                  }
+                }
                 options={decisionOptions}
-                onChange={({ detail }) => setDecisionForm((f) => ({ ...f, decision: detail.selectedOption.value }))}
+                onChange={({ detail }) =>
+                  setDecisionForm((f) => ({ ...f, decision: detail.selectedOption.value }))
+                }
               />
             </CSFormField>
             <CSFormField label={t('admin_page.csam.notes_field')}>
@@ -1833,7 +2552,9 @@ export function AdminAupActionsPage() {
       setSuspendForm({ reason: '', duration_days: '' });
       doSearch();
     } catch (e) {
-      window.toast?.(t('admin_page.common.op_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.common.op_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setSuspendBusy(false);
     }
@@ -1848,7 +2569,9 @@ export function AdminAupActionsPage() {
       setUnsuspendModal(null);
       doSearch();
     } catch (e) {
-      window.toast?.(t('admin_page.common.op_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.common.op_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setUnsuspendBusy(false);
     }
@@ -1864,7 +2587,9 @@ export function AdminAupActionsPage() {
       setTerminateReason('');
       doSearch();
     } catch (e) {
-      window.toast?.(t('admin_page.common.op_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.common.op_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setTerminateBusy(false);
     }
@@ -1872,7 +2597,11 @@ export function AdminAupActionsPage() {
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.aup.error_title')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.aup.error_title')}>
+          {err}
+        </CSAlert>
+      )}
 
       <CSContainer
         header={
@@ -1888,10 +2617,14 @@ export function AdminAupActionsPage() {
               placeholder={t('admin_page.aup.search_placeholder')}
               value={search}
               onChange={({ detail }) => setSearch(detail.value)}
-              onKeyDown={({ detail }) => { if (detail.key === 'Enter') doSearch(); }}
+              onKeyDown={({ detail }) => {
+                if (detail.key === 'Enter') doSearch();
+              }}
               type="search"
             />
-            <CSButton onClick={doSearch} loading={loading}>{t('admin_page.aup.search_btn')}</CSButton>
+            <CSButton onClick={doSearch} loading={loading}>
+              {t('admin_page.aup.search_btn')}
+            </CSButton>
           </CSSpaceBetween>
 
           {users.length > 0 && (
@@ -1900,35 +2633,68 @@ export function AdminAupActionsPage() {
               loadingText={t('admin_page.common.loading')}
               trackBy="id"
               items={users}
-              empty={<CSBox textAlign="center" color="inherit">{t('admin_page.aup.no_results')}</CSBox>}
+              empty={
+                <CSBox textAlign="center" color="inherit">
+                  {t('admin_page.aup.no_results')}
+                </CSBox>
+              }
               columnDefinitions={[
-                { id: 'username', header: t('admin_page.aup.col_username'), cell: (u) => u.username },
-                { id: 'display_name', header: t('admin_page.aup.col_display_name'), cell: (u) => u.display_name || '—' },
                 {
-                  id: 'status', header: t('admin_page.aup.col_status'),
-                  cell: (u) => u.deactivated_at
-                    ? <CSStatusIndicator type="stopped">{t('admin_page.aup.status_suspended')}</CSStatusIndicator>
-                    : <CSStatusIndicator type="success">{t('admin_page.aup.status_active')}</CSStatusIndicator>,
+                  id: 'username',
+                  header: t('admin_page.aup.col_username'),
+                  cell: (u) => u.username,
                 },
-                { id: 'ban_reason', header: t('admin_page.aup.col_ban_reason'), cell: (u) => u.ban_reason || '—' },
                 {
-                  id: 'actions', header: t('admin_page.common.actions'),
+                  id: 'display_name',
+                  header: t('admin_page.aup.col_display_name'),
+                  cell: (u) => u.display_name || '—',
+                },
+                {
+                  id: 'status',
+                  header: t('admin_page.aup.col_status'),
+                  cell: (u) =>
+                    u.deactivated_at ? (
+                      <CSStatusIndicator type="stopped">
+                        {t('admin_page.aup.status_suspended')}
+                      </CSStatusIndicator>
+                    ) : (
+                      <CSStatusIndicator type="success">
+                        {t('admin_page.aup.status_active')}
+                      </CSStatusIndicator>
+                    ),
+                },
+                {
+                  id: 'ban_reason',
+                  header: t('admin_page.aup.col_ban_reason'),
+                  cell: (u) => u.ban_reason || '—',
+                },
+                {
+                  id: 'actions',
+                  header: t('admin_page.common.actions'),
                   cell: (u) => (
                     <CSSpaceBetween direction="horizontal" size="xs">
                       {!u.deactivated_at && (
                         <CSButton
                           variant="inline-link"
-                          onClick={() => { setSuspendModal(u); setSuspendForm({ reason: '', duration_days: '' }); }}
+                          onClick={() => {
+                            setSuspendModal(u);
+                            setSuspendForm({ reason: '', duration_days: '' });
+                          }}
                         >
                           {t('admin_page.aup.btn_suspend')}
                         </CSButton>
                       )}
                       {u.deactivated_at && (
-                        <CSButton variant="inline-link" onClick={() => setUnsuspendModal(u)}>{t('admin_page.aup.btn_unsuspend')}</CSButton>
+                        <CSButton variant="inline-link" onClick={() => setUnsuspendModal(u)}>
+                          {t('admin_page.aup.btn_unsuspend')}
+                        </CSButton>
                       )}
                       <CSButton
                         variant="inline-link"
-                        onClick={() => { setTerminateModal(u); setTerminateReason(''); }}
+                        onClick={() => {
+                          setTerminateModal(u);
+                          setTerminateReason('');
+                        }}
                       >
                         {t('admin_page.aup.btn_terminate')}
                       </CSButton>
@@ -1950,8 +2716,21 @@ export function AdminAupActionsPage() {
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={suspendBusy} onClick={() => setSuspendModal(null)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={suspendBusy} disabled={!suspendForm.reason} onClick={doSuspend}>{t('admin_page.aup.suspend_confirm_btn')}</CSButton>
+                <CSButton
+                  variant="link"
+                  disabled={suspendBusy}
+                  onClick={() => setSuspendModal(null)}
+                >
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton
+                  variant="primary"
+                  loading={suspendBusy}
+                  disabled={!suspendForm.reason}
+                  onClick={doSuspend}
+                >
+                  {t('admin_page.aup.suspend_confirm_btn')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
@@ -1969,7 +2748,9 @@ export function AdminAupActionsPage() {
               <CSInput
                 type="number"
                 value={suspendForm.duration_days}
-                onChange={({ detail }) => setSuspendForm((f) => ({ ...f, duration_days: detail.value }))}
+                onChange={({ detail }) =>
+                  setSuspendForm((f) => ({ ...f, duration_days: detail.value }))
+                }
                 placeholder={t('admin_page.aup.suspend_days_placeholder')}
               />
             </CSFormField>
@@ -1986,8 +2767,16 @@ export function AdminAupActionsPage() {
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={unsuspendBusy} onClick={() => setUnsuspendModal(null)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={unsuspendBusy} onClick={doUnsuspend}>{t('admin_page.aup.unsuspend_confirm_btn')}</CSButton>
+                <CSButton
+                  variant="link"
+                  disabled={unsuspendBusy}
+                  onClick={() => setUnsuspendModal(null)}
+                >
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton variant="primary" loading={unsuspendBusy} onClick={doUnsuspend}>
+                  {t('admin_page.aup.unsuspend_confirm_btn')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
@@ -2005,8 +2794,21 @@ export function AdminAupActionsPage() {
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={terminateBusy} onClick={() => setTerminateModal(null)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={terminateBusy} disabled={!terminateReason} onClick={doTerminate}>{t('admin_page.aup.terminate_confirm_btn')}</CSButton>
+                <CSButton
+                  variant="link"
+                  disabled={terminateBusy}
+                  onClick={() => setTerminateModal(null)}
+                >
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton
+                  variant="primary"
+                  loading={terminateBusy}
+                  disabled={!terminateReason}
+                  onClick={doTerminate}
+                >
+                  {t('admin_page.aup.terminate_confirm_btn')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
@@ -2058,7 +2860,9 @@ export function AdminMaintenancePage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function save() {
@@ -2069,7 +2873,9 @@ export function AdminMaintenancePage() {
       setConfig(draft);
       window.toast?.(t('admin_page.maintenance.save_ok'), { kind: 'ok' });
     } catch (e) {
-      window.toast?.(t('admin_page.maintenance.save_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.maintenance.save_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setSaving(false);
     }
@@ -2082,7 +2888,9 @@ export function AdminMaintenancePage() {
       window.toast?.(t('admin_page.maintenance.restart_ok'), { kind: 'ok', duration: 5000 });
       setRestartModal(false);
     } catch (e) {
-      window.toast?.(t('admin_page.maintenance.restart_fail') + ': ' + (e?.message || ''), { kind: 'danger' });
+      window.toast?.(t('admin_page.maintenance.restart_fail') + ': ' + (e?.message || ''), {
+        kind: 'danger',
+      });
     } finally {
       setRestarting(false);
     }
@@ -2092,48 +2900,69 @@ export function AdminMaintenancePage() {
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
 
-      <CSContainer header={<CSHeader variant="h2" description={t('admin_page.maintenance.mode_description')}>{t('admin_page.maintenance.mode_title')}</CSHeader>}>
-        {loading
-          ? <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
-          : !draft
-            ? <CSBox textAlign="center" color="inherit">{t('admin_page.maintenance.empty')}</CSBox>
-            : (
-              <CSSpaceBetween size="m">
-                {d.enabled && (
-                  <CSAlert type="warning">{t('admin_page.maintenance.mode_warning')}</CSAlert>
-                )}
-                <CSFormField label={t('admin_page.maintenance.field_toggle')}>
-                  <CSToggle
-                    checked={!!d.enabled}
-                    onChange={({ detail }) => setDraft((prev) => ({ ...prev, enabled: detail.checked }))}
-                  >
-                    {d.enabled ? t('admin_page.common.toggle_on') : t('admin_page.common.toggle_off')}
-                  </CSToggle>
-                </CSFormField>
-                <CSFormField label={t('admin_page.maintenance.field_message')}>
-                  <CSTextarea
-                    value={d.message || ''}
-                    onChange={({ detail }) => setDraft((prev) => ({ ...prev, message: detail.value }))}
-                    rows={4}
-                    placeholder={t('admin_page.maintenance.message_placeholder')}
-                  />
-                </CSFormField>
-                {d.started_at && (
-                  <CSFormField label={t('admin_page.maintenance.field_started_at')}>
-                    <CSBox color="text-body-secondary">{fmtTime(d.started_at)}</CSBox>
-                  </CSFormField>
-                )}
-                <CSBox float="right">
-                  <CSButton variant="primary" loading={saving} onClick={save}>{t('common.save')}</CSButton>
-                </CSBox>
-              </CSSpaceBetween>
-            )
+      <CSContainer
+        header={
+          <CSHeader variant="h2" description={t('admin_page.maintenance.mode_description')}>
+            {t('admin_page.maintenance.mode_title')}
+          </CSHeader>
         }
+      >
+        {loading ? (
+          <CSBox color="inherit">{t('admin_page.common.loading')}</CSBox>
+        ) : !draft ? (
+          <CSBox textAlign="center" color="inherit">
+            {t('admin_page.maintenance.empty')}
+          </CSBox>
+        ) : (
+          <CSSpaceBetween size="m">
+            {d.enabled && (
+              <CSAlert type="warning">{t('admin_page.maintenance.mode_warning')}</CSAlert>
+            )}
+            <CSFormField label={t('admin_page.maintenance.field_toggle')}>
+              <CSToggle
+                checked={!!d.enabled}
+                onChange={({ detail }) =>
+                  setDraft((prev) => ({ ...prev, enabled: detail.checked }))
+                }
+              >
+                {d.enabled ? t('admin_page.common.toggle_on') : t('admin_page.common.toggle_off')}
+              </CSToggle>
+            </CSFormField>
+            <CSFormField label={t('admin_page.maintenance.field_message')}>
+              <CSTextarea
+                value={d.message || ''}
+                onChange={({ detail }) => setDraft((prev) => ({ ...prev, message: detail.value }))}
+                rows={4}
+                placeholder={t('admin_page.maintenance.message_placeholder')}
+              />
+            </CSFormField>
+            {d.started_at && (
+              <CSFormField label={t('admin_page.maintenance.field_started_at')}>
+                <CSBox color="text-body-secondary">{fmtTime(d.started_at)}</CSBox>
+              </CSFormField>
+            )}
+            <CSBox float="right">
+              <CSButton variant="primary" loading={saving} onClick={save}>
+                {t('common.save')}
+              </CSButton>
+            </CSBox>
+          </CSSpaceBetween>
+        )}
       </CSContainer>
 
-      <CSContainer header={<CSHeader variant="h2" description={t('admin_page.maintenance.restart_description')}>{t('admin_page.maintenance.restart_title')}</CSHeader>}>
+      <CSContainer
+        header={
+          <CSHeader variant="h2" description={t('admin_page.maintenance.restart_description')}>
+            {t('admin_page.maintenance.restart_title')}
+          </CSHeader>
+        }
+      >
         <CSSpaceBetween size="m">
           <CSAlert type="warning">{t('admin_page.maintenance.restart_warning')}</CSAlert>
           <CSButton
@@ -2154,8 +2983,16 @@ export function AdminMaintenancePage() {
           footer={
             <CSBox float="right">
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="link" disabled={restarting} onClick={() => setRestartModal(false)}>{t('admin_page.common.cancel')}</CSButton>
-                <CSButton variant="primary" loading={restarting} onClick={handleRestart}>{t('admin_page.maintenance.restart_confirm_btn')}</CSButton>
+                <CSButton
+                  variant="link"
+                  disabled={restarting}
+                  onClick={() => setRestartModal(false)}
+                >
+                  {t('admin_page.common.cancel')}
+                </CSButton>
+                <CSButton variant="primary" loading={restarting} onClick={handleRestart}>
+                  {t('admin_page.maintenance.restart_confirm_btn')}
+                </CSButton>
               </CSSpaceBetween>
             </CSBox>
           }
@@ -2172,30 +3009,32 @@ export function AdminMaintenancePage() {
    ───────────────────────────────────────────────────────────────── */
 export function AdminFeedbackPage() {
   const { t } = useTranslation();
-  const [items, setItems]           = React.useState([]);
-  const [loading, setLoading]       = React.useState(true);
-  const [err, setErr]               = React.useState(null);
-  const [statusFilter, setStatusFilter] = React.useState({ value: 'unreviewed', label: t('admin_page.feedback.status_unreviewed') });
-  const [detailModal, setDetailModal]   = React.useState(null); // feedback item
-  const [actionBusy, setActionBusy]     = React.useState(false);
-  const [actionErr, setActionErr]       = React.useState(null);
+  const [items, setItems] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState(null);
+  const [statusFilter, setStatusFilter] = React.useState({
+    value: 'unreviewed',
+    label: t('admin_page.feedback.status_unreviewed'),
+  });
+  const [detailModal, setDetailModal] = React.useState(null); // feedback item
+  const [actionBusy, setActionBusy] = React.useState(false);
+  const [actionErr, setActionErr] = React.useState(null);
   const [terminateReason, setTerminateReason] = React.useState('');
   const [replyText, setReplyText] = React.useState('');
 
   const statusOptions = [
     { value: 'unreviewed', label: t('admin_page.feedback.status_unreviewed') },
-    { value: 'reviewed',   label: t('admin_page.feedback.status_reviewed') },
-    { value: 'all',        label: t('admin_page.feedback.status_all') },
+    { value: 'reviewed', label: t('admin_page.feedback.status_reviewed') },
+    { value: 'all', label: t('admin_page.feedback.status_all') },
   ];
 
   const load = React.useCallback(async (filter) => {
     setLoading(true);
     setErr(null);
     try {
-      const res = await fetch(
-        `/api/admin/feedback?status=${encodeURIComponent(filter)}&limit=50`,
-        { credentials: 'include' },
-      );
+      const res = await fetch(`/api/admin/feedback?status=${encodeURIComponent(filter)}&limit=50`, {
+        credentials: 'include',
+      });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.detail || data.error || `HTTP ${res.status}`);
       setItems(data.items || []);
@@ -2206,7 +3045,9 @@ export function AdminFeedbackPage() {
     }
   }, []);
 
-  React.useEffect(() => { load(statusFilter.value); }, [statusFilter.value]);
+  React.useEffect(() => {
+    load(statusFilter.value);
+  }, [statusFilter.value]);
 
   async function doDecision(feedbackId, decision, notes) {
     setActionBusy(true);
@@ -2256,14 +3097,20 @@ export function AdminFeedbackPage() {
   const decisionBadge = (d) => {
     if (!d) return <CSBadge color="grey">{t('admin_page.feedback.badge_pending')}</CSBadge>;
     if (d === 'ok') return <CSBadge color="green">OK</CSBadge>;
-    if (d === 'nsfw_terminate') return <CSBadge color="red">{t('admin_page.feedback.badge_terminate')}</CSBadge>;
-    if (d === 'spam') return <CSBadge color="severity-medium">{t('admin_page.feedback.badge_spam')}</CSBadge>;
+    if (d === 'nsfw_terminate')
+      return <CSBadge color="red">{t('admin_page.feedback.badge_terminate')}</CSBadge>;
+    if (d === 'spam')
+      return <CSBadge color="severity-medium">{t('admin_page.feedback.badge_spam')}</CSBadge>;
     return <CSBadge color="grey">{d}</CSBadge>;
   };
 
   return (
     <CSSpaceBetween size="l">
-      {err && <CSAlert type="error" header={t('admin_page.common.load_fail')}>{err}</CSAlert>}
+      {err && (
+        <CSAlert type="error" header={t('admin_page.common.load_fail')}>
+          {err}
+        </CSAlert>
+      )}
 
       <CSContainer
         header={
@@ -2277,7 +3124,11 @@ export function AdminFeedbackPage() {
                   options={statusOptions}
                   onChange={({ detail }) => setStatusFilter(detail.selectedOption)}
                 />
-                <CSButton iconName="refresh" onClick={() => load(statusFilter.value)} loading={loading}>
+                <CSButton
+                  iconName="refresh"
+                  onClick={() => load(statusFilter.value)}
+                  loading={loading}
+                >
                   {t('admin_page.common.refresh')}
                 </CSButton>
               </CSSpaceBetween>
@@ -2294,26 +3145,58 @@ export function AdminFeedbackPage() {
           items={items}
           empty={
             <CSBox textAlign="center" color="inherit">
-              <CSBox padding={{ bottom: 's' }} variant="p" color="inherit">{t('admin_page.feedback.empty')}</CSBox>
+              <CSBox padding={{ bottom: 's' }} variant="p" color="inherit">
+                {t('admin_page.feedback.empty')}
+              </CSBox>
             </CSBox>
           }
           columnDefinitions={[
-            { id: 'id',      header: t('admin_page.feedback.col_id'),      cell: (f) => f.id },
-            { id: 'user',    header: t('admin_page.feedback.col_user'),     cell: (f) => f.username || '—' },
-            { id: 'ts',      header: t('admin_page.feedback.col_ts'),       cell: (f) => fmtTime(f.created_at) },
-            { id: 'status',  header: t('admin_page.feedback.col_status'),   cell: (f) => decisionBadge(f.review_decision) },
+            { id: 'id', header: t('admin_page.feedback.col_id'), cell: (f) => f.id },
             {
-              id: 'preview', header: t('admin_page.feedback.col_preview'),
+              id: 'user',
+              header: t('admin_page.feedback.col_user'),
+              cell: (f) => f.username || '—',
+            },
+            {
+              id: 'ts',
+              header: t('admin_page.feedback.col_ts'),
+              cell: (f) => fmtTime(f.created_at),
+            },
+            {
+              id: 'status',
+              header: t('admin_page.feedback.col_status'),
+              cell: (f) => decisionBadge(f.review_decision),
+            },
+            {
+              id: 'preview',
+              header: t('admin_page.feedback.col_preview'),
               cell: (f) => (
-                <span style={{ maxWidth: 300, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span
+                  style={{
+                    maxWidth: 300,
+                    display: 'block',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {(f.free_text || '').slice(0, 80) || t('admin_page.feedback.detail_empty')}
                 </span>
               ),
             },
             {
-              id: 'actions', header: t('admin_page.feedback.col_actions'),
+              id: 'actions',
+              header: t('admin_page.feedback.col_actions'),
               cell: (f) => (
-                <CSButton variant="inline-link" onClick={() => { setDetailModal(f); setActionErr(null); setTerminateReason(''); setReplyText(f.admin_reply || ''); }}>
+                <CSButton
+                  variant="inline-link"
+                  onClick={() => {
+                    setDetailModal(f);
+                    setActionErr(null);
+                    setTerminateReason('');
+                    setReplyText(f.admin_reply || '');
+                  }}
+                >
                   {t('admin_page.feedback.btn_view')}
                 </CSButton>
               ),
@@ -2328,16 +3211,33 @@ export function AdminFeedbackPage() {
           visible
           size="large"
           onDismiss={() => !actionBusy && setDetailModal(null)}
-          header={t('admin_page.feedback.detail_modal_title', { id: detailModal.id, user: detailModal.username })}
+          header={t('admin_page.feedback.detail_modal_title', {
+            id: detailModal.id,
+            user: detailModal.username,
+          })}
           footer={
             !detailModal.review_decision ? (
               <CSBox float="right">
                 <CSSpaceBetween direction="horizontal" size="xs">
-                  <CSButton variant="link" disabled={actionBusy} onClick={() => setDetailModal(null)}>{t('admin_page.feedback.btn_cancel')}</CSButton>
-                  <CSButton variant="normal" loading={actionBusy} onClick={() => doDecision(detailModal.id, 'spam')}>
+                  <CSButton
+                    variant="link"
+                    disabled={actionBusy}
+                    onClick={() => setDetailModal(null)}
+                  >
+                    {t('admin_page.feedback.btn_cancel')}
+                  </CSButton>
+                  <CSButton
+                    variant="normal"
+                    loading={actionBusy}
+                    onClick={() => doDecision(detailModal.id, 'spam')}
+                  >
                     {t('admin_page.feedback.btn_spam')}
                   </CSButton>
-                  <CSButton variant="primary" loading={actionBusy} onClick={() => doDecision(detailModal.id, 'ok')}>
+                  <CSButton
+                    variant="primary"
+                    loading={actionBusy}
+                    onClick={() => doDecision(detailModal.id, 'ok')}
+                  >
                     {t('admin_page.feedback.btn_ok')}
                   </CSButton>
                   <CSButton
@@ -2353,7 +3253,9 @@ export function AdminFeedbackPage() {
               </CSBox>
             ) : (
               <CSBox float="right">
-                <CSButton variant="link" onClick={() => setDetailModal(null)}>{t('admin_page.feedback.btn_close')}</CSButton>
+                <CSButton variant="link" onClick={() => setDetailModal(null)}>
+                  {t('admin_page.feedback.btn_close')}
+                </CSButton>
               </CSBox>
             )
           }
@@ -2362,55 +3264,103 @@ export function AdminFeedbackPage() {
             {actionErr && <CSAlert type="error">{actionErr}</CSAlert>}
 
             <CSBox>
-              <strong>{t('admin_page.feedback.detail_submit_time')}</strong>{fmtTime(detailModal.created_at)}
+              <strong>{t('admin_page.feedback.detail_submit_time')}</strong>
+              {fmtTime(detailModal.created_at)}
               {'　'}
-              <strong>{t('admin_page.feedback.detail_status_label')}</strong>{decisionBadge(detailModal.review_decision)}
+              <strong>{t('admin_page.feedback.detail_status_label')}</strong>
+              {decisionBadge(detailModal.review_decision)}
               {detailModal.reviewed_at && (
-                <span>{'　'}<strong>{t('admin_page.feedback.detail_review_time')}</strong>{fmtTime(detailModal.reviewed_at)}</span>
+                <span>
+                  {'　'}
+                  <strong>{t('admin_page.feedback.detail_review_time')}</strong>
+                  {fmtTime(detailModal.reviewed_at)}
+                </span>
               )}
             </CSBox>
 
             <CSBox>
               <strong>{t('admin_page.feedback.detail_free_text')}</strong>
-              <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: 'var(--color-background-container-content)', padding: 8, borderRadius: 4 }}>
+              <pre
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  background: 'var(--color-background-container-content)',
+                  padding: 8,
+                  borderRadius: 4,
+                }}
+              >
                 {detailModal.free_text || t('admin_page.feedback.detail_empty')}
               </pre>
             </CSBox>
 
             {/* 反馈回复: 写一条对用户可见的回复(展示在 ta 的「我的反馈历史」),与审核决定互不影响 */}
             <CSBox>
-              <strong>回复用户</strong> <span style={{ color: 'var(--color-text-body-secondary)' }}>（展示在 ta 的「我的反馈历史」，与审核决定互不影响）</span>
+              <strong>回复用户</strong>{' '}
+              <span style={{ color: 'var(--color-text-body-secondary)' }}>
+                （展示在 ta 的「我的反馈历史」，与审核决定互不影响）
+              </span>
               <textarea
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
                 rows={3}
                 placeholder="给用户的回复内容…（留空并点更新 = 撤回回复）"
-                style={{ width: '100%', marginTop: 4, padding: 8, borderRadius: 4, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical', border: '1px solid var(--color-border-input-default, #888)', background: 'var(--color-background-container-content)', color: 'inherit' }}
+                style={{
+                  width: '100%',
+                  marginTop: 4,
+                  padding: 8,
+                  borderRadius: 4,
+                  fontSize: 13,
+                  boxSizing: 'border-box',
+                  fontFamily: 'inherit',
+                  resize: 'vertical',
+                  border: '1px solid var(--color-border-input-default, #888)',
+                  background: 'var(--color-background-container-content)',
+                  color: 'inherit',
+                }}
               />
               <CSBox padding={{ top: 'xs' }}>
-                <CSButton variant="primary" loading={actionBusy} onClick={() => doReply(detailModal.id, replyText.trim())}>
+                <CSButton
+                  variant="primary"
+                  loading={actionBusy}
+                  onClick={() => doReply(detailModal.id, replyText.trim())}
+                >
                   {detailModal.admin_reply ? '更新回复' : '发送回复'}
                 </CSButton>
               </CSBox>
             </CSBox>
 
-            {Array.isArray(detailModal.excerpts) && detailModal.excerpts.length > 0 && (() => {
-              // 三种 entry:
-              //  - __runtime__: 客户端运行环境快照(bug 排查切片)— 新结构,显式渲染
-              //  - __moderation__: NSFW 审核结果 — 后端自动追加
-              //  - 普通对话节选 {session_id, range, plaintext}
-              const runtimeEntry = detailModal.excerpts.find(e => e && e.__runtime__);
-              const modEntry = detailModal.excerpts.find(e => e && e.__moderation__);
-              const dialogEntries = detailModal.excerpts.filter(e => e && !e.__runtime__ && !e.__moderation__);
-              return (
-                <>
-                  {runtimeEntry && (() => {
-                    const r = runtimeEntry.__runtime__ || {};
-                    return (
-                      <CSBox>
-                        <strong>客户端运行环境切片(bug 排查):</strong>
-                        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 4, background: 'var(--color-background-container-content)', padding: 8, borderRadius: 4, fontSize: 12 }}>
-{`URL/Hash:  ${r.url || ''}${r.hash || ''}
+            {Array.isArray(detailModal.excerpts) &&
+              detailModal.excerpts.length > 0 &&
+              (() => {
+                // 三种 entry:
+                //  - __runtime__: 客户端运行环境快照(bug 排查切片)— 新结构,显式渲染
+                //  - __moderation__: NSFW 审核结果 — 后端自动追加
+                //  - 普通对话节选 {session_id, range, plaintext}
+                const runtimeEntry = detailModal.excerpts.find((e) => e && e.__runtime__);
+                const modEntry = detailModal.excerpts.find((e) => e && e.__moderation__);
+                const dialogEntries = detailModal.excerpts.filter(
+                  (e) => e && !e.__runtime__ && !e.__moderation__,
+                );
+                return (
+                  <>
+                    {runtimeEntry &&
+                      (() => {
+                        const r = runtimeEntry.__runtime__ || {};
+                        return (
+                          <CSBox>
+                            <strong>客户端运行环境切片(bug 排查):</strong>
+                            <pre
+                              style={{
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                marginTop: 4,
+                                background: 'var(--color-background-container-content)',
+                                padding: 8,
+                                borderRadius: 4,
+                                fontSize: 12,
+                              }}
+                            >
+                              {`URL/Hash:  ${r.url || ''}${r.hash || ''}
 App ver:   ${r.app_version || '—'}
 Viewport:  ${r.viewport || '—'} · ${r.locale || ''} · ${r.tz || ''}
 User:      uid=${r.user?.uid || '—'} role=${r.user?.role || '—'} authed=${String(r.user?.authed)}
@@ -2424,35 +3374,58 @@ ${(r.api_failures || []).map((e, i) => `  ${i + 1}. ${e.status} ${e.code} ${e.ms
 
 Recent dialog (${(r.recent_dialog || []).length}):
 ${(r.recent_dialog || []).map((m, i) => `  ${i + 1}. [${m.role}@turn ${m.turn ?? '?'}] ${m.text}`).join('\n') || '  (not included)'}`}
+                            </pre>
+                          </CSBox>
+                        );
+                      })()}
+                    {modEntry && (
+                      <CSBox>
+                        <strong>NSFW 审核结果:</strong>
+                        <pre
+                          style={{
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            marginTop: 4,
+                            background: 'var(--color-background-container-content)',
+                            padding: 8,
+                            borderRadius: 4,
+                            fontSize: 12,
+                          }}
+                        >
+                          {JSON.stringify(modEntry.__moderation__, null, 2)}
                         </pre>
                       </CSBox>
-                    );
-                  })()}
-                  {modEntry && (
-                    <CSBox>
-                      <strong>NSFW 审核结果:</strong>
-                      <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 4, background: 'var(--color-background-container-content)', padding: 8, borderRadius: 4, fontSize: 12 }}>
-{JSON.stringify(modEntry.__moderation__, null, 2)}
-                      </pre>
-                    </CSBox>
-                  )}
-                  {dialogEntries.length > 0 && (
-                    <CSBox>
-                      <strong>{t('admin_page.feedback.detail_excerpts', { count: dialogEntries.length })}</strong>
-                      {dialogEntries.map((ex, i) => (
-                        <CSBox key={i} padding={{ top: 'xs' }}>
-                          <CSBadge color="grey">session: {ex.session_id}</CSBadge>
-                          {' '}range: {ex.range}
-                          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 4, background: 'var(--color-background-container-content)', padding: 8, borderRadius: 4 }}>
-                            {ex.plaintext}
-                          </pre>
-                        </CSBox>
-                      ))}
-                    </CSBox>
-                  )}
-                </>
-              );
-            })()}
+                    )}
+                    {dialogEntries.length > 0 && (
+                      <CSBox>
+                        <strong>
+                          {t('admin_page.feedback.detail_excerpts', {
+                            count: dialogEntries.length,
+                          })}
+                        </strong>
+                        {dialogEntries.map((ex, i) => (
+                          <CSBox key={i} padding={{ top: 'xs' }}>
+                            <CSBadge color="grey">session: {ex.session_id}</CSBadge> range:{' '}
+                            {ex.range}
+                            <pre
+                              style={{
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                marginTop: 4,
+                                background: 'var(--color-background-container-content)',
+                                padding: 8,
+                                borderRadius: 4,
+                              }}
+                            >
+                              {ex.plaintext}
+                            </pre>
+                          </CSBox>
+                        ))}
+                      </CSBox>
+                    )}
+                  </>
+                );
+              })()}
 
             {!detailModal.review_decision && (
               <CSFormField
@@ -2480,13 +3453,24 @@ ${(r.recent_dialog || []).map((m, i) => `  ${i + 1}. [${m.role}@turn ${m.turn ??
    规则走后端 engine.validate_rule 白名单校验;此处为录入/展示。
    ───────────────────────────────────────────────────────────────── */
 const ACHV_METRICS = [
-  ['saves_count', '存档数'], ['total_rounds', '总回合'], ['branches', '分支条数'],
-  ['branch_nodes', '分支节点'], ['max_branch_depth', '最深分支层'], ['scripts', '导入剧本数'],
-  ['words', '导入字数'], ['chapters', '导入章节'], ['login_streak', '当前连登'],
+  ['saves_count', '存档数'],
+  ['total_rounds', '总回合'],
+  ['branches', '分支条数'],
+  ['branch_nodes', '分支节点'],
+  ['max_branch_depth', '最深分支层'],
+  ['scripts', '导入剧本数'],
+  ['words', '导入字数'],
+  ['chapters', '导入章节'],
+  ['login_streak', '当前连登'],
   ['longest_login_streak', '最长连登'],
 ];
 const ACHV_CATS = ['启程', '叙事', '探索', '收藏', '坚持', '隐藏'];
-const ACHV_TIERS = [['', '无'], ['bronze', 'bronze'], ['silver', 'silver'], ['gold', 'gold']];
+const ACHV_TIERS = [
+  ['', '无'],
+  ['bronze', 'bronze'],
+  ['silver', 'silver'],
+  ['gold', 'gold'],
+];
 
 function achvSummarizeRule(rule) {
   try {
@@ -2503,50 +3487,129 @@ export function AdminAchievementsPage() {
   const [editing, setEditing] = React.useState(null);
 
   const load = React.useCallback(async () => {
-    setLoading(true); setError(null);
-    try { const r = await window.api.admin.achievements.list(); setItems((r && r.items) || []); }
-    catch (e) { setError(String((e && e.message) || e)); }
-    finally { setLoading(false); }
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await window.api.admin.achievements.list();
+      setItems((r && r.items) || []);
+    } catch (e) {
+      setError(String((e && e.message) || e));
+    } finally {
+      setLoading(false);
+    }
   }, []);
-  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
 
   const onDisable = async (id) => {
     if (!window.confirm(`停用成就「${id}」?已解锁的用户不受影响(成就只增不减)。`)) return;
-    try { await window.api.admin.achievements.remove(id); await load(); }
-    catch (e) { setError(String((e && e.message) || e)); }
+    try {
+      await window.api.admin.achievements.remove(id);
+      await load();
+    } catch (e) {
+      setError(String((e && e.message) || e));
+    }
   };
 
   return (
     <CSSpaceBetween size="l">
-      {error && <CSAlert type="error" dismissible onDismiss={() => setError(null)}>{error}</CSAlert>}
+      {error && (
+        <CSAlert type="error" dismissible onDismiss={() => setError(null)}>
+          {error}
+        </CSAlert>
+      )}
       <CSTable
         loading={loading}
         items={items}
         variant="container"
-        header={<CSHeader variant="h1" counter={`(${items.length})`}
-          actions={<CSButton variant="primary" iconName="add-plus"
-            onClick={() => setEditing({ __new: true, category: '启程', tier: 'bronze', enabled: true, hidden: false, sort_order: 0, rule: { metric: 'total_rounds', op: '>=', target: 100 } })}>新建成就</CSButton>}>
-          成就目录</CSHeader>}
+        header={
+          <CSHeader
+            variant="h1"
+            counter={`(${items.length})`}
+            actions={
+              <CSButton
+                variant="primary"
+                iconName="add-plus"
+                onClick={() =>
+                  setEditing({
+                    __new: true,
+                    category: '启程',
+                    tier: 'bronze',
+                    enabled: true,
+                    hidden: false,
+                    sort_order: 0,
+                    rule: { metric: 'total_rounds', op: '>=', target: 100 },
+                  })
+                }
+              >
+                新建成就
+              </CSButton>
+            }
+          >
+            成就目录
+          </CSHeader>
+        }
         columnDefinitions={[
           { id: 'id', header: 'ID', cell: (a) => <span className="mono">{a.id}</span> },
-          { id: 'name', header: '名称', cell: (a) => <>{a.icon ? a.icon + ' ' : ''}{a.name}</> },
+          {
+            id: 'name',
+            header: '名称',
+            cell: (a) => (
+              <>
+                {a.icon ? a.icon + ' ' : ''}
+                {a.name}
+              </>
+            ),
+          },
           { id: 'category', header: '类目', cell: (a) => a.category },
           { id: 'tier', header: '分级', cell: (a) => a.tier || '—' },
-          { id: 'rule', header: '规则', cell: (a) => <span className="mono" style={{ fontSize: 11 }}>{achvSummarizeRule(a.rule)}</span> },
-          { id: 'hidden', header: '隐藏', cell: (a) => a.hidden ? <CSBadge>隐藏</CSBadge> : '—' },
-          { id: 'enabled', header: '状态', cell: (a) => a.enabled ? <CSStatusIndicator type="success">启用</CSStatusIndicator> : <CSStatusIndicator type="stopped">停用</CSStatusIndicator> },
           {
-            id: 'actions', header: '操作', cell: (a) => (
+            id: 'rule',
+            header: '规则',
+            cell: (a) => (
+              <span className="mono" style={{ fontSize: 11 }}>
+                {achvSummarizeRule(a.rule)}
+              </span>
+            ),
+          },
+          { id: 'hidden', header: '隐藏', cell: (a) => (a.hidden ? <CSBadge>隐藏</CSBadge> : '—') },
+          {
+            id: 'enabled',
+            header: '状态',
+            cell: (a) =>
+              a.enabled ? (
+                <CSStatusIndicator type="success">启用</CSStatusIndicator>
+              ) : (
+                <CSStatusIndicator type="stopped">停用</CSStatusIndicator>
+              ),
+          },
+          {
+            id: 'actions',
+            header: '操作',
+            cell: (a) => (
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="inline-link" onClick={() => setEditing({ ...a })}>编辑</CSButton>
-                {a.enabled && <CSButton variant="inline-link" onClick={() => onDisable(a.id)}>停用</CSButton>}
+                <CSButton variant="inline-link" onClick={() => setEditing({ ...a })}>
+                  编辑
+                </CSButton>
+                {a.enabled && (
+                  <CSButton variant="inline-link" onClick={() => onDisable(a.id)}>
+                    停用
+                  </CSButton>
+                )}
               </CSSpaceBetween>
             ),
           },
         ]}
-        empty={<CSBox textAlign="center" color="text-body-secondary" padding="l">暂无成就定义</CSBox>}
+        empty={
+          <CSBox textAlign="center" color="text-body-secondary" padding="l">
+            暂无成就定义
+          </CSBox>
+        }
       />
-      {editing && <AchvEditModal editing={editing} onClose={() => setEditing(null)} reload={load} />}
+      {editing && (
+        <AchvEditModal editing={editing} onClose={() => setEditing(null)} reload={load} />
+      )}
     </CSSpaceBetween>
   );
 }
@@ -2570,7 +3633,7 @@ function AchvEditModal({ editing, onClose, reload }) {
     target: rule0.target != null ? rule0.target : 0,
     ruleJson: rule0.all ? JSON.stringify(editing.rule, null, 2) : '',
   });
-  const set = (k, v) => setF(s => ({ ...s, [k]: v }));
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const [err, setErr] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
 
@@ -2578,64 +3641,170 @@ function AchvEditModal({ editing, onClose, reload }) {
     setErr(null);
     let rule;
     if (f.advanced) {
-      try { rule = JSON.parse(f.ruleJson); }
-      catch (e) { setErr('规则 JSON 解析失败:' + e.message); return; }
+      try {
+        rule = JSON.parse(f.ruleJson);
+      } catch (e) {
+        setErr('规则 JSON 解析失败:' + e.message);
+        return;
+      }
     } else {
       rule = { metric: f.metric, op: f.op, target: Number(f.target) };
     }
     const body = {
-      name: f.name.trim(), description: f.description.trim(), icon: f.icon.trim() || null,
-      category: f.category, tier: f.tier || null, hidden: f.hidden, enabled: f.enabled,
-      sort_order: Number(f.sort_order) || 0, rule,
+      name: f.name.trim(),
+      description: f.description.trim(),
+      icon: f.icon.trim() || null,
+      category: f.category,
+      tier: f.tier || null,
+      hidden: f.hidden,
+      enabled: f.enabled,
+      sort_order: Number(f.sort_order) || 0,
+      rule,
     };
     setSaving(true);
     try {
-      if (isNew) { body.id = f.id.trim(); await window.api.admin.achievements.create(body); }
-      else { await window.api.admin.achievements.update(editing.id, body); }
-      onClose(); await reload();
-    } catch (e) { setErr(String((e && e.message) || e)); }
-    finally { setSaving(false); }
+      if (isNew) {
+        body.id = f.id.trim();
+        await window.api.admin.achievements.create(body);
+      } else {
+        await window.api.admin.achievements.update(editing.id, body);
+      }
+      onClose();
+      await reload();
+    } catch (e) {
+      setErr(String((e && e.message) || e));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const metricLabel = (ACHV_METRICS.find(m => m[0] === f.metric) || [f.metric, f.metric])[1];
+  const metricLabel = (ACHV_METRICS.find((m) => m[0] === f.metric) || [f.metric, f.metric])[1];
   return (
-    <CSModal visible onDismiss={onClose} header={isNew ? '新建成就' : `编辑「${editing.id}」`}
-      footer={<CSBox float="right"><CSSpaceBetween direction="horizontal" size="xs">
-        <CSButton variant="link" onClick={onClose}>取消</CSButton>
-        <CSButton variant="primary" loading={saving} onClick={save}>保存</CSButton>
-      </CSSpaceBetween></CSBox>}>
+    <CSModal
+      visible
+      onDismiss={onClose}
+      header={isNew ? '新建成就' : `编辑「${editing.id}」`}
+      footer={
+        <CSBox float="right">
+          <CSSpaceBetween direction="horizontal" size="xs">
+            <CSButton variant="link" onClick={onClose}>
+              取消
+            </CSButton>
+            <CSButton variant="primary" loading={saving} onClick={save}>
+              保存
+            </CSButton>
+          </CSSpaceBetween>
+        </CSBox>
+      }
+    >
       <CSSpaceBetween size="m">
         {err && <CSAlert type="error">{err}</CSAlert>}
-        {isNew && <CSFormField label="ID(slug,小写字母/数字/下划线,创建后不可改)" description="如 turns_500">
-          <CSInput value={f.id} onChange={e => set('id', e.detail.value)} placeholder="turns_500" /></CSFormField>}
-        <CSColumnLayout columns={2}>
-          <CSFormField label="名称"><CSInput value={f.name} onChange={e => set('name', e.detail.value)} /></CSFormField>
-          <CSFormField label="图标(emoji)"><CSInput value={f.icon} onChange={e => set('icon', e.detail.value)} placeholder="🏆" /></CSFormField>
-        </CSColumnLayout>
-        <CSFormField label="描述(如何获得)"><CSInput value={f.description} onChange={e => set('description', e.detail.value)} /></CSFormField>
-        <CSColumnLayout columns={3}>
-          <CSFormField label="类目"><CSSelect selectedOption={{ value: f.category, label: f.category }}
-            options={ACHV_CATS.map(c => ({ value: c, label: c }))} onChange={e => set('category', e.detail.selectedOption.value)} /></CSFormField>
-          <CSFormField label="分级"><CSSelect selectedOption={{ value: f.tier, label: f.tier || '无' }}
-            options={ACHV_TIERS.map(([v, l]) => ({ value: v, label: l }))} onChange={e => set('tier', e.detail.selectedOption.value)} /></CSFormField>
-          <CSFormField label="排序"><CSInput type="number" value={String(f.sort_order)} onChange={e => set('sort_order', e.detail.value)} /></CSFormField>
-        </CSColumnLayout>
-        <CSFormField label="规则模式"><CSToggle checked={f.advanced} onChange={e => set('advanced', e.detail.checked)}>高级(复合规则 JSON)</CSToggle></CSFormField>
-        {!f.advanced ? (
-          <CSColumnLayout columns={3}>
-            <CSFormField label="指标"><CSSelect selectedOption={{ value: f.metric, label: metricLabel }}
-              options={ACHV_METRICS.map(([v, l]) => ({ value: v, label: l }))} onChange={e => set('metric', e.detail.selectedOption.value)} /></CSFormField>
-            <CSFormField label="算子"><CSSelect selectedOption={{ value: f.op, label: f.op }}
-              options={[{ value: '>=', label: '≥' }, { value: '>', label: '>' }, { value: '==', label: '=' }]} onChange={e => set('op', e.detail.selectedOption.value)} /></CSFormField>
-            <CSFormField label="目标值"><CSInput type="number" value={String(f.target)} onChange={e => set('target', e.detail.value)} /></CSFormField>
-          </CSColumnLayout>
-        ) : (
-          <CSFormField label="规则 JSON" description='复合:{"all":[{"metric":"scripts","op":">=","target":10},{"metric":"words","op":">=","target":10000000}]}'>
-            <CSTextarea value={f.ruleJson} onChange={e => set('ruleJson', e.detail.value)} rows={6} /></CSFormField>
+        {isNew && (
+          <CSFormField
+            label="ID(slug,小写字母/数字/下划线,创建后不可改)"
+            description="如 turns_500"
+          >
+            <CSInput
+              value={f.id}
+              onChange={(e) => set('id', e.detail.value)}
+              placeholder="turns_500"
+            />
+          </CSFormField>
         )}
         <CSColumnLayout columns={2}>
-          <CSFormField label="隐藏成就"><CSToggle checked={f.hidden} onChange={e => set('hidden', e.detail.checked)}>未解锁时打码</CSToggle></CSFormField>
-          <CSFormField label="启用"><CSToggle checked={f.enabled} onChange={e => set('enabled', e.detail.checked)}>在前台展示</CSToggle></CSFormField>
+          <CSFormField label="名称">
+            <CSInput value={f.name} onChange={(e) => set('name', e.detail.value)} />
+          </CSFormField>
+          <CSFormField label="图标(emoji)">
+            <CSInput
+              value={f.icon}
+              onChange={(e) => set('icon', e.detail.value)}
+              placeholder="🏆"
+            />
+          </CSFormField>
+        </CSColumnLayout>
+        <CSFormField label="描述(如何获得)">
+          <CSInput value={f.description} onChange={(e) => set('description', e.detail.value)} />
+        </CSFormField>
+        <CSColumnLayout columns={3}>
+          <CSFormField label="类目">
+            <CSSelect
+              selectedOption={{ value: f.category, label: f.category }}
+              options={ACHV_CATS.map((c) => ({ value: c, label: c }))}
+              onChange={(e) => set('category', e.detail.selectedOption.value)}
+            />
+          </CSFormField>
+          <CSFormField label="分级">
+            <CSSelect
+              selectedOption={{ value: f.tier, label: f.tier || '无' }}
+              options={ACHV_TIERS.map(([v, l]) => ({ value: v, label: l }))}
+              onChange={(e) => set('tier', e.detail.selectedOption.value)}
+            />
+          </CSFormField>
+          <CSFormField label="排序">
+            <CSInput
+              type="number"
+              value={String(f.sort_order)}
+              onChange={(e) => set('sort_order', e.detail.value)}
+            />
+          </CSFormField>
+        </CSColumnLayout>
+        <CSFormField label="规则模式">
+          <CSToggle checked={f.advanced} onChange={(e) => set('advanced', e.detail.checked)}>
+            高级(复合规则 JSON)
+          </CSToggle>
+        </CSFormField>
+        {!f.advanced ? (
+          <CSColumnLayout columns={3}>
+            <CSFormField label="指标">
+              <CSSelect
+                selectedOption={{ value: f.metric, label: metricLabel }}
+                options={ACHV_METRICS.map(([v, l]) => ({ value: v, label: l }))}
+                onChange={(e) => set('metric', e.detail.selectedOption.value)}
+              />
+            </CSFormField>
+            <CSFormField label="算子">
+              <CSSelect
+                selectedOption={{ value: f.op, label: f.op }}
+                options={[
+                  { value: '>=', label: '≥' },
+                  { value: '>', label: '>' },
+                  { value: '==', label: '=' },
+                ]}
+                onChange={(e) => set('op', e.detail.selectedOption.value)}
+              />
+            </CSFormField>
+            <CSFormField label="目标值">
+              <CSInput
+                type="number"
+                value={String(f.target)}
+                onChange={(e) => set('target', e.detail.value)}
+              />
+            </CSFormField>
+          </CSColumnLayout>
+        ) : (
+          <CSFormField
+            label="规则 JSON"
+            description='复合:{"all":[{"metric":"scripts","op":">=","target":10},{"metric":"words","op":">=","target":10000000}]}'
+          >
+            <CSTextarea
+              value={f.ruleJson}
+              onChange={(e) => set('ruleJson', e.detail.value)}
+              rows={6}
+            />
+          </CSFormField>
+        )}
+        <CSColumnLayout columns={2}>
+          <CSFormField label="隐藏成就">
+            <CSToggle checked={f.hidden} onChange={(e) => set('hidden', e.detail.checked)}>
+              未解锁时打码
+            </CSToggle>
+          </CSFormField>
+          <CSFormField label="启用">
+            <CSToggle checked={f.enabled} onChange={(e) => set('enabled', e.detail.checked)}>
+              在前台展示
+            </CSToggle>
+          </CSFormField>
         </CSColumnLayout>
       </CSSpaceBetween>
     </CSModal>

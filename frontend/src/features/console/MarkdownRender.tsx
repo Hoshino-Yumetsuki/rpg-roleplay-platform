@@ -29,13 +29,13 @@ import './markdown-render.css';
 // ── inline 解析 ─────────────────────────────────────────────
 // 顺序很重要: 长 token 在前
 const INLINE_RULES = [
-  { re: /\*\*([^*\n]+?)\*\*/g, tag: "strong" },
-  { re: /__([^_\n]+?)__/g, tag: "strong" },
-  { re: /~~([^~\n]+?)~~/g, tag: "del" },
-  { re: /\*([^*\n]+?)\*/g, tag: "em" },
-  { re: /(?<![\w一-鿿])_([^_\n]+?)_(?![\w一-鿿])/g, tag: "em" },
-  { re: /`([^`\n]+?)`/g, tag: "code" },
-  { re: /\[([^\]\n]+?)\]\(([^)\s]+)\)/g, tag: "a" },
+  { re: /\*\*([^*\n]+?)\*\*/g, tag: 'strong' },
+  { re: /__([^_\n]+?)__/g, tag: 'strong' },
+  { re: /~~([^~\n]+?)~~/g, tag: 'del' },
+  { re: /\*([^*\n]+?)\*/g, tag: 'em' },
+  { re: /(?<![\w一-鿿])_([^_\n]+?)_(?![\w一-鿿])/g, tag: 'em' },
+  { re: /`([^`\n]+?)`/g, tag: 'code' },
+  { re: /\[([^\]\n]+?)\]\(([^)\s]+)\)/g, tag: 'a' },
 ];
 
 // scheme 白名单:只放行 http/https/mailto/tel + 站内相对/锚点。
@@ -45,7 +45,7 @@ function safeUrl(url) {
   // 去掉控制字符/空白/零宽字符,防 "java\tscript:" / 零宽绕过
   // eslint-disable-next-line no-control-regex
   const cleaned = String(url)
-    .replace(/[\u0000-\u0020\u007f-\u00a0\u200b-\u200f\u2028\u2029\ufeff]/g, "")
+    .replace(/[\u0000-\u0020\u007f-\u00a0\u200b-\u200f\u2028\u2029\ufeff]/g, '')
     .trim();
   if (!cleaned) return null;
   // 带 scheme 的(形如 "xxx:")必须命中白名单;相对路径/锚点(无 scheme)放行
@@ -67,7 +67,7 @@ function renderInline(text, keyPrefix) {
         end: m.index + m[0].length,
         tag: rule.tag,
         text: m[1],
-        href: rule.tag === "a" ? m[2] : null,
+        href: rule.tag === 'a' ? m[2] : null,
       });
     }
   });
@@ -88,12 +88,21 @@ function renderInline(text, keyPrefix) {
   for (const h of picked) {
     if (h.start > cur) out.push(text.slice(cur, h.start));
     const k = `${keyPrefix}-${kid++}`;
-    if (h.tag === "a") {
+    if (h.tag === 'a') {
       const href = safeUrl(h.href);
       if (href) {
-        out.push(React.createElement("a", {
-          key: k, href, target: "_blank", rel: "noopener noreferrer",
-        }, h.text));
+        out.push(
+          React.createElement(
+            'a',
+            {
+              key: k,
+              href,
+              target: '_blank',
+              rel: 'noopener noreferrer',
+            },
+            h.text,
+          ),
+        );
       } else {
         // 不安全 scheme(javascript:/data: 等)→ 降级为纯文本,绝不进 href
         out.push(h.text);
@@ -109,23 +118,26 @@ function renderInline(text, keyPrefix) {
 
 // ── block 级解析 ────────────────────────────────────────────
 function parseBlocks(text) {
-  const lines = (text || "").split("\n");
+  const lines = (text || '').split('\n');
   const blocks = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
     // 空行 → 段落分隔
-    if (!line.trim()) { i++; continue; }
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
     // 水平线
     if (/^\s*(---+|\*\*\*+|___+)\s*$/.test(line)) {
-      blocks.push({ type: "hr" });
+      blocks.push({ type: 'hr' });
       i++;
       continue;
     }
     // 标题
     const hm = /^(#{1,6})\s+(.+)$/.exec(line);
     if (hm) {
-      blocks.push({ type: "heading", level: hm[1].length, text: hm[2].trim() });
+      blocks.push({ type: 'heading', level: hm[1].length, text: hm[2].trim() });
       i++;
       continue;
     }
@@ -139,69 +151,68 @@ function parseBlocks(text) {
         i++;
       }
       if (i < lines.length) i++; // skip closing ```
-      blocks.push({ type: "code", lang, text: buf.join("\n") });
+      blocks.push({ type: 'code', lang, text: buf.join('\n') });
       continue;
     }
     // 引用 - 连续 > 行合并
     if (/^>\s?/.test(line)) {
       const buf = [];
       while (i < lines.length && /^>\s?/.test(lines[i])) {
-        buf.push(lines[i].replace(/^>\s?/, ""));
+        buf.push(lines[i].replace(/^>\s?/, ''));
         i++;
       }
-      blocks.push({ type: "quote", text: buf.join("\n") });
+      blocks.push({ type: 'quote', text: buf.join('\n') });
       continue;
     }
     // 表格 (GFM): 行有 |,下行是分隔线 |---|---|
     //   | col1 | col2 |
     //   |------|------|
     //   | a    | b    |
-    if (line.includes("|") && i + 1 < lines.length
-        && /^\s*\|?\s*:?-{3,}.*\|/.test(lines[i + 1])) {
+    if (line.includes('|') && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}.*\|/.test(lines[i + 1])) {
       const parseCells = (row) => {
         let s = row.trim();
-        if (s.startsWith("|")) s = s.slice(1);
-        if (s.endsWith("|")) s = s.slice(0, -1);
-        return s.split("|").map((c) => c.trim());
+        if (s.startsWith('|')) s = s.slice(1);
+        if (s.endsWith('|')) s = s.slice(0, -1);
+        return s.split('|').map((c) => c.trim());
       };
       const header = parseCells(line);
       // 解析分隔行的对齐 (--- / :--- / ---: / :---:)
       const sepCells = parseCells(lines[i + 1]);
       const aligns = sepCells.map((c) => {
         const trimmed = c.trim();
-        const left = trimmed.startsWith(":");
-        const right = trimmed.endsWith(":");
-        if (left && right) return "center";
-        if (right) return "right";
-        return left ? "left" : null;
+        const left = trimmed.startsWith(':');
+        const right = trimmed.endsWith(':');
+        if (left && right) return 'center';
+        if (right) return 'right';
+        return left ? 'left' : null;
       });
       i += 2;
       const rows = [];
-      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) {
         rows.push(parseCells(lines[i]));
         i++;
       }
-      blocks.push({ type: "table", header, aligns, rows });
+      blocks.push({ type: 'table', header, aligns, rows });
       continue;
     }
     // 无序列表
     if (/^\s*[-*]\s+/.test(line)) {
       const items = [];
       while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*[-*]\s+/, ""));
+        items.push(lines[i].replace(/^\s*[-*]\s+/, ''));
         i++;
       }
-      blocks.push({ type: "ul", items });
+      blocks.push({ type: 'ul', items });
       continue;
     }
     // 有序列表
     if (/^\s*\d+\.\s+/.test(line)) {
       const items = [];
       while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*\d+\.\s+/, ""));
+        items.push(lines[i].replace(/^\s*\d+\.\s+/, ''));
         i++;
       }
-      blocks.push({ type: "ol", items });
+      blocks.push({ type: 'ol', items });
       continue;
     }
     // 段落 - 连续非空非特殊行合并
@@ -219,96 +230,119 @@ function parseBlocks(text) {
       buf.push(nl);
       i++;
     }
-    blocks.push({ type: "p", text: buf.join("\n") });
+    blocks.push({ type: 'p', text: buf.join('\n') });
   }
   return blocks;
 }
 
 // ── React 渲染 ──────────────────────────────────────────────
 function Block({ text, streaming, className }) {
-  const blocks = React.useMemo(() => parseBlocks(text || ""), [text]);
+  const blocks = React.useMemo(() => parseBlocks(text || ''), [text]);
   return React.createElement(
-    "div",
-    { className: className || "rpg-md" },
-    ...blocks.map((b, i) => renderBlock(b, i, streaming && i === blocks.length - 1))
+    'div',
+    { className: className || 'rpg-md' },
+    ...blocks.map((b, i) => renderBlock(b, i, streaming && i === blocks.length - 1)),
   );
 }
 
 function renderBlock(b, i, isLast) {
   const k = `b${i}`;
-  if (b.type === "hr") return React.createElement("hr", { key: k });
-  if (b.type === "heading") {
+  if (b.type === 'hr') return React.createElement('hr', { key: k });
+  if (b.type === 'heading') {
+    return React.createElement('h' + Math.min(6, b.level), { key: k }, renderInline(b.text, k));
+  }
+  if (b.type === 'code') {
     return React.createElement(
-      "h" + Math.min(6, b.level), { key: k }, renderInline(b.text, k)
+      'pre',
+      { key: k, 'data-lang': b.lang || '' },
+      React.createElement('code', null, b.text + (isLast ? '' : '')),
     );
   }
-  if (b.type === "code") {
-    return React.createElement(
-      "pre", { key: k, "data-lang": b.lang || "" },
-      React.createElement("code", null, b.text + (isLast ? "" : ""))
-    );
-  }
-  if (b.type === "quote") {
+  if (b.type === 'quote') {
     // 引用内部允许多行 inline
-    const lines = b.text.split("\n");
+    const lines = b.text.split('\n');
     return React.createElement(
-      "blockquote", { key: k },
-      ...lines.map((ln, j) => React.createElement(
-        "p", { key: `${k}-${j}` }, renderInline(ln, `${k}-${j}`),
-        isLast && j === lines.length - 1 ? React.createElement("span", { className: "gc-cursor", key: "c" }) : null,
-      ))
-    );
-  }
-  if (b.type === "ul") {
-    return React.createElement(
-      "ul", { key: k },
-      ...b.items.map((it, j) => React.createElement(
-        "li", { key: `${k}-${j}` }, renderInline(it, `${k}-${j}`)
-      ))
-    );
-  }
-  if (b.type === "ol") {
-    return React.createElement(
-      "ol", { key: k },
-      ...b.items.map((it, j) => React.createElement(
-        "li", { key: `${k}-${j}` }, renderInline(it, `${k}-${j}`)
-      ))
-    );
-  }
-  if (b.type === "table") {
-    const alignStyle = (a) => a ? { textAlign: a } : null;
-    return React.createElement(
-      "div", { key: k, className: "rpg-md-table-wrap", style: { overflowX: "auto" } },
-      React.createElement(
-        "table", { className: "rpg-md-table" },
+      'blockquote',
+      { key: k },
+      ...lines.map((ln, j) =>
         React.createElement(
-          "thead", null,
+          'p',
+          { key: `${k}-${j}` },
+          renderInline(ln, `${k}-${j}`),
+          isLast && j === lines.length - 1
+            ? React.createElement('span', { className: 'gc-cursor', key: 'c' })
+            : null,
+        ),
+      ),
+    );
+  }
+  if (b.type === 'ul') {
+    return React.createElement(
+      'ul',
+      { key: k },
+      ...b.items.map((it, j) =>
+        React.createElement('li', { key: `${k}-${j}` }, renderInline(it, `${k}-${j}`)),
+      ),
+    );
+  }
+  if (b.type === 'ol') {
+    return React.createElement(
+      'ol',
+      { key: k },
+      ...b.items.map((it, j) =>
+        React.createElement('li', { key: `${k}-${j}` }, renderInline(it, `${k}-${j}`)),
+      ),
+    );
+  }
+  if (b.type === 'table') {
+    const alignStyle = (a) => (a ? { textAlign: a } : null);
+    return React.createElement(
+      'div',
+      { key: k, className: 'rpg-md-table-wrap', style: { overflowX: 'auto' } },
+      React.createElement(
+        'table',
+        { className: 'rpg-md-table' },
+        React.createElement(
+          'thead',
+          null,
           React.createElement(
-            "tr", null,
-            ...(b.header || []).map((c, ci) => React.createElement(
-              "th", { key: `h${ci}`, style: alignStyle(b.aligns?.[ci]) },
-              renderInline(c, `${k}-h-${ci}`)
-            ))
-          )
+            'tr',
+            null,
+            ...(b.header || []).map((c, ci) =>
+              React.createElement(
+                'th',
+                { key: `h${ci}`, style: alignStyle(b.aligns?.[ci]) },
+                renderInline(c, `${k}-h-${ci}`),
+              ),
+            ),
+          ),
         ),
         React.createElement(
-          "tbody", null,
-          ...(b.rows || []).map((row, ri) => React.createElement(
-            "tr", { key: `r${ri}` },
-            ...row.map((cell, ci) => React.createElement(
-              "td", { key: `r${ri}c${ci}`, style: alignStyle(b.aligns?.[ci]) },
-              renderInline(cell, `${k}-r${ri}c${ci}`)
-            ))
-          ))
-        )
-      )
+          'tbody',
+          null,
+          ...(b.rows || []).map((row, ri) =>
+            React.createElement(
+              'tr',
+              { key: `r${ri}` },
+              ...row.map((cell, ci) =>
+                React.createElement(
+                  'td',
+                  { key: `r${ri}c${ci}`, style: alignStyle(b.aligns?.[ci]) },
+                  renderInline(cell, `${k}-r${ri}c${ci}`),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
   // paragraph (默认)
   return React.createElement(
-    "p", { key: k },
+    'p',
+    { key: k },
     ...[].concat(renderInline(b.text, k)),
-    isLast ? React.createElement("span", { className: "gc-cursor", key: "c" }) : null
+    isLast ? React.createElement('span', { className: 'gc-cursor', key: 'c' }) : null,
   );
 }
 

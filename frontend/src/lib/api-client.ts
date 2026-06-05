@@ -10,7 +10,7 @@
  *    Claude Design pages still render even when backend is down)
  * ============================================================ */
 (function () {
-  "use strict";
+  'use strict';
 
   // API prefix constant: overridable via <meta name="api-prefix" content="/api/v1" />
   const API_PREFIX = document.querySelector('meta[name="api-prefix"]')?.content || '/api/v1';
@@ -22,22 +22,22 @@
       // 1. meta tag 优先 — 生产部署可直接设 content="https://api.example.com"
       const metaBase = document.querySelector('meta[name="api-base"]')?.content;
       if (metaBase != null) return metaBase;
-      if (location.protocol === "file:") return "http://127.0.0.1:7860";
+      if (location.protocol === 'file:') return 'http://127.0.0.1:7860';
       // If we're already on the FastAPI port → same origin.
-      if (location.port === "7860") return "";
+      if (location.port === '7860') return '';
       // Static dev server (e.g. python -m http.server) on another port
       // → cross-origin to backend.
       // Vite dev server proxies /api to the backend via vite.config.js,
       // so same-origin requests through the proxy avoid CORS/cookie issues.
       // Detect Vite by its injected HMR client script rather than guessing port ranges.
-      if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
-        if (document.querySelector('script[type="module"][src*="/@vite/client"]')) return "";
-        return "http://127.0.0.1:7860";
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+        if (document.querySelector('script[type="module"][src*="/@vite/client"]')) return '';
+        return 'http://127.0.0.1:7860';
       }
       // Production / hosted: rely on same-origin proxy.
-      return "";
+      return '';
     } catch (_) {
-      return "http://127.0.0.1:7860";
+      return 'http://127.0.0.1:7860';
     }
   }
 
@@ -54,64 +54,81 @@
   }
 
   async function _send(path, opts) {
-    const url = (path.startsWith("http") ? path : BASE + path);
+    const url = path.startsWith('http') ? path : BASE + path;
     // Default 15 s timeout; caller may pass opts.signal to override.
     const defaultSignal = timeoutSignal(15000);
     const init = Object.assign(
       {
-        credentials: "include",
-        headers: { "Accept": "application/json" },
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
         signal: defaultSignal,
       },
-      opts || {}
+      opts || {},
     );
     // opts.signal (if supplied) already overwrote the default above via Object.assign.
-    if (init.body && typeof init.body === "object" && !(init.body instanceof FormData)) {
-      init.headers["Content-Type"] = "application/json";
+    if (init.body && typeof init.body === 'object' && !(init.body instanceof FormData)) {
+      init.headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(init.body);
     }
     let res;
     try {
       res = await fetch(url, init);
     } catch (e) {
-      throw new ApiError("network", 0, "网络异常：" + (e && e.message), { url });
+      throw new ApiError('network', 0, '网络异常：' + (e && e.message), { url });
     }
-    const isJson = (res.headers.get("content-type") || "").indexOf("application/json") >= 0;
+    const isJson = (res.headers.get('content-type') || '').indexOf('application/json') >= 0;
     let payload = null;
     if (isJson) {
-      try { payload = await res.json(); } catch (_) { payload = null; }
+      try {
+        payload = await res.json();
+      } catch (_) {
+        payload = null;
+      }
     } else {
       payload = await res.text();
     }
     if (!res.ok) {
-      const msg = (payload && payload.detail) || (payload && payload.error) || res.statusText || `请求失败 (HTTP ${res.status})`;
+      const msg =
+        (payload && payload.detail) ||
+        (payload && payload.error) ||
+        res.statusText ||
+        `请求失败 (HTTP ${res.status})`;
 
       // 401 — session expired; redirect once, then still throw so caller knows.
       if (res.status === 401) {
-        if (_AUTH_REDIRECT_ARMED && location.pathname !== "/login") {
+        if (_AUTH_REDIRECT_ARMED && location.pathname !== '/login') {
           _AUTH_REDIRECT_ARMED = false;
           try {
-            window.dispatchEvent(new CustomEvent("rpg-auth-expired"));
+            window.dispatchEvent(new CustomEvent('rpg-auth-expired'));
           } catch (_) {}
-          location.replace("/login?next=" + encodeURIComponent(location.pathname + location.search + location.hash));
+          location.replace(
+            '/login?next=' +
+              encodeURIComponent(location.pathname + location.search + location.hash),
+          );
         }
         // Fall through: throw ApiError so callers that catch can handle it too.
       }
 
       // 429 — rate limited; read Retry-After and surface to user.
       if (res.status === 429) {
-        const retryAfter = res.headers.get("Retry-After");
-        const detail = retryAfter ? ("请求过于频繁，请 " + retryAfter + " 秒后重试") : "请求过于频繁，请稍后重试";
-        try { toast(detail, { kind: "warning", duration: 4000 }); } catch (_) {}
+        const retryAfter = res.headers.get('Retry-After');
+        const detail = retryAfter
+          ? '请求过于频繁，请 ' + retryAfter + ' 秒后重试'
+          : '请求过于频繁，请稍后重试';
+        try {
+          toast(detail, { kind: 'warning', duration: 4000 });
+        } catch (_) {}
         throw new ApiError(payload && payload.code, res.status, detail, payload);
       }
 
       // 503 — service unavailable.
       if (res.status === 503) {
-        try { toast("服务暂不可用", { kind: "danger", duration: 3600 }); } catch (_) {}
+        try {
+          toast('服务暂不可用', { kind: 'danger', duration: 3600 });
+        } catch (_) {}
       }
 
-      throw new ApiError(payload && payload.code, res.status, msg || ("HTTP " + res.status), payload);
+      throw new ApiError(payload && payload.code, res.status, msg || 'HTTP ' + res.status, payload);
     }
     return payload;
   }
@@ -119,13 +136,13 @@
   class ApiError extends Error {
     constructor(code, status, message, payload) {
       super(message);
-      this.code = code || "error";
+      this.code = code || 'error';
       this.status = status;
       this.payload = payload;
       // telemetry hook:每个 ApiError 构造时回调,让 runtime-telemetry 记录失败 API
       // (旧实现 monkey-patch window.ApiError 无效——throw 用的是这里的闭包类,不是全局槽位)
       try {
-        if (typeof window !== "undefined" && typeof window.__onApiError === "function") {
+        if (typeof window !== 'undefined' && typeof window.__onApiError === 'function') {
           window.__onApiError(this);
         }
       } catch (_) {}
@@ -139,64 +156,86 @@
       const usp = new URLSearchParams();
       for (const k of Object.keys(query)) {
         const v = query[k];
-        if (v === undefined || v === null || v === "") continue;
+        if (v === undefined || v === null || v === '') continue;
         usp.set(k, v);
       }
-      p = path + (path.indexOf("?") >= 0 ? "&" : "?") + usp.toString();
+      p = path + (path.indexOf('?') >= 0 ? '&' : '?') + usp.toString();
     }
-    return _send(p, { method: "GET" });
+    return _send(p, { method: 'GET' });
   };
-  const POST = (path, body, opts) => _send(path, Object.assign({ method: "POST", body: body || {} }, opts || {}));
-  const PATCH = (path, body, opts) => _send(path, Object.assign({ method: "PATCH", body: body || {} }, opts || {}));
-  const PUT = (path, body, opts) => _send(path, Object.assign({ method: "PUT", body: body || {} }, opts || {}));
-  const DEL = (path, body, opts) => _send(path, Object.assign({ method: "DELETE", body: body || {} }, opts || {}));
+  const POST = (path, body, opts) =>
+    _send(path, Object.assign({ method: 'POST', body: body || {} }, opts || {}));
+  const PATCH = (path, body, opts) =>
+    _send(path, Object.assign({ method: 'PATCH', body: body || {} }, opts || {}));
+  const PUT = (path, body, opts) =>
+    _send(path, Object.assign({ method: 'PUT', body: body || {} }, opts || {}));
+  const DEL = (path, body, opts) =>
+    _send(path, Object.assign({ method: 'DELETE', body: body || {} }, opts || {}));
 
   // ---- SSE helper for /api/chat & /api/opening ---------------
   // Posts a JSON body and parses the streaming response into
   // structured event objects: { event, data }.
   async function sseStream(path, body, handlers) {
     handlers = handlers || {};
-    const url = (path.startsWith("http") ? path : BASE + path);
+    const url = path.startsWith('http') ? path : BASE + path;
     const ctl = new AbortController();
     const promise = (async () => {
       let res;
       try {
         res = await fetch(url, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
           body: JSON.stringify(body || {}),
           signal: ctl.signal,
         });
       } catch (e) {
-        if (handlers.onError) handlers.onError(new ApiError("network", 0, e && e.message));
+        if (handlers.onError) handlers.onError(new ApiError('network', 0, e && e.message));
         return;
       }
       if (!res.ok || !res.body) {
         let payload = null;
-        try { payload = await res.json(); } catch (_) {}
+        try {
+          payload = await res.json();
+        } catch (_) {}
         if (handlers.onError) {
-          handlers.onError(new ApiError("http", res.status, (payload && payload.detail) || res.statusText, payload));
+          handlers.onError(
+            new ApiError(
+              'http',
+              res.status,
+              (payload && payload.detail) || res.statusText,
+              payload,
+            ),
+          );
         }
         return;
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buf = "";
+      let buf = '';
       while (true) {
         let chunk;
-        try { chunk = await reader.read(); } catch (e) { break; }
+        try {
+          chunk = await reader.read();
+        } catch (e) {
+          break;
+        }
         if (chunk.done) break;
         buf += decoder.decode(chunk.value, { stream: true });
         let idx;
-        while ((idx = buf.indexOf("\n\n")) >= 0) {
+        while ((idx = buf.indexOf('\n\n')) >= 0) {
           const raw = buf.slice(0, idx);
           buf = buf.slice(idx + 2);
           const evt = parseSseBlock(raw);
           if (!evt) continue;
           if (handlers.onEvent) handlers.onEvent(evt);
-          const cb = handlers["on_" + evt.event];
-          if (cb) try { cb(evt.data); } catch (e) { console.error(e); }
+          const cb = handlers['on_' + evt.event];
+          if (cb)
+            try {
+              cb(evt.data);
+            } catch (e) {
+              console.error(e);
+            }
         }
       }
       if (handlers.onClose) handlers.onClose();
@@ -205,14 +244,19 @@
   }
   function parseSseBlock(raw) {
     if (!raw) return null;
-    let event = "message"; let dataLines = [];
-    for (const line of raw.split("\n")) {
-      if (line.startsWith("event:")) event = line.slice(6).trim();
-      else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+    let event = 'message';
+    let dataLines = [];
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
     }
-    const data = dataLines.join("\n");
+    const data = dataLines.join('\n');
     let parsed;
-    try { parsed = data ? JSON.parse(data) : null; } catch (_) { parsed = data; }
+    try {
+      parsed = data ? JSON.parse(data) : null;
+    } catch (_) {
+      parsed = data;
+    }
     return { event, data: parsed };
   }
 
@@ -224,14 +268,28 @@
     const origConsult = handlers.on_worldbook_consulting;
     const origReady = handlers.on_worldbook_ready;
     handlers.on_worldbook_consulting = (d) => {
-      try { window.dispatchEvent(new CustomEvent("rpg-worldbook-status",
-            { detail: { state: "consulting", ...(d || {}) } })); } catch (_) {}
-      if (origConsult) try { origConsult(d); } catch (_) {}
+      try {
+        window.dispatchEvent(
+          new CustomEvent('rpg-worldbook-status', {
+            detail: { state: 'consulting', ...(d || {}) },
+          }),
+        );
+      } catch (_) {}
+      if (origConsult)
+        try {
+          origConsult(d);
+        } catch (_) {}
     };
     handlers.on_worldbook_ready = (d) => {
-      try { window.dispatchEvent(new CustomEvent("rpg-worldbook-status",
-            { detail: { state: "ready", ...(d || {}) } })); } catch (_) {}
-      if (origReady) try { origReady(d); } catch (_) {}
+      try {
+        window.dispatchEvent(
+          new CustomEvent('rpg-worldbook-status', { detail: { state: 'ready', ...(d || {}) } }),
+        );
+      } catch (_) {}
+      if (origReady)
+        try {
+          origReady(d);
+        } catch (_) {}
     };
     return handlers;
   }
@@ -267,8 +325,9 @@
       profile: () => GET(`${API_PREFIX}/me/profile`),
       saveProfile: (body) => POST(`${API_PREFIX}/profile`, body),
       avatar: (file) => {
-        const fd = new FormData(); fd.append("file", file);
-        return _send(`${API_PREFIX}/profile/avatar`, { method: "POST", body: fd });
+        const fd = new FormData();
+        fd.append('file', file);
+        return _send(`${API_PREFIX}/profile/avatar`, { method: 'POST', body: fd });
       },
       // task 50：BE 有 avatar reset 但 FE 没 wrapper（直接 raw POST 也行，加 wrapper 更清晰）
       avatarReset: () => POST(`${API_PREFIX}/profile/avatar/reset`, {}),
@@ -276,23 +335,30 @@
       exportData: (body) => POST(`${API_PREFIX}/account/export`, body || {}),
       // 账号数据迁移(免部署 → 本地):聚合剧本/存档/角色卡/偏好为单个 zip
       migrateEstimate: () => GET(`${API_PREFIX}/me/account/export/estimate`),
-      migrateExportUrl: (includeChunks) => BASE + `${API_PREFIX}/me/account/export` + (includeChunks ? "?include_chunks=1" : ""),
+      migrateExportUrl: (includeChunks) =>
+        BASE + `${API_PREFIX}/me/account/export` + (includeChunks ? '?include_chunks=1' : ''),
       migrateImport: (file) => {
-        const fd = new FormData(); fd.append("file", file);
+        const fd = new FormData();
+        fd.append('file', file);
         // 多剧本账号包串行恢复,可能数十秒~分钟级 → 给 10 分钟,避免默认 15s 误中断。
-        return _send(`${API_PREFIX}/me/account/import`, { method: "POST", body: fd, signal: timeoutSignal(600000) });
+        return _send(`${API_PREFIX}/me/account/import`, {
+          method: 'POST',
+          body: fd,
+          signal: timeoutSignal(600000),
+        });
       },
       deactivate: () => POST(`${API_PREFIX}/account/deactivate`, {}),
       deleteAccount: (body) => POST(`${API_PREFIX}/account/delete`, body || {}),
       usage: (days) => GET(`${API_PREFIX}/me/usage`, days ? { days } : undefined),
-      usageTimeline: (days, group_by) => GET(`${API_PREFIX}/me/usage/timeline`, { days: days || 30, group_by: group_by || "day" }),
+      usageTimeline: (days, group_by) =>
+        GET(`${API_PREFIX}/me/usage/timeline`, { days: days || 30, group_by: group_by || 'day' }),
       stats: () => GET(`${API_PREFIX}/me/stats`),
       activity: (limit) => GET(`${API_PREFIX}/me/activity`, limit ? { limit } : undefined),
       // 成就(见 docs/design/I_achievements.md)
       achievements: () => GET(`${API_PREFIX}/me/achievements`),
       achievementsSeen: () => POST(`${API_PREFIX}/me/achievements/seen`, {}),
-      achievementsCatalog: () => GET(`/api/achievements`),  // 公开目录(匿名可拉)
-      publicWall: (username) => GET(`/api/u/${encodeURIComponent(username)}/achievements`),  // 公开成就墙
+      achievementsCatalog: () => GET(`/api/achievements`), // 公开目录(匿名可拉)
+      publicWall: (username) => GET(`/api/u/${encodeURIComponent(username)}/achievements`), // 公开成就墙
       preferences: (body) => POST(`${API_PREFIX}/me/preference`, body),
       gmStyleSchema: () => GET(`${API_PREFIX}/gm-style/schema`),
       getGmStyle: () => GET(`${API_PREFIX}/me/gm-style`),
@@ -301,7 +367,7 @@
         list: () => GET(`${API_PREFIX}/me/personas`),
         get: (id) => GET(`${API_PREFIX}/me/personas/` + encodeURIComponent(id)),
         upsert: (body) => POST(`${API_PREFIX}/me/personas`, body),
-        remove: (id) => POST(`${API_PREFIX}/me/personas/` + encodeURIComponent(id) + "/delete", {}),
+        remove: (id) => POST(`${API_PREFIX}/me/personas/` + encodeURIComponent(id) + '/delete', {}),
       },
       // 账户注销流程 (30 天宽限期)
       requestDelete: () => POST(`/api/account/request-delete`, {}),
@@ -342,7 +408,8 @@
       saveRegistration: (body) => POST(`${API_PREFIX}/admin/registration`, body),
       inviteCodes: (params) => GET(`${API_PREFIX}/admin/invite-codes`, params),
       createInviteCodes: (body) => POST(`${API_PREFIX}/admin/invite-codes`, body),
-      deleteInviteCode: (code) => POST(`${API_PREFIX}/admin/invite-codes/${encodeURIComponent(code)}/delete`, {}),
+      deleteInviteCode: (code) =>
+        POST(`${API_PREFIX}/admin/invite-codes/${encodeURIComponent(code)}/delete`, {}),
       // 安全配置
       securityConfig: () => GET(`${API_PREFIX}/admin/security-config`),
       saveSecurityConfig: (body) => POST(`${API_PREFIX}/admin/security-config`, body),
@@ -360,7 +427,8 @@
       },
       // DMCA Takedowns
       dmcaTakedowns: {
-        list: ({ status, limit } = {}) => GET(`/api/admin/dmca/takedowns`, { status: status || 'open', limit: limit || 50 }),
+        list: ({ status, limit } = {}) =>
+          GET(`/api/admin/dmca/takedowns`, { status: status || 'open', limit: limit || 50 }),
         create: (body) => POST(`/api/admin/dmca/takedowns`, body),
         action: (id, body) => POST(`/api/admin/dmca/takedowns/${id}/action`, body),
         counter: (id, body) => POST(`/api/admin/dmca/takedowns/${id}/counter`, body),
@@ -395,20 +463,24 @@
     // ---------- Scripts ----------
     scripts: {
       list: () => GET(`${API_PREFIX}/scripts`),
-      preview: (body) => POST(`${API_PREFIX}/scripts/preview`, body, { signal: timeoutSignal(90000) }),
-      importScript: (body) => POST(`${API_PREFIX}/scripts/import`, body, { signal: timeoutSignal(90000) }),
-      delete: (sid, body = {}) => POST(`${API_PREFIX}/scripts/` + sid + "/delete", body),
-      chapters: (sid, q) => GET(`${API_PREFIX}/scripts/` + sid + "/chapters", q),
+      preview: (body) =>
+        POST(`${API_PREFIX}/scripts/preview`, body, { signal: timeoutSignal(90000) }),
+      importScript: (body) =>
+        POST(`${API_PREFIX}/scripts/import`, body, { signal: timeoutSignal(90000) }),
+      delete: (sid, body = {}) => POST(`${API_PREFIX}/scripts/` + sid + '/delete', body),
+      chapters: (sid, q) => GET(`${API_PREFIX}/scripts/` + sid + '/chapters', q),
       // 单章节完整 content(列表只回 180-char preview;点入章节后 lazy 拉真正文)
       chapterDetail: (sid, idx) => GET(`${API_PREFIX}/scripts/${sid}/chapters/${idx}`),
       updateChapter: (sid, idx, body) => POST(`${API_PREFIX}/scripts/${sid}/chapters/${idx}`, body),
       mergeChapter: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/chapters/merge`, body),
-      splitChapter: (sid, idx, body) => POST(`${API_PREFIX}/scripts/${sid}/chapters/${idx}/split`, body),
+      splitChapter: (sid, idx, body) =>
+        POST(`${API_PREFIX}/scripts/${sid}/chapters/${idx}/split`, body),
       resplit: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/resplit`, body),
       chapterFacts: (sid, q) => GET(`${API_PREFIX}/scripts/${sid}/chapter-facts`, q),
       worldbook: (sid) => GET(`${API_PREFIX}/scripts/${sid}/worldbook`),
       worldbookCreate: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/worldbook`, body),
-      worldbookUpdate: (sid, eid, body) => PUT(`${API_PREFIX}/scripts/${sid}/worldbook/${eid}`, body),
+      worldbookUpdate: (sid, eid, body) =>
+        PUT(`${API_PREFIX}/scripts/${sid}/worldbook/${eid}`, body),
       worldbookDelete: (sid, eid) => DEL(`${API_PREFIX}/scripts/${sid}/worldbook/${eid}`, {}),
       // 出生点(玩家选择从哪个章节起场)
       birthpoints: (sid) => GET(`${API_PREFIX}/scripts/${sid}/birthpoints`),
@@ -422,80 +494,99 @@
       importStatus: (sid) => GET(`${API_PREFIX}/scripts/${sid}/import-status`),
       // 切走又切回 tab 时复活 extract 进度面板:最近一条 import_job + active 标志
       activeJob: (sid) => GET(`${API_PREFIX}/scripts/${sid}/active-job`),
-      importPipeline: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/import-pipeline`, body || {}),
+      importPipeline: (sid, body) =>
+        POST(`${API_PREFIX}/scripts/${sid}/import-pipeline`, body || {}),
       // LLM 知识提取(异步 job,复用 import-jobs SSE / streamImport)
       llmExtract: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/llm-extract`, body || {}),
-      llmExtractEstimate: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/llm-extract/estimate`, body || {}),
-      llmExtractUsage: (sid, days) => GET(`${API_PREFIX}/scripts/${sid}/llm-extract/usage`, days ? { days } : undefined),
+      llmExtractEstimate: (sid, body) =>
+        POST(`${API_PREFIX}/scripts/${sid}/llm-extract/estimate`, body || {}),
+      llmExtractUsage: (sid, days) =>
+        GET(`${API_PREFIX}/scripts/${sid}/llm-extract/usage`, days ? { days } : undefined),
       jobStatus: (jobId) => GET(`${API_PREFIX}/scripts/import-jobs/` + jobId),
-      jobCancel: (jobId) => POST(`${API_PREFIX}/scripts/import-jobs/` + jobId + "/cancel", {}),
+      jobCancel: (jobId) => POST(`${API_PREFIX}/scripts/import-jobs/` + jobId + '/cancel', {}),
       myJobs: () => GET(`${API_PREFIX}/me/import-jobs`),
       // SSE stream for live import progress
       streamImport: (jobId, handlers) => {
-        const url = BASE + `${API_PREFIX}/scripts/import-jobs/` + jobId + "/stream";
+        const url = BASE + `${API_PREFIX}/scripts/import-jobs/` + jobId + '/stream';
         return openEventSource(url, handlers);
       },
       // 别名:重建/重做某剧本的完整流水线 — 内部走同一 endpoint /import-jobs/{id}/stream,
       // wizard 这边语义上叫 "rebuild"。
       streamRebuild: (jobId, handlers) => {
-        const url = BASE + `${API_PREFIX}/scripts/import-jobs/` + jobId + "/stream";
+        const url = BASE + `${API_PREFIX}/scripts/import-jobs/` + jobId + '/stream';
         return openEventSource(url, handlers);
       },
       // B3: script overrides CRUD (JSONB)
-      getOverrides: (sid) => GET(`${API_PREFIX}/scripts/` + sid + "/overrides"),
-      saveOverrides: (sid, data) => POST(`${API_PREFIX}/scripts/` + sid + "/overrides", { data }),
-      getGmStyle: (sid) => GET(`${API_PREFIX}/scripts/` + sid + "/gm-style"),
-      setGmStyle: (sid, gm_style) => POST(`${API_PREFIX}/scripts/` + sid + "/gm-style", { gm_style }),
+      getOverrides: (sid) => GET(`${API_PREFIX}/scripts/` + sid + '/overrides'),
+      saveOverrides: (sid, data) => POST(`${API_PREFIX}/scripts/` + sid + '/overrides', { data }),
+      getGmStyle: (sid) => GET(`${API_PREFIX}/scripts/` + sid + '/gm-style'),
+      setGmStyle: (sid, gm_style) =>
+        POST(`${API_PREFIX}/scripts/` + sid + '/gm-style', { gm_style }),
       // B2: upload script pack zip — POST /api/v1/scripts/import-pack multipart
       importPack: (file) => {
         const fd = new FormData();
-        fd.append("file", file);
-        return _send(`${API_PREFIX}/scripts/import-pack`, { method: "POST", body: fd });
+        fd.append('file', file);
+        return _send(`${API_PREFIX}/scripts/import-pack`, { method: 'POST', body: fd });
       },
       // B1: download script pack zip — GET /api/v1/scripts/{id}/export-pack → blob download
       exportPack: async (sid, filename) => {
-        const url = (BASE || "") + `${API_PREFIX}/scripts/` + sid + "/export-pack";
-        const res = await fetch(url, { credentials: "include" });
+        const url = (BASE || '') + `${API_PREFIX}/scripts/` + sid + '/export-pack';
+        const res = await fetch(url, { credentials: 'include' });
         if (!res.ok) {
           let msg = res.statusText;
-          try { const j = await res.json(); msg = j.detail || j.error || msg; } catch (_) {}
-          throw new ApiError("http", res.status, msg);
+          try {
+            const j = await res.json();
+            msg = j.detail || j.error || msg;
+          } catch (_) {}
+          throw new ApiError('http', res.status, msg);
         }
         const blob = await res.blob();
-        const a = document.createElement("a");
+        const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = filename || "script_pack.zip";
+        a.download = filename || 'script_pack.zip';
         document.body.appendChild(a);
         a.click();
-        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+        setTimeout(() => {
+          URL.revokeObjectURL(a.href);
+          a.remove();
+        }, 2000);
       },
       // 在线剧本库:公开分享 / 浏览 / 导入
-      setVisibility: (sid, isPublic) => POST(`${API_PREFIX}/scripts/` + sid + "/visibility", { is_public: !!isPublic }),
+      setVisibility: (sid, isPublic) =>
+        POST(`${API_PREFIX}/scripts/` + sid + '/visibility', { is_public: !!isPublic }),
       publicList: (q) => GET(`${API_PREFIX}/scripts/public`, q),
       publicGet: (sid) => GET(`${API_PREFIX}/scripts/public/` + sid),
       // task 74: 公开剧本「导入」改 O(1) subscribe — 几毫秒 INSERT,默认 15s timeout 够
-      cloneFromPublic: (sid) => POST(`${API_PREFIX}/scripts/public/` + sid + "/clone", {}, {}),
+      cloneFromPublic: (sid) => POST(`${API_PREFIX}/scripts/public/` + sid + '/clone', {}, {}),
       // task 74: 「另存为可编辑副本」走旧 clone 全表复制(30-60s,给 3 分钟 timeout)
-      forkFromPublic: (sid) => POST(`${API_PREFIX}/scripts/public/` + sid + "/fork", {}, { signal: timeoutSignal(180000) }),
+      forkFromPublic: (sid) =>
+        POST(
+          `${API_PREFIX}/scripts/public/` + sid + '/fork',
+          {},
+          { signal: timeoutSignal(180000) },
+        ),
       // phase_rebuild_panel: 模块级重做矩阵
       // - getModulesStatus 拿 7 模块 + active_job 快照
       // - rebuildEstimate 估算 (零 LLM 也走,统一 prereq 检查)
       // - rebuild 派发任务,返回 job_id (复用 import_jobs 表, kind='rebuild_<module>')
       // - rebuildEmbeddings 单独路由,body.include = ['chunks'|'cards'|'worldbook'|'canon']
       // - streamRebuild = streamImport 别名,保留命名一致性
-      getModulesStatus: (sid) => GET(`${API_PREFIX}/scripts/` + sid + "/modules-status"),
-      rebuildEstimate: (sid, mod, body) => POST(`${API_PREFIX}/scripts/` + sid + "/rebuild/" + mod + "/estimate", body || {}),
-      rebuild: (sid, mod, body) => POST(`${API_PREFIX}/scripts/` + sid + "/rebuild/" + mod, body || {}),
-      rebuildEmbeddings: (sid, body) => POST(`${API_PREFIX}/scripts/` + sid + "/rebuild/embeddings", body || {}),
+      getModulesStatus: (sid) => GET(`${API_PREFIX}/scripts/` + sid + '/modules-status'),
+      rebuildEstimate: (sid, mod, body) =>
+        POST(`${API_PREFIX}/scripts/` + sid + '/rebuild/' + mod + '/estimate', body || {}),
+      rebuild: (sid, mod, body) =>
+        POST(`${API_PREFIX}/scripts/` + sid + '/rebuild/' + mod, body || {}),
+      rebuildEmbeddings: (sid, body) =>
+        POST(`${API_PREFIX}/scripts/` + sid + '/rebuild/embeddings', body || {}),
       streamRebuild(jobId, handlers) {
         // 别名: rebuild jobs 跟 import-jobs 同一张表 / 同一 SSE 路由
         return this.streamImport(jobId, handlers);
       },
       // v44: Git 模式版本控制 / fork / 共享剧本同步
-      fork: (sid, body) => POST(`${API_PREFIX}/scripts/` + sid + "/fork", body || {}),
-      commits: (sid, q) => GET(`${API_PREFIX}/scripts/` + sid + "/commits", q),
-      pin: (sid, body) => POST(`${API_PREFIX}/scripts/` + sid + "/pin", body || {}),
-      unpin: (sid) => POST(`${API_PREFIX}/scripts/` + sid + "/unpin", {}),
+      fork: (sid, body) => POST(`${API_PREFIX}/scripts/` + sid + '/fork', body || {}),
+      commits: (sid, q) => GET(`${API_PREFIX}/scripts/` + sid + '/commits', q),
+      pin: (sid, body) => POST(`${API_PREFIX}/scripts/` + sid + '/pin', body || {}),
+      unpin: (sid) => POST(`${API_PREFIX}/scripts/` + sid + '/unpin', {}),
       checkout: (sid, commitId) => POST(`${API_PREFIX}/scripts/${sid}/checkout/${commitId}`, {}),
     },
 
@@ -506,21 +597,36 @@
       // 在线提供方:PAT 管理(本服务签发给外部客户端)
       patList: () => GET(`${API_PREFIX}/me/pat`),
       patCreate: (body) => POST(`${API_PREFIX}/me/pat`, body),
-      patRevoke: (id) => POST(`${API_PREFIX}/me/pat/` + id + "/revoke", {}),
+      patRevoke: (id) => POST(`${API_PREFIX}/me/pat/` + id + '/revoke', {}),
       // 在线提供方:设备码批准页(登录用户在浏览器批准外部客户端)
       deviceLookup: (userCode) => GET(`${API_PREFIX}/me/device/lookup`, { user_code: userCode }),
-      deviceApprove: (userCode, deny) => POST(`${API_PREFIX}/me/device/approve`, { user_code: userCode, deny: !!deny }),
+      deviceApprove: (userCode, deny) =>
+        POST(`${API_PREFIX}/me/device/approve`, { user_code: userCode, deny: !!deny }),
       // 本地客户端:连接器(指向在线服务)
       connectorGet: () => GET(`${API_PREFIX}/me/library-connector`),
-      connectorSet: (base_url, token) => POST(`${API_PREFIX}/me/library-connector`, { base_url, token }),
+      connectorSet: (base_url, token) =>
+        POST(`${API_PREFIX}/me/library-connector`, { base_url, token }),
       connectorTest: () => POST(`${API_PREFIX}/me/library-connector/test`, {}),
-      connectorScripts: (q) => GET(`${API_PREFIX}/me/library-connector/scripts`, q ? { q } : undefined),
+      connectorScripts: (q) =>
+        GET(`${API_PREFIX}/me/library-connector/scripts`, q ? { q } : undefined),
       // 整包下载/上传 + DB 恢复,可能数十秒 → 给 3 分钟,避免默认 15s 误中断。
-      connectorImport: (remote_script_id) => POST(`${API_PREFIX}/me/library-connector/import`, { remote_script_id }, { signal: timeoutSignal(180000) }),
-      connectorPublish: (script_id) => POST(`${API_PREFIX}/me/library-connector/publish`, { script_id }, { signal: timeoutSignal(180000) }),
+      connectorImport: (remote_script_id) =>
+        POST(
+          `${API_PREFIX}/me/library-connector/import`,
+          { remote_script_id },
+          { signal: timeoutSignal(180000) },
+        ),
+      connectorPublish: (script_id) =>
+        POST(
+          `${API_PREFIX}/me/library-connector/publish`,
+          { script_id },
+          { signal: timeoutSignal(180000) },
+        ),
       // 本地客户端:设备码流(引导用户在浏览器授权在线服务)
-      deviceStart: (base_url, scopes) => POST(`${API_PREFIX}/me/library-connector/device/start`, { base_url, scopes }),
-      devicePoll: (base_url, device_code) => POST(`${API_PREFIX}/me/library-connector/device/poll`, { base_url, device_code }),
+      deviceStart: (base_url, scopes) =>
+        POST(`${API_PREFIX}/me/library-connector/device/start`, { base_url, scopes }),
+      devicePoll: (base_url, device_code) =>
+        POST(`${API_PREFIX}/me/library-connector/device/poll`, { base_url, device_code }),
     },
 
     // ---------- Saves & branches ----------
@@ -528,16 +634,21 @@
       list: () => GET(`${API_PREFIX}/saves`),
       create: (body) => POST(`${API_PREFIX}/saves`, body),
       detail: (sid) => GET(`${API_PREFIX}/saves/` + sid),
-      contextRuns: (sid, q) => GET(`${API_PREFIX}/saves/` + sid + "/context-runs", q),
+      contextRuns: (sid, q) => GET(`${API_PREFIX}/saves/` + sid + '/context-runs', q),
       // task 50：BE 早就有这些 endpoint 但 FE 一直没 wrapper
-      rename: (sid, title) => POST(`${API_PREFIX}/saves/` + sid + "/rename", { title }),
-      remove: (sid) => POST(`${API_PREFIX}/saves/` + sid + "/delete", {}),
-      activate: (sid) => POST(`${API_PREFIX}/saves/` + sid + "/activate", {}),
-      exportUrl: (sid) => BASE + `${API_PREFIX}/saves/` + sid + "/export",
+      rename: (sid, title) => POST(`${API_PREFIX}/saves/` + sid + '/rename', { title }),
+      remove: (sid) => POST(`${API_PREFIX}/saves/` + sid + '/delete', {}),
+      activate: (sid) => POST(`${API_PREFIX}/saves/` + sid + '/activate', {}),
+      exportUrl: (sid) => BASE + `${API_PREFIX}/saves/` + sid + '/export',
       importFile: (file) => {
-        const fd = new FormData(); fd.append("file", file);
+        const fd = new FormData();
+        fd.append('file', file);
         // 自包含 bundle(.zip)导入要整包恢复,可能超默认 15s → 给 3 分钟。
-        return _send(`${API_PREFIX}/saves/import`, { method: "POST", body: fd, signal: timeoutSignal(180000) });
+        return _send(`${API_PREFIX}/saves/import`, {
+          method: 'POST',
+          body: fd,
+          signal: timeoutSignal(180000),
+        });
       },
     },
     branches: {
@@ -556,19 +667,27 @@
     rules: {
       modules: () => GET(`${API_PREFIX}/rules/modules`),
       // 低层原语：mutate 当前 save 加载模组。日常用 launchModule 建独立存档。
-      startModule: (moduleId, character) => POST(`${API_PREFIX}/rules/module/start`, { module_id: moduleId, character }),
+      startModule: (moduleId, character) =>
+        POST(`${API_PREFIX}/rules/module/start`, { module_id: moduleId, character }),
       // 标准入口：建独立 save + 激活 + 加载模组 一步完成，不污染当前 save。
-      launchModule: (moduleId, opts) => POST(`${API_PREFIX}/rules/module/launch`, {
-        module_id: moduleId, character: (opts || {}).character, title: (opts || {}).title,
-      }),
+      launchModule: (moduleId, opts) =>
+        POST(`${API_PREFIX}/rules/module/launch`, {
+          module_id: moduleId,
+          character: (opts || {}).character,
+          title: (opts || {}).title,
+        }),
       scene: () => GET(`${API_PREFIX}/rules/scene`),
       move: (to) => POST(`${API_PREFIX}/rules/move`, { to }),
       action: (body) => POST(`${API_PREFIX}/rules/action`, body),
-      encounterStart: (encounterId, seed) => POST(`${API_PREFIX}/rules/encounter/start`, { encounter_id: encounterId, seed }),
+      encounterStart: (encounterId, seed) =>
+        POST(`${API_PREFIX}/rules/encounter/start`, { encounter_id: encounterId, seed }),
       encounterNext: () => POST(`${API_PREFIX}/rules/encounter/next`, {}),
-      encounterEnemy: (attackerId, targetId, seed) => POST(`${API_PREFIX}/rules/encounter/enemy`, {
-        attacker_id: attackerId, target_id: targetId || "player", seed,
-      }),
+      encounterEnemy: (attackerId, targetId, seed) =>
+        POST(`${API_PREFIX}/rules/encounter/enemy`, {
+          attacker_id: attackerId,
+          target_id: targetId || 'player',
+          seed,
+        }),
       suggest: (text) => POST(`${API_PREFIX}/rules/suggest`, { text }),
     },
 
@@ -577,26 +696,35 @@
       myList: () => GET(`${API_PREFIX}/me/character-cards`),
       myGet: (id) => GET(`${API_PREFIX}/me/character-cards/` + id),
       myUpsert: (body) => POST(`${API_PREFIX}/me/character-cards`, body),
-      myDelete: (id) => POST(`${API_PREFIX}/me/character-cards/` + id + "/delete", {}),
+      myDelete: (id) => POST(`${API_PREFIX}/me/character-cards/` + id + '/delete', {}),
       // 在线角色卡库:发布/取消公开自己的卡 · 浏览公开卡 · 完整克隆进自己卡库
-      setPublic: (id, isPublic) => POST(`${API_PREFIX}/me/character-cards/` + id + "/visibility", { public: !!isPublic }),
+      setPublic: (id, isPublic) =>
+        POST(`${API_PREFIX}/me/character-cards/` + id + '/visibility', { public: !!isPublic }),
       publicList: (q) => GET(`${API_PREFIX}/cards/public`, q),
-      cloneFromPublic: (id) => POST(`${API_PREFIX}/cards/public/` + id + "/clone", {}),
+      cloneFromPublic: (id) => POST(`${API_PREFIX}/cards/public/` + id + '/clone', {}),
       importTavern: (file, opts = {}) => {
-        const fd = new FormData(); fd.append("file", file);
-        if (opts.aiSplit) fd.append("ai_split", "true");
-        return _send(`${API_PREFIX}/me/character-cards/import-tavern`, { method: "POST", body: fd });
+        const fd = new FormData();
+        fd.append('file', file);
+        if (opts.aiSplit) fd.append('ai_split', 'true');
+        return _send(`${API_PREFIX}/me/character-cards/import-tavern`, {
+          method: 'POST',
+          body: fd,
+        });
       },
       // task 50：BE 有 import-json 但 FE 没 wrapper
       importJson: (body) => POST(`${API_PREFIX}/me/character-cards/import-json`, body),
-      exportTavern: (id) => BASE + `${API_PREFIX}/me/character-cards/` + id + "/export-tavern",
-      exportPng: (id) => BASE + `${API_PREFIX}/me/character-cards/` + id + "/export-png",
+      exportTavern: (id) => BASE + `${API_PREFIX}/me/character-cards/` + id + '/export-tavern',
+      exportPng: (id) => BASE + `${API_PREFIX}/me/character-cards/` + id + '/export-png',
       // Script-scoped (NPCs/world cards)
-      scriptList: (sid) => GET(`${API_PREFIX}/scripts/` + sid + "/character-cards"),
-      scriptGet: (sid, cid) => GET(`${API_PREFIX}/scripts/` + sid + "/character-cards/" + cid),
-      scriptUpsert: (sid, body) => POST(`${API_PREFIX}/scripts/` + sid + "/character-cards", body),
-      scriptDelete: (sid, cid) => POST(`${API_PREFIX}/scripts/` + sid + "/character-cards/" + cid + "/delete", {}),
-      scriptEnabled: (sid, cid, on) => POST(`${API_PREFIX}/scripts/` + sid + "/character-cards/" + cid + "/enabled", { enabled: !!on }),
+      scriptList: (sid) => GET(`${API_PREFIX}/scripts/` + sid + '/character-cards'),
+      scriptGet: (sid, cid) => GET(`${API_PREFIX}/scripts/` + sid + '/character-cards/' + cid),
+      scriptUpsert: (sid, body) => POST(`${API_PREFIX}/scripts/` + sid + '/character-cards', body),
+      scriptDelete: (sid, cid) =>
+        POST(`${API_PREFIX}/scripts/` + sid + '/character-cards/' + cid + '/delete', {}),
+      scriptEnabled: (sid, cid, on) =>
+        POST(`${API_PREFIX}/scripts/` + sid + '/character-cards/' + cid + '/enabled', {
+          enabled: !!on,
+        }),
     },
 
     // ---------- Chat history (SillyTavern JSONL import) ----------
@@ -609,13 +737,14 @@
       list: (q) => GET(`${API_PREFIX}/library`, q),
       upload: (file, path) => {
         const fd = new FormData();
-        fd.append("file", file);
-        if (path) fd.append("path", path);
-        return _send(`${API_PREFIX}/library/upload`, { method: "POST", body: fd });
+        fd.append('file', file);
+        if (path) fd.append('path', path);
+        return _send(`${API_PREFIX}/library/upload`, { method: 'POST', body: fd });
       },
       mkdir: (body) => POST(`${API_PREFIX}/library/mkdir`, body),
       delete: (body) => POST(`${API_PREFIX}/library/delete`, body),
-      downloadUrl: (path) => BASE + `${API_PREFIX}/library/download?path=` + encodeURIComponent(path),
+      downloadUrl: (path) =>
+        BASE + `${API_PREFIX}/library/download?path=` + encodeURIComponent(path),
     },
 
     // ---------- Uploads (chunked) ----------
@@ -628,17 +757,24 @@
         const base64 = await new Promise((resolve, reject) => {
           const r = new FileReader();
           r.onload = () => {
-            const s = String(r.result || "");
-            const i = s.indexOf(",");
+            const s = String(r.result || '');
+            const i = s.indexOf(',');
             resolve(i >= 0 ? s.slice(i + 1) : s);
           };
-          r.onerror = () => reject(r.error || new Error("分片读取失败"));
+          r.onerror = () => reject(r.error || new Error('分片读取失败'));
           r.readAsDataURL(chunk);
         });
-        return POST(`${API_PREFIX}/uploads/` + id + "/chunk", { chunk_index: Number(index) || 0, base64 }, { signal: timeoutSignal(60000) });
+        return POST(
+          `${API_PREFIX}/uploads/` + id + '/chunk',
+          { chunk_index: Number(index) || 0, base64 },
+          { signal: timeoutSignal(60000) },
+        );
       },
-      finish: (id, body) => POST(`${API_PREFIX}/uploads/` + id + "/finish", body || {}, { signal: timeoutSignal(60000) }),
-      cancel: (id) => POST(`${API_PREFIX}/uploads/` + id + "/cancel", {}),
+      finish: (id, body) =>
+        POST(`${API_PREFIX}/uploads/` + id + '/finish', body || {}, {
+          signal: timeoutSignal(60000),
+        }),
+      cancel: (id) => POST(`${API_PREFIX}/uploads/` + id + '/cancel', {}),
     },
 
     // ---------- Credentials (per-user API keys) ----------
@@ -689,10 +825,12 @@
     },
     skills: {
       list: () => GET(`${API_PREFIX}/skills`),
-      run: (skillId, body) => POST(`${API_PREFIX}/skills/` + encodeURIComponent(skillId) + "/run", body || {}),
+      run: (skillId, body) =>
+        POST(`${API_PREFIX}/skills/` + encodeURIComponent(skillId) + '/run', body || {}),
       importPack: (file) => {
-        const fd = new FormData(); fd.append("file", file);
-        return _send(`${API_PREFIX}/skills/import`, { method: "POST", body: fd });
+        const fd = new FormData();
+        fd.append('file', file);
+        return _send(`${API_PREFIX}/skills/import`, { method: 'POST', body: fd });
       },
     },
     // task 50：plugins 列表 (BE 已有，FE 之前没 wrapper)
@@ -709,7 +847,8 @@
       // SSE: opening / chat
       // task 88: 包一层让 worldbook_consulting/ready 自动 dispatch CustomEvent,
       // 任何 UI 监听 window.addEventListener("rpg-worldbook-status", ...) 即可。
-      opening: (body, handlers) => sseStream(`${API_PREFIX}/opening`, body || {}, _wbHook(handlers)),
+      opening: (body, handlers) =>
+        sseStream(`${API_PREFIX}/opening`, body || {}, _wbHook(handlers)),
       chat: (body, handlers) => sseStream(`${API_PREFIX}/chat`, body || {}, _wbHook(handlers)),
       chatEstimate: (body) => POST(`${API_PREFIX}/chat/estimate`, body),
       contextBreakdown: () => GET(`${API_PREFIX}/chat/context-breakdown`),
@@ -743,12 +882,20 @@
     handlers = handlers || {};
     const ev = new EventSource(url, { withCredentials: true });
     ev.onmessage = (e) => {
-      let d = e.data; try { d = JSON.parse(d); } catch (_) {}
-      handlers.onEvent && handlers.onEvent({ event: "message", data: d });
+      let d = e.data;
+      try {
+        d = JSON.parse(d);
+      } catch (_) {}
+      handlers.onEvent && handlers.onEvent({ event: 'message', data: d });
       handlers.on_message && handlers.on_message(d);
     };
-    ev.addEventListener("done", (e) => { handlers.on_done && handlers.on_done(e.data); ev.close(); });
-    ev.addEventListener("error", (e) => { handlers.on_error && handlers.on_error(e); });
+    ev.addEventListener('done', (e) => {
+      handlers.on_done && handlers.on_done(e.data);
+      ev.close();
+    });
+    ev.addEventListener('error', (e) => {
+      handlers.on_error && handlers.on_error(e);
+    });
     return ev;
   }
 
@@ -756,20 +903,20 @@
   //  TOAST + ERROR HELPERS (used by buttons)
   // ============================================================
   function toast(msg, opts) {
-    if (typeof window.toast === "function") return window.toast(msg, opts);
-    if (opts && opts.kind === "danger") console.warn("[toast.danger]", msg, opts);
-    else console.log("[toast]", msg, opts);
+    if (typeof window.toast === 'function') return window.toast(msg, opts);
+    if (opts && opts.kind === 'danger') console.warn('[toast.danger]', msg, opts);
+    else console.log('[toast]', msg, opts);
   }
   window.__apiToast = toast;
 
   async function withToast(promise, okMsg, failMsg) {
     try {
       const r = await promise;
-      if (okMsg) toast(okMsg, { kind: "ok", duration: 1800 });
+      if (okMsg) toast(okMsg, { kind: 'ok', duration: 1800 });
       return r;
     } catch (e) {
-      const detail = (e && (e.message || (e.payload && e.payload.detail))) || "未知错误";
-      toast(failMsg || "请求失败", { kind: "danger", detail, duration: 3600 });
+      const detail = (e && (e.message || (e.payload && e.payload.detail))) || '未知错误';
+      toast(failMsg || '请求失败', { kind: 'danger', detail, duration: 3600 });
       throw e;
     }
   }
@@ -779,5 +926,5 @@
   // 而账户方法定义在 api.account 命名空间。补这条别名,二者等价,避免 undefined 报错。
   if (!api.me) api.me = api.account;
   window.api = api;
-  window.dispatchEvent(new CustomEvent("api-ready", { detail: { base: BASE } }));
+  window.dispatchEvent(new CustomEvent('api-ready', { detail: { base: BASE } }));
 })();

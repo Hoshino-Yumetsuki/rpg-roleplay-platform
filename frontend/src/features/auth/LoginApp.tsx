@@ -25,7 +25,9 @@ function __resolveNextOrDefault() {
     // 拒绝绝对 URL / 协议相对 URL / 包含换行的输入(开放重定向防御)
     if (/^[a-z][a-z0-9+.\-]*:|^\/\//i.test(raw) || /[\r\n]/.test(raw)) return __DEFAULT_NEXT;
     return raw;
-  } catch (_) { return __DEFAULT_NEXT; }
+  } catch (_) {
+    return __DEFAULT_NEXT;
+  }
 }
 
 /// 渲染单个表单字段。`field` 形如:
@@ -38,36 +40,71 @@ function SchemaField({ field, value, onChange }: any) {
     // 法律文档正本托管在 landing 站(play.stellatrix.icu/legal/),软件内不复制以避免双权威。
     // landing 的 legal/ 已发布 v1.2 双语 6 篇:privacy/terms/acceptable-use/cookie/dmca/adult-content-disclaimer
     const _legalBase = 'https://play.stellatrix.icu/legal';
-    const _legalLang = (typeof navigator !== 'undefined' && /^en/i.test(navigator.language || '')) ? 'en' : 'zh-CN';
-    const labelNode = field.key === 'terms_accepted' ? (
-      <span>
-        {t('auth.terms_agree')}{' '}
-        <a href={`${_legalBase}/terms-of-service.${_legalLang}.html`} target="_blank" rel="noopener noreferrer"
-           style={{color: 'var(--accent)'}}>{t('auth.terms_of_service')}</a>
-        {'、'}
-        <a href={`${_legalBase}/privacy-policy.${_legalLang}.html`} target="_blank" rel="noopener noreferrer"
-           style={{color: 'var(--accent)'}}>{t('auth.privacy_policy')}</a>
-        {'、'}
-        <a href={`${_legalBase}/acceptable-use-policy.${_legalLang}.html`} target="_blank" rel="noopener noreferrer"
-           style={{color: 'var(--accent)'}}>{t('auth.acceptable_use')}</a>
-        {' '}{t('auth.terms_and')}{' '}
-        <a href={`${_legalBase}/adult-content-disclaimer.${_legalLang}.html`} target="_blank" rel="noopener noreferrer"
-           style={{color: 'var(--accent)'}}>{t('auth.adult_disclaimer')}</a>
-        {field.required && <span className="pl-field-req">*</span>}
-      </span>
-    ) : (
-      <span>{field.label}{field.required && <span className="pl-field-req">*</span>}</span>
-    );
+    const _legalLang =
+      typeof navigator !== 'undefined' && /^en/i.test(navigator.language || '') ? 'en' : 'zh-CN';
+    const labelNode =
+      field.key === 'terms_accepted' ? (
+        <span>
+          {t('auth.terms_agree')}{' '}
+          <a
+            href={`${_legalBase}/terms-of-service.${_legalLang}.html`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--accent)' }}
+          >
+            {t('auth.terms_of_service')}
+          </a>
+          {'、'}
+          <a
+            href={`${_legalBase}/privacy-policy.${_legalLang}.html`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--accent)' }}
+          >
+            {t('auth.privacy_policy')}
+          </a>
+          {'、'}
+          <a
+            href={`${_legalBase}/acceptable-use-policy.${_legalLang}.html`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--accent)' }}
+          >
+            {t('auth.acceptable_use')}
+          </a>{' '}
+          {t('auth.terms_and')}{' '}
+          <a
+            href={`${_legalBase}/adult-content-disclaimer.${_legalLang}.html`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--accent)' }}
+          >
+            {t('auth.adult_disclaimer')}
+          </a>
+          {field.required && <span className="pl-field-req">*</span>}
+        </span>
+      ) : (
+        <span>
+          {field.label}
+          {field.required && <span className="pl-field-req">*</span>}
+        </span>
+      );
     return (
-      <div className="pl-field" style={{flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 6}}>
+      <div
+        className="pl-field"
+        style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 6 }}
+      >
         <input
           id={field.key}
           type="checkbox"
           checked={!!value}
           onChange={(e: any) => onChange(e.target.checked)}
-          style={{marginTop: 3, flexShrink: 0, accentColor: 'var(--accent)'}}
+          style={{ marginTop: 3, flexShrink: 0, accentColor: 'var(--accent)' }}
         />
-        <label htmlFor={field.key} style={{fontWeight: 'normal', cursor: 'pointer', fontSize: 13}}>
+        <label
+          htmlFor={field.key}
+          style={{ fontWeight: 'normal', cursor: 'pointer', fontSize: 13 }}
+        >
           {labelNode}
         </label>
       </div>
@@ -93,10 +130,20 @@ function SchemaField({ field, value, onChange }: any) {
   );
 }
 
-function OtpInput({ value, onChange, onComplete, length = 6, disabled = false, autoFocus = false, label }: any) {
+function OtpInput({
+  value,
+  onChange,
+  onComplete,
+  length = 6,
+  disabled = false,
+  autoFocus = false,
+  label,
+}: any) {
   const inputRef = React.useRef<any>(null);
   const completeRef = React.useRef('');
-  const clean = String(value || '').replace(/\D/g, '').slice(0, length);
+  const clean = String(value || '')
+    .replace(/\D/g, '')
+    .slice(0, length);
 
   React.useEffect(() => {
     if (!autoFocus) return;
@@ -125,7 +172,13 @@ function OtpInput({ value, onChange, onComplete, length = 6, disabled = false, a
         autoComplete="one-time-code"
         value={clean}
         disabled={disabled}
-        onChange={(e: any) => onChange(String(e.target.value || '').replace(/\D/g, '').slice(0, length))}
+        onChange={(e: any) =>
+          onChange(
+            String(e.target.value || '')
+              .replace(/\D/g, '')
+              .slice(0, length),
+          )
+        }
         onPaste={(e: any) => {
           const pasted = e.clipboardData?.getData('text') || '';
           const next = pasted.replace(/\D/g, '').slice(0, length);
@@ -146,7 +199,7 @@ function OtpInput({ value, onChange, onComplete, length = 6, disabled = false, a
 
 function LoginApp() {
   const { t } = useTranslation();
-  const [mode, setMode] = useState('login');     // 'login' | 'code-login' | 'register' | 'verify' | 'forgot' | 'reset' | 'magic-otp' | 'needs-profile'
+  const [mode, setMode] = useState('login'); // 'login' | 'code-login' | 'register' | 'verify' | 'forgot' | 'reset' | 'magic-otp' | 'needs-profile'
   const [schema, setSchema] = useState<any>(null); // { login: [...], register: [...], notes: {...} }
   const [schemaErr, setSchemaErr] = useState('');
   const [values, setValues] = useState<Record<string, any>>({});
@@ -154,10 +207,10 @@ function LoginApp() {
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
   // verify step state
-  const [pendingEmail, setPendingEmail] = useState('');      // masked email for display
+  const [pendingEmail, setPendingEmail] = useState(''); // masked email for display
   const [pendingEmailRaw, setPendingEmailRaw] = useState(''); // real email for API calls
   const [verifyCode, setVerifyCode] = useState('');
-  const [resendCooldown, setResendCooldown] = useState(0);   // seconds remaining
+  const [resendCooldown, setResendCooldown] = useState(0); // seconds remaining
   // passwordless login state
   const [loginCodeEmail, setLoginCodeEmail] = useState('');
   const [loginCodeEmailMask, setLoginCodeEmailMask] = useState('');
@@ -184,9 +237,13 @@ function LoginApp() {
         if (!cancelled && me && me.user) {
           location.replace(__resolveNextOrDefault());
         }
-      } catch (_) { /* 未登录,正常停留 */ }
+      } catch (_) {
+        /* 未登录,正常停留 */
+      }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 2) 拉表单 schema
@@ -202,7 +259,9 @@ function LoginApp() {
         if (!cancelled) setSchemaErr(e?.message || t('auth.schema_fail'));
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 2b) 检测邮件链接中的 #reset?token=... 跳转重置模式
@@ -235,8 +294,8 @@ function LoginApp() {
         const r = await fetch(`${base}/api/auth/magic-consume`, {
           method: 'POST',
           credentials: 'include',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({magic_token: magicToken, email: emailParam}),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ magic_token: magicToken, email: emailParam }),
         });
         const j = await r.json();
         if (cancelled) return;
@@ -246,8 +305,12 @@ function LoginApp() {
           setNotice('登录成功,正在进入控制台…');
           setErr('');
           // 清掉 magic 参数防回退按钮重放
-          try { history.replaceState(null, '', location.pathname); } catch (_) {}
-          setTimeout(() => { location.href = '/platform/'; }, 500);
+          try {
+            history.replaceState(null, '', location.pathname);
+          } catch (_) {}
+          setTimeout(() => {
+            location.href = '/platform/';
+          }, 500);
         } else if (j.ok && j.next === 'otp') {
           // 旧版后端兼容(部署期回退)
           setMagicEmail(j.email || emailParam);
@@ -265,11 +328,15 @@ function LoginApp() {
         if (!cancelled) setBusy(false);
       }
     })();
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fields: any[] = (['verify', 'code-login', 'forgot', 'reset'] as any).includes(mode) ? [] : (schema?.[mode] || []);
+  const fields: any[] = (['verify', 'code-login', 'forgot', 'reset'] as any).includes(mode)
+    ? []
+    : schema?.[mode] || [];
   const minPw = (schema as any)?.notes?.min_password_length || 8;
   const inviteOnly = !!(schema as any)?.notes?.invite_only;
 
@@ -280,8 +347,8 @@ function LoginApp() {
   const CONSENT_ERRORS: Record<string, string> = {
     'auth.terms_not_accepted': t('auth.terms_not_accepted'),
     'auth.age_not_confirmed': t('auth.age_not_confirmed'),
-    'terms_accepted': t('auth.terms_not_accepted'),
-    'age_confirmed': t('auth.age_not_confirmed'),
+    terms_accepted: t('auth.terms_not_accepted'),
+    age_confirmed: t('auth.age_not_confirmed'),
   };
 
   // 倒计时 effect
@@ -298,7 +365,8 @@ function LoginApp() {
       return;
     }
     setBusy(true);
-    setErr(''); setNotice('');
+    setErr('');
+    setNotice('');
     try {
       const j = await (window as any).api.auth.loginCodeRequest({ email: cleanEmail });
       if (!j || j.ok === false) throw new Error(j?.error || t('auth.login_code.send_fail'));
@@ -307,7 +375,11 @@ function LoginApp() {
       setLoginCodeSent(true);
       setLoginCode('');
       setResendCooldown(60);
-      setNotice(resend ? t('auth.verify.resend_ok') : t('auth.login_code.sent_notice', { mask: j.email_mask || cleanEmail }));
+      setNotice(
+        resend
+          ? t('auth.verify.resend_ok')
+          : t('auth.login_code.sent_notice', { mask: j.email_mask || cleanEmail }),
+      );
     } catch (e: any) {
       setErr(e?.message || t('auth.login_code.send_fail'));
     } finally {
@@ -328,8 +400,8 @@ function LoginApp() {
       const r = await fetch(`${base}/api/v1/auth/resend-code`, {
         method: 'POST',
         credentials: 'include',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({email: pendingEmailRaw}),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: pendingEmailRaw }),
       });
       const j = await r.json();
       if (j.ok) {
@@ -354,14 +426,15 @@ function LoginApp() {
       return;
     }
     setBusy(true);
-    setErr(''); setNotice('');
+    setErr('');
+    setNotice('');
     try {
       const base = (window as any).__API_BASE || '';
       const r = await fetch(`${base}/api/v1/auth/verify-email`, {
         method: 'POST',
         credentials: 'include',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({email: pendingEmailRaw, code}),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: pendingEmailRaw, code }),
       });
       const j = await r.json();
       if (j.ok) {
@@ -386,7 +459,8 @@ function LoginApp() {
       return;
     }
     setBusy(true);
-    setErr(''); setNotice('');
+    setErr('');
+    setNotice('');
     try {
       const j = await (window as any).api.auth.loginCodeVerify({ email: loginCodeEmail, code });
       if (!j || j.ok === false) throw new Error(j?.error || t('auth.login_code.verify_fail'));
@@ -408,14 +482,15 @@ function LoginApp() {
       return;
     }
     setBusy(true);
-    setErr(''); setNotice('');
+    setErr('');
+    setNotice('');
     try {
       const base = (window as any).__API_BASE || '';
       const r = await fetch(`${base}/api/auth/passwordless-verify`, {
         method: 'POST',
         credentials: 'include',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({email: magicEmail, code}),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: magicEmail, code }),
       });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || '验证失败');
@@ -443,16 +518,17 @@ function LoginApp() {
       return;
     }
     setBusy(true);
-    setErr(''); setNotice('');
+    setErr('');
+    setNotice('');
     try {
       const base = (window as any).__API_BASE || '';
       const r = await fetch(`${base}/api/me/profile`, {
         method: 'PATCH',
         credentials: 'include',
-        headers: {'Content-Type': 'application/json'},
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...(uname ? {username: uname} : {}),
-          ...(dname ? {display_name: dname} : {}),
+          ...(uname ? { username: uname } : {}),
+          ...(dname ? { display_name: dname } : {}),
         }),
       });
       const j = await r.json();
@@ -475,14 +551,15 @@ function LoginApp() {
       return;
     }
     setBusy(true);
-    setErr(''); setNotice('');
+    setErr('');
+    setNotice('');
     try {
       const base = (window as any).__API_BASE || '';
       await fetch(`${base}/api/auth/forgot-password`, {
         method: 'POST',
         credentials: 'include',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({email}),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
       });
       // 不论结果都显示成功(防枚举)
       setNotice(t('auth.forgot_sent'));
@@ -497,7 +574,12 @@ function LoginApp() {
     e.preventDefault();
     if (busy) return;
     if (resetPw.length < ((schema as any)?.notes?.min_password_length || 8)) {
-      setErr(t('auth.field_min_length', { label: t('auth.reset_new_pw'), min: (schema as any)?.notes?.min_password_length || 8 }));
+      setErr(
+        t('auth.field_min_length', {
+          label: t('auth.reset_new_pw'),
+          min: (schema as any)?.notes?.min_password_length || 8,
+        }),
+      );
       return;
     }
     if (resetPw !== resetPwConfirm) {
@@ -505,19 +587,24 @@ function LoginApp() {
       return;
     }
     setBusy(true);
-    setErr(''); setNotice('');
+    setErr('');
+    setNotice('');
     try {
       const base = (window as any).__API_BASE || '';
       const r = await fetch(`${base}/api/auth/reset-password`, {
         method: 'POST',
         credentials: 'include',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({token: resetToken, password: resetPw}),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetToken, password: resetPw }),
       });
       const j = await r.json();
       if (j.ok) {
         setNotice(t('auth.reset_success'));
-        setTimeout(() => { setMode('login'); setErr(''); setNotice(''); }, 1800);
+        setTimeout(() => {
+          setMode('login');
+          setErr('');
+          setNotice('');
+        }, 1800);
       } else {
         const errKey = j.error_key || (j.detail && j.detail.error_key);
         if (errKey === 'auth.reset_token_used') setErr(t('auth.reset_token_used'));
@@ -533,7 +620,8 @@ function LoginApp() {
   const submit = async (e: any) => {
     e.preventDefault();
     if (busy) return;
-    setErr(''); setNotice('');
+    setErr('');
+    setNotice('');
 
     // 必填校验(前端 + 后端会再校验一次)
     for (const f of fields) {
@@ -570,7 +658,7 @@ function LoginApp() {
         // 可选字段空值不发,让后端兜底
         if (!f.required && !v) continue;
         // password 不 trim 末尾的空白(用户允许密码带空格),用 raw
-        body[f.key] = f.type === 'password' ? (values[f.key] || '') : v;
+        body[f.key] = f.type === 'password' ? values[f.key] || '' : v;
       }
 
       if (mode === 'register') {
@@ -578,7 +666,7 @@ function LoginApp() {
         const r = await fetch(`${base}/api/v1/auth/register`, {
           method: 'POST',
           credentials: 'include',
-          headers: {'Content-Type': 'application/json'},
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
         const j = await r.json();
@@ -617,11 +705,19 @@ function LoginApp() {
   return (
     <div className="pl-auth-wrap">
       <div className="pl-auth">
-        <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="pl-auth-mark" aria-hidden="true">
             {/* 简易标志,等价 platform-app 里 <Icon name="logo"/> 的占位 */}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M4 19V5l8 4 8-4v14" />
               <path d="M4 14l8 4 8-4" />
             </svg>
@@ -632,30 +728,62 @@ function LoginApp() {
           </div>
         </div>
 
-        {mode !== 'verify' && mode !== 'forgot' && mode !== 'reset' && mode !== 'magic-otp' && mode !== 'needs-profile' && (
-          <div className="pl-auth-tabs" role="tablist">
-            <button type="button" role="tab"
-                    className={mode === 'login' ? 'active' : ''}
-                    aria-selected={mode === 'login'}
-                    onClick={() => { setMode('login'); setErr(''); setNotice(''); }}>{t('auth.login_tab')}</button>
-            <button type="button" role="tab"
-                    className={mode === 'code-login' ? 'active' : ''}
-                    aria-selected={mode === 'code-login'}
-                    onClick={() => { setMode('code-login'); setErr(''); setNotice(''); }}>{t('auth.login_code_tab')}</button>
-            <button type="button" role="tab"
-                    className={mode === 'register' ? 'active' : ''}
-                    aria-selected={mode === 'register'}
-                    onClick={() => { setMode('register'); setErr(''); setNotice(''); }}
-                    disabled={inviteOnly}
-                    data-tip={inviteOnly ? t('auth.invite_only_tip') : undefined}>{t('auth.register_tab')}</button>
-          </div>
-        )}
+        {mode !== 'verify' &&
+          mode !== 'forgot' &&
+          mode !== 'reset' &&
+          mode !== 'magic-otp' &&
+          mode !== 'needs-profile' && (
+            <div className="pl-auth-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                className={mode === 'login' ? 'active' : ''}
+                aria-selected={mode === 'login'}
+                onClick={() => {
+                  setMode('login');
+                  setErr('');
+                  setNotice('');
+                }}
+              >
+                {t('auth.login_tab')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={mode === 'code-login' ? 'active' : ''}
+                aria-selected={mode === 'code-login'}
+                onClick={() => {
+                  setMode('code-login');
+                  setErr('');
+                  setNotice('');
+                }}
+              >
+                {t('auth.login_code_tab')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={mode === 'register' ? 'active' : ''}
+                aria-selected={mode === 'register'}
+                onClick={() => {
+                  setMode('register');
+                  setErr('');
+                  setNotice('');
+                }}
+                disabled={inviteOnly}
+                data-tip={inviteOnly ? t('auth.invite_only_tip') : undefined}
+              >
+                {t('auth.register_tab')}
+              </button>
+            </div>
+          )}
 
         {/* ── 验证码步骤 ─────────────────────────────────────────────── */}
         {mode === 'verify' && (
           <form className="pl-auth-form" onSubmit={handleVerify as any}>
-            <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
-              {t('auth.verify.sent_to')} <strong>{pendingEmail}</strong>{t('auth.verify.expires')}
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
+              {t('auth.verify.sent_to')} <strong>{pendingEmail}</strong>
+              {t('auth.verify.expires')}
             </div>
             <div className="pl-field">
               <label htmlFor="verify_code">{t('auth.verify.code_label')}</label>
@@ -669,28 +797,73 @@ function LoginApp() {
               />
             </div>
             {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
+              <div
+                className="pl-auth-error"
+                role="alert"
+                style={{ color: 'var(--danger)', fontSize: 12.5, padding: '4px 0' }}
+              >
+                {err}
+              </div>
             )}
             {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
+              <div
+                className="pl-auth-notice"
+                role="status"
+                aria-live="polite"
+                style={{
+                  color: 'var(--muted)',
+                  fontSize: 12.5,
+                  padding: '4px 0',
+                  borderLeft: '2px solid var(--accent)',
+                  paddingLeft: 8,
+                }}
+              >
+                {notice}
+              </div>
             )}
-            <button type="submit" className="btn primary" disabled={busy || verifyCode.length !== 6}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={busy || verifyCode.length !== 6}
+              style={{ justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1 }}
+            >
               {busy ? t('auth.verify.verifying') : t('auth.verify.verify_btn')}
             </button>
-            <div className="pl-auth-foot" style={{justifyContent: 'space-between'}}>
-              <button type="button" style={{background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: 0}}
-                      onClick={() => { setMode('register'); setErr(''); setNotice(''); }}>
+            <div className="pl-auth-foot" style={{ justifyContent: 'space-between' }}>
+              <button
+                type="button"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  padding: 0,
+                }}
+                onClick={() => {
+                  setMode('register');
+                  setErr('');
+                  setNotice('');
+                }}
+              >
                 {t('auth.verify.back')}
               </button>
-              <button type="button"
-                      disabled={resendCooldown > 0 || busy}
-                      style={{background: 'none', border: 'none', color: resendCooldown > 0 ? 'var(--muted)' : 'var(--accent)', cursor: resendCooldown > 0 ? 'default' : 'pointer', fontSize: 13, padding: 0}}
-                      onClick={handleResend}>
-                {resendCooldown > 0 ? t('auth.verify.resend_cooldown', { s: resendCooldown }) : t('auth.verify.resend')}
+              <button
+                type="button"
+                disabled={resendCooldown > 0 || busy}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: resendCooldown > 0 ? 'var(--muted)' : 'var(--accent)',
+                  cursor: resendCooldown > 0 ? 'default' : 'pointer',
+                  fontSize: 13,
+                  padding: 0,
+                }}
+                onClick={handleResend}
+              >
+                {resendCooldown > 0
+                  ? t('auth.verify.resend_cooldown', { s: resendCooldown })
+                  : t('auth.verify.resend')}
               </button>
             </div>
           </form>
@@ -699,7 +872,7 @@ function LoginApp() {
         {/* ── Magic-link OTP 步骤 ────────────────────────────────────── */}
         {mode === 'magic-otp' && (
           <form className="pl-auth-form" onSubmit={handleMagicOtpVerify as any}>
-            <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
               验证码已发送至 <strong>{magicEmail}</strong>，10分钟内有效。
             </div>
             <div className="pl-field">
@@ -714,16 +887,36 @@ function LoginApp() {
               />
             </div>
             {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
+              <div
+                className="pl-auth-error"
+                role="alert"
+                style={{ color: 'var(--danger)', fontSize: 12.5, padding: '4px 0' }}
+              >
+                {err}
+              </div>
             )}
             {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
+              <div
+                className="pl-auth-notice"
+                role="status"
+                aria-live="polite"
+                style={{
+                  color: 'var(--muted)',
+                  fontSize: 12.5,
+                  padding: '4px 0',
+                  borderLeft: '2px solid var(--accent)',
+                  paddingLeft: 8,
+                }}
+              >
+                {notice}
+              </div>
             )}
-            <button type="submit" className="btn primary" disabled={busy || magicCode.length !== 6}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={busy || magicCode.length !== 6}
+              style={{ justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1 }}
+            >
               {busy ? '验证中…' : '验证并登录'}
             </button>
           </form>
@@ -732,11 +925,13 @@ function LoginApp() {
         {/* ── 首次注册补昵称 ──────────────────────────────────────────── */}
         {mode === 'needs-profile' && (
           <form className="pl-auth-form" onSubmit={handleProfileSubmit as any}>
-            <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
               欢迎加入！请设置用户名以完成注册。
             </div>
             <div className="pl-field">
-              <label htmlFor="profile_username">用户名 <span className="pl-field-req">*</span></label>
+              <label htmlFor="profile_username">
+                用户名 <span className="pl-field-req">*</span>
+              </label>
               <input
                 id="profile_username"
                 type="text"
@@ -759,17 +954,36 @@ function LoginApp() {
               />
             </div>
             {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
+              <div
+                className="pl-auth-error"
+                role="alert"
+                style={{ color: 'var(--danger)', fontSize: 12.5, padding: '4px 0' }}
+              >
+                {err}
+              </div>
             )}
             {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
+              <div
+                className="pl-auth-notice"
+                role="status"
+                aria-live="polite"
+                style={{
+                  color: 'var(--muted)',
+                  fontSize: 12.5,
+                  padding: '4px 0',
+                  borderLeft: '2px solid var(--accent)',
+                  paddingLeft: 8,
+                }}
+              >
+                {notice}
+              </div>
             )}
-            <button type="submit" className="btn primary"
-                    disabled={busy || !profileUsername.trim()}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={busy || !profileUsername.trim()}
+              style={{ justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1 }}
+            >
               {busy ? '保存中…' : '完成注册'}
             </button>
           </form>
@@ -777,10 +991,17 @@ function LoginApp() {
 
         {/* ── 邮箱验证码登录 ─────────────────────────────────────────── */}
         {mode === 'code-login' && (
-          <form className="pl-auth-form" onSubmit={(e: any) => loginCodeSent ? (handleLoginCodeVerify as any)(e) : (e.preventDefault(), requestLoginCode(loginCodeEmail))}>
+          <form
+            className="pl-auth-form"
+            onSubmit={(e: any) =>
+              loginCodeSent
+                ? (handleLoginCodeVerify as any)(e)
+                : (e.preventDefault(), requestLoginCode(loginCodeEmail))
+            }
+          >
             {!loginCodeSent ? (
               <>
-                <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
+                <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
                   {t('auth.login_code.desc')}
                 </div>
                 <div className="pl-field">
@@ -797,8 +1018,9 @@ function LoginApp() {
               </>
             ) : (
               <>
-                <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
-                  {t('auth.verify.sent_to')} <strong>{loginCodeEmailMask}</strong>{t('auth.verify.expires')}
+                <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
+                  {t('auth.verify.sent_to')} <strong>{loginCodeEmailMask}</strong>
+                  {t('auth.verify.expires')}
                 </div>
                 <div className="pl-field">
                   <label htmlFor="login_code">{t('auth.login_code.code_label')}</label>
@@ -814,32 +1036,81 @@ function LoginApp() {
               </>
             )}
             {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
+              <div
+                className="pl-auth-error"
+                role="alert"
+                style={{ color: 'var(--danger)', fontSize: 12.5, padding: '4px 0' }}
+              >
+                {err}
+              </div>
             )}
             {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
+              <div
+                className="pl-auth-notice"
+                role="status"
+                aria-live="polite"
+                style={{
+                  color: 'var(--muted)',
+                  fontSize: 12.5,
+                  padding: '4px 0',
+                  borderLeft: '2px solid var(--accent)',
+                  paddingLeft: 8,
+                }}
+              >
+                {notice}
+              </div>
             )}
-            <button type="submit" className="btn primary"
-                    disabled={busy || (loginCodeSent ? loginCode.length !== 6 : !loginCodeEmail.trim())}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={busy || (loginCodeSent ? loginCode.length !== 6 : !loginCodeEmail.trim())}
+              style={{ justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1 }}
+            >
               {busy
-                ? (loginCodeSent ? t('auth.login_code.verifying') : t('auth.login_code.sending'))
-                : (loginCodeSent ? t('auth.login_code.verify_btn') : t('auth.login_code.send_btn'))}
+                ? loginCodeSent
+                  ? t('auth.login_code.verifying')
+                  : t('auth.login_code.sending')
+                : loginCodeSent
+                  ? t('auth.login_code.verify_btn')
+                  : t('auth.login_code.send_btn')}
             </button>
             {loginCodeSent && (
-              <div className="pl-auth-foot" style={{justifyContent: 'space-between'}}>
-                <button type="button" style={{background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: 0}}
-                        onClick={() => { setLoginCodeSent(false); setLoginCode(''); setErr(''); setNotice(''); }}>
+              <div className="pl-auth-foot" style={{ justifyContent: 'space-between' }}>
+                <button
+                  type="button"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--muted)',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    padding: 0,
+                  }}
+                  onClick={() => {
+                    setLoginCodeSent(false);
+                    setLoginCode('');
+                    setErr('');
+                    setNotice('');
+                  }}
+                >
                   {t('auth.login_code.back')}
                 </button>
-                <button type="button"
-                        disabled={resendCooldown > 0 || busy}
-                        style={{background: 'none', border: 'none', color: resendCooldown > 0 ? 'var(--muted)' : 'var(--accent)', cursor: resendCooldown > 0 ? 'default' : 'pointer', fontSize: 13, padding: 0}}
-                        onClick={handleResend}>
-                  {resendCooldown > 0 ? t('auth.verify.resend_cooldown', { s: resendCooldown }) : t('auth.verify.resend')}
+                <button
+                  type="button"
+                  disabled={resendCooldown > 0 || busy}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: resendCooldown > 0 ? 'var(--muted)' : 'var(--accent)',
+                    cursor: resendCooldown > 0 ? 'default' : 'pointer',
+                    fontSize: 13,
+                    padding: 0,
+                  }}
+                  onClick={handleResend}
+                >
+                  {resendCooldown > 0
+                    ? t('auth.verify.resend_cooldown', { s: resendCooldown })
+                    : t('auth.verify.resend')}
                 </button>
               </div>
             )}
@@ -849,7 +1120,7 @@ function LoginApp() {
         {/* ── 忘记密码表单 ─────────────────────────────────────────── */}
         {mode === 'forgot' && (
           <form className="pl-auth-form" onSubmit={handleForgot as any}>
-            <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
               {t('auth.forgot_desc')}
             </div>
             <div className="pl-field">
@@ -864,21 +1135,55 @@ function LoginApp() {
               />
             </div>
             {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
+              <div
+                className="pl-auth-error"
+                role="alert"
+                style={{ color: 'var(--danger)', fontSize: 12.5, padding: '4px 0' }}
+              >
+                {err}
+              </div>
             )}
             {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
+              <div
+                className="pl-auth-notice"
+                role="status"
+                aria-live="polite"
+                style={{
+                  color: 'var(--muted)',
+                  fontSize: 12.5,
+                  padding: '4px 0',
+                  borderLeft: '2px solid var(--accent)',
+                  paddingLeft: 8,
+                }}
+              >
+                {notice}
+              </div>
             )}
-            <button type="submit" className="btn primary" disabled={busy}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={busy}
+              style={{ justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1 }}
+            >
               {busy ? t('auth.submitting') : t('auth.forgot_send')}
             </button>
             <div className="pl-auth-foot">
-              <button type="button" style={{background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: 0}}
-                      onClick={() => { setMode('login'); setErr(''); setNotice(''); }}>
+              <button
+                type="button"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  padding: 0,
+                }}
+                onClick={() => {
+                  setMode('login');
+                  setErr('');
+                  setNotice('');
+                }}
+              >
                 {t('auth.forgot_back_to_login')}
               </button>
             </div>
@@ -888,7 +1193,7 @@ function LoginApp() {
         {/* ── 重置密码表单 ─────────────────────────────────────────── */}
         {mode === 'reset' && (
           <form className="pl-auth-form" onSubmit={handleReset as any}>
-            <div style={{fontSize: 13, color: 'var(--muted)', marginBottom: 8}}>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
               {t('auth.reset_desc')}
             </div>
             <div className="pl-field">
@@ -913,84 +1218,139 @@ function LoginApp() {
               />
             </div>
             {err && (
-              <div className="pl-auth-error" role="alert"
-                   style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>{err}</div>
+              <div
+                className="pl-auth-error"
+                role="alert"
+                style={{ color: 'var(--danger)', fontSize: 12.5, padding: '4px 0' }}
+              >
+                {err}
+              </div>
             )}
             {notice && (
-              <div className="pl-auth-notice" role="status" aria-live="polite"
-                   style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                           borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>{notice}</div>
+              <div
+                className="pl-auth-notice"
+                role="status"
+                aria-live="polite"
+                style={{
+                  color: 'var(--muted)',
+                  fontSize: 12.5,
+                  padding: '4px 0',
+                  borderLeft: '2px solid var(--accent)',
+                  paddingLeft: 8,
+                }}
+              >
+                {notice}
+              </div>
             )}
-            <button type="submit" className="btn primary" disabled={busy}
-                    style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={busy}
+              style={{ justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1 }}
+            >
               {busy ? t('auth.submitting') : t('auth.reset_submit')}
             </button>
           </form>
         )}
 
         {/* ── 登录 / 注册表单 ────────────────────────────────────────── */}
-        {mode !== 'verify' && mode !== 'code-login' && mode !== 'forgot' && mode !== 'reset' && mode !== 'magic-otp' && mode !== 'needs-profile' && <form className="pl-auth-form" onSubmit={submit as any}>
-          {schemaErr && (
-            <div className="pl-auth-error"
-                 style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>
-              {t('auth.schema_err')}{schemaErr}
-            </div>
+        {mode !== 'verify' &&
+          mode !== 'code-login' &&
+          mode !== 'forgot' &&
+          mode !== 'reset' &&
+          mode !== 'magic-otp' &&
+          mode !== 'needs-profile' && (
+            <form className="pl-auth-form" onSubmit={submit as any}>
+              {schemaErr && (
+                <div
+                  className="pl-auth-error"
+                  style={{ color: 'var(--danger)', fontSize: 12.5, padding: '4px 0' }}
+                >
+                  {t('auth.schema_err')}
+                  {schemaErr}
+                </div>
+              )}
+
+              {!schema && !schemaErr && (
+                <div style={{ color: 'var(--muted)', fontSize: 12.5, padding: '4px 0' }}>
+                  {t('auth.schema_loading')}
+                </div>
+              )}
+
+              {fields.map((f: any) => (
+                <SchemaField
+                  key={f.key}
+                  field={f}
+                  value={values[f.key]}
+                  onChange={(v: any) => setField(f.key, v)}
+                />
+              ))}
+
+              {err && (
+                <div
+                  className="pl-auth-error"
+                  role="alert"
+                  style={{ color: 'var(--danger)', fontSize: 12.5, padding: '4px 0' }}
+                >
+                  {err}
+                </div>
+              )}
+
+              {notice && (
+                <div
+                  className="pl-auth-notice"
+                  role="status"
+                  aria-live="polite"
+                  style={{
+                    color: 'var(--muted)',
+                    fontSize: 12.5,
+                    padding: '4px 0',
+                    borderLeft: '2px solid var(--accent)',
+                    paddingLeft: 8,
+                  }}
+                >
+                  {notice}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="btn primary"
+                disabled={busy || !schema}
+                style={{ justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1 }}
+              >
+                {busy
+                  ? t('auth.submitting')
+                  : mode === 'login'
+                    ? t('auth.login_btn')
+                    : t('auth.register_btn')}
+              </button>
+
+              <div className="pl-auth-foot">
+                <span>
+                  {(schema as any)?.notes?.first_user_is_admin ? t('auth.first_admin') : ''}
+                  {(schema as any)?.notes?.invite_only ? t('auth.invite_only_note') : ''}
+                  {!(schema as any)?.notes?.invite_only &&
+                  !(schema as any)?.notes?.first_user_is_admin
+                    ? t('auth.min_password', { min: minPw })
+                    : ''}
+                </span>
+                <a
+                  href="#"
+                  onClick={(e: any) => {
+                    e.preventDefault();
+                    setForgotEmail('');
+                    setErr('');
+                    setNotice('');
+                    setMode('forgot');
+                  }}
+                  style={{ borderBottom: 0, color: 'var(--muted)', cursor: 'pointer' }}
+                >
+                  {t('auth.forget_password')}
+                </a>
+              </div>
+            </form>
           )}
-
-          {!schema && !schemaErr && (
-            <div style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0'}}>
-              {t('auth.schema_loading')}
-            </div>
-          )}
-
-          {fields.map((f: any) => (
-            <SchemaField key={f.key} field={f}
-                         value={values[f.key]}
-                         onChange={(v: any) => setField(f.key, v)} />
-          ))}
-
-          {err && (
-            <div className="pl-auth-error" role="alert"
-                 style={{color: 'var(--danger)', fontSize: 12.5, padding: '4px 0'}}>
-              {err}
-            </div>
-          )}
-
-          {notice && (
-            <div className="pl-auth-notice" role="status" aria-live="polite"
-                 style={{color: 'var(--muted)', fontSize: 12.5, padding: '4px 0',
-                         borderLeft: '2px solid var(--accent)', paddingLeft: 8}}>
-              {notice}
-            </div>
-          )}
-
-          <button type="submit" className="btn primary" disabled={busy || !schema}
-                  style={{justifyContent: 'center', height: 34, opacity: busy ? 0.7 : 1}}>
-            {busy ? t('auth.submitting') : (mode === 'login' ? t('auth.login_btn') : t('auth.register_btn'))}
-          </button>
-
-          <div className="pl-auth-foot">
-            <span>
-              {(schema as any)?.notes?.first_user_is_admin
-                ? t('auth.first_admin')
-                : ''}
-              {(schema as any)?.notes?.invite_only
-                ? t('auth.invite_only_note')
-                : ''}
-              {!(schema as any)?.notes?.invite_only && !(schema as any)?.notes?.first_user_is_admin
-                ? t('auth.min_password', { min: minPw })
-                : ''}
-            </span>
-            <a href="#"
-               onClick={(e: any) => {
-                 e.preventDefault();
-                 setForgotEmail('');
-                 setErr(''); setNotice('');
-                 setMode('forgot');
-               }}
-               style={{borderBottom: 0, color: 'var(--muted)', cursor: 'pointer'}}>{t('auth.forget_password')}</a>
-          </div>
-        </form>}
       </div>
     </div>
   );

@@ -24,13 +24,13 @@ function shouldShowBanner(job) {
 }
 
 const KIND_FALLBACK_LABEL = {
-  full_pipeline:   '导入流水线',
-  llm_extract:     'LLM 二次提取',
-  knowledge_sync:  '知识库索引同步',
+  full_pipeline: '导入流水线',
+  llm_extract: 'LLM 二次提取',
+  knowledge_sync: '知识库索引同步',
 };
 
 /* Character progress bar helper (20 blocks for the banner — wider context) */
-const B_FULL  = '▰';
+const B_FULL = '▰';
 const B_EMPTY = '▱';
 const BANNER_CELLS = 20;
 function bannerBar(pct) {
@@ -44,13 +44,17 @@ export function RebuildJobBanner({ scriptId, activeJob, onChange, onDone }) {
   const esRef = React.useRef(null);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  React.useEffect(() => { setJob(activeJob || null); }, [activeJob && activeJob.job_id]);
+  React.useEffect(() => {
+    setJob(activeJob || null);
+  }, [activeJob && activeJob.job_id]);
 
   React.useEffect(() => {
     const jid = activeJob && (activeJob.job_id || activeJob.id);
     if (!jid) return;
     if (!window.api?.scripts?.streamImport) return;
-    try { esRef.current && esRef.current.close && esRef.current.close(); } catch (_) {}
+    try {
+      esRef.current && esRef.current.close && esRef.current.close();
+    } catch (_) {}
     esRef.current = window.api.scripts.streamImport(jid, {
       on_message: (jb) => {
         if (!jb || typeof jb !== 'object') return;
@@ -60,13 +64,19 @@ export function RebuildJobBanner({ scriptId, activeJob, onChange, onDone }) {
       },
       on_done: (jb) => {
         const final = jb || job;
-        setJob(prev => ({ ...(prev || {}), ...(final || {}), status: (final && final.status) || 'done' }));
+        setJob((prev) => ({
+          ...(prev || {}),
+          ...(final || {}),
+          status: (final && final.status) || 'done',
+        }));
         onDone && onDone(final);
       },
       on_error: () => {},
     });
     return () => {
-      try { esRef.current && esRef.current.close && esRef.current.close(); } catch (_) {}
+      try {
+        esRef.current && esRef.current.close && esRef.current.close();
+      } catch (_) {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeJob && (activeJob.job_id || activeJob.id)]);
@@ -84,7 +94,8 @@ export function RebuildJobBanner({ scriptId, activeJob, onChange, onDone }) {
           </span>
         </div>
         <div className={s.bannerErrorMsg}>
-          {job.error || t('modules.banner.failed_detail', { defaultValue: '后端日志可查询任务 ID' })}
+          {job.error ||
+            t('modules.banner.failed_detail', { defaultValue: '后端日志可查询任务 ID' })}
         </div>
       </div>
     );
@@ -94,9 +105,9 @@ export function RebuildJobBanner({ scriptId, activeJob, onChange, onDone }) {
   if (status === 'done' || status === 'cancelled') return null;
 
   /* ── Running ── */
-  const overall      = job.overall_progress || 0;
+  const overall = job.overall_progress || 0;
   const overallTotal = job.overall_total || 100;
-  const pct          = overallTotal ? Math.round((overall / overallTotal) * 100) : 0;
+  const pct = overallTotal ? Math.round((overall / overallTotal) * 100) : 0;
 
   const kindStr = String(job.kind || '');
   let moduleName;
@@ -109,13 +120,18 @@ export function RebuildJobBanner({ scriptId, activeJob, onChange, onDone }) {
   }
 
   const before = job.before_count;
-  const after  = job.after_count;
-  const arrow  = (before != null && after != null)
-    ? `${before} → ${after}`
-    : (before != null ? `${before} → …` : null);
+  const after = job.after_count;
+  const arrow =
+    before != null && after != null
+      ? `${before} → ${after}`
+      : before != null
+        ? `${before} → …`
+        : null;
 
   const onCancel = async () => {
-    try { await window.api?.scripts?.jobCancel?.(job.job_id || job.id); } catch (_) {}
+    try {
+      await window.api?.scripts?.jobCancel?.(job.job_id || job.id);
+    } catch (_) {}
   };
 
   return (
@@ -136,13 +152,13 @@ export function RebuildJobBanner({ scriptId, activeJob, onChange, onDone }) {
       {/* Character progress bar */}
       <div className={s.bannerProgressRow}>
         <span className={s.bannerCharBar}>{bannerBar(pct)}</span>
-        <span className={s.bannerPct}>{pct}% · {overall}/{overallTotal}</span>
+        <span className={s.bannerPct}>
+          {pct}% · {overall}/{overallTotal}
+        </span>
       </div>
 
       {/* Stage label */}
-      {job.stage_label && (
-        <div className={s.bannerStage}>{job.stage_label}</div>
-      )}
+      {job.stage_label && <div className={s.bannerStage}>{job.stage_label}</div>}
     </div>
   );
 }

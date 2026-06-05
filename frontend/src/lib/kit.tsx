@@ -7,11 +7,32 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 // ── 零件 ──────────────────────────────────────────────────────────────────
-export function Btn({ variant = 'default', size, icon, loading, disabled, onClick, children, title, type = 'button', full }) {
+export function Btn({
+  variant = 'default',
+  size,
+  icon,
+  loading,
+  disabled,
+  onClick,
+  children,
+  title,
+  type = 'button',
+  full,
+}) {
   const cls = `aw-btn aw-btn-${variant}${size ? ' aw-btn-' + size : ''}${full ? ' aw-btn-full' : ''}`;
   return (
-    <button type={type} className={cls} disabled={disabled || loading} onClick={onClick} title={title}>
-      {loading ? <span className="aw-spin" aria-hidden /> : icon ? <span className="aw-btn-ic">{icon}</span> : null}
+    <button
+      type={type}
+      className={cls}
+      disabled={disabled || loading}
+      onClick={onClick}
+      title={title}
+    >
+      {loading ? (
+        <span className="aw-spin" aria-hidden />
+      ) : icon ? (
+        <span className="aw-btn-ic">{icon}</span>
+      ) : null}
       {children != null && <span>{children}</span>}
     </button>
   );
@@ -22,12 +43,19 @@ export function Badge({ tone = 'neutral', children }) {
 }
 
 const _STATUS = {
-  ok: '●', error: '✕', warn: '▲', info: 'ℹ', pending: '◌', loading: '◌',
+  ok: '●',
+  error: '✕',
+  warn: '▲',
+  info: 'ℹ',
+  pending: '◌',
+  loading: '◌',
 };
 export function StatusIndicator({ type = 'info', children }) {
   return (
     <span className={`aw-status aw-status-${type}`}>
-      <span className={`aw-status-dot${type === 'loading' ? ' aw-spin' : ''}`}>{_STATUS[type] || '●'}</span>
+      <span className={`aw-status-dot${type === 'loading' ? ' aw-spin' : ''}`}>
+        {_STATUS[type] || '●'}
+      </span>
       <span>{children}</span>
     </span>
   );
@@ -52,43 +80,87 @@ export function Field({ label, hint, error, children, htmlFor }) {
     <label className="aw-field" htmlFor={htmlFor}>
       {label && <span className="aw-field-label">{label}</span>}
       {children}
-      {error ? <span className="aw-field-error">{error}</span> : hint ? <span className="aw-field-hint">{hint}</span> : null}
+      {error ? (
+        <span className="aw-field-error">{error}</span>
+      ) : hint ? (
+        <span className="aw-field-hint">{hint}</span>
+      ) : null}
     </label>
   );
 }
 
-export function TextInput({ value, onChange, placeholder, id, type = 'text', multiline, rows = 4, disabled }) {
+export function TextInput({
+  value,
+  onChange,
+  placeholder,
+  id,
+  type = 'text',
+  multiline,
+  rows = 4,
+  disabled,
+}) {
   if (multiline) {
     return (
-      <textarea id={id} className="aw-input aw-textarea" rows={rows} value={value ?? ''} placeholder={placeholder}
-        disabled={disabled} onChange={(e) => onChange?.(e.target.value)} />
+      <textarea
+        id={id}
+        className="aw-input aw-textarea"
+        rows={rows}
+        value={value ?? ''}
+        placeholder={placeholder}
+        disabled={disabled}
+        onChange={(e) => onChange?.(e.target.value)}
+      />
     );
   }
   return (
-    <input id={id} className="aw-input" type={type} value={value ?? ''} placeholder={placeholder}
-      disabled={disabled} onChange={(e) => onChange?.(e.target.value)} />
+    <input
+      id={id}
+      className="aw-input"
+      type={type}
+      value={value ?? ''}
+      placeholder={placeholder}
+      disabled={disabled}
+      onChange={(e) => onChange?.(e.target.value)}
+    />
   );
 }
 
 export function Select({ value, onChange, options = [], id, disabled }) {
   return (
     <div className="aw-select-wrap">
-      <select id={id} className="aw-input aw-select" value={value ?? ''} disabled={disabled}
-        onChange={(e) => onChange?.(e.target.value)}>
+      <select
+        id={id}
+        className="aw-input aw-select"
+        value={value ?? ''}
+        disabled={disabled}
+        onChange={(e) => onChange?.(e.target.value)}
+      >
         {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
         ))}
       </select>
-      <span className="aw-select-chevron" aria-hidden>▾</span>
+      <span className="aw-select-chevron" aria-hidden>
+        ▾
+      </span>
     </div>
   );
 }
 
 export function Toggle({ checked, onChange, label, disabled }) {
   return (
-    <button type="button" className={`aw-toggle${checked ? ' on' : ''}`} disabled={disabled}
-      onClick={() => onChange?.(!checked)} role="switch" aria-checked={!!checked}>
-      <span className="aw-toggle-track"><span className="aw-toggle-knob" /></span>
+    <button
+      type="button"
+      className={`aw-toggle${checked ? ' on' : ''}`}
+      disabled={disabled}
+      onClick={() => onChange?.(!checked)}
+      role="switch"
+      aria-checked={!!checked}
+    >
+      <span className="aw-toggle-track">
+        <span className="aw-toggle-knob" />
+      </span>
       {label && <span className="aw-toggle-label">{label}</span>}
     </button>
   );
@@ -102,7 +174,13 @@ export function PageHeader({ title, description, breadcrumb, actions, counter })
         <nav className="aw-crumbs">
           {breadcrumb.map((b, i) => (
             <span key={i} className="aw-crumb">
-              {b.onClick ? <button className="aw-crumb-link" onClick={b.onClick}>{b.label}</button> : <span>{b.label}</span>}
+              {b.onClick ? (
+                <button className="aw-crumb-link" onClick={b.onClick}>
+                  {b.label}
+                </button>
+              ) : (
+                <span>{b.label}</span>
+              )}
               {i < breadcrumb.length - 1 && <span className="aw-crumb-sep">/</span>}
             </span>
           ))}
@@ -129,7 +207,14 @@ export function SplitLayout({ list, detail, detailOpen, onCloseDetail }) {
       <div className="aw-split-list">{list}</div>
       {detailOpen && (
         <aside className="aw-split-detail">
-          <button className="aw-split-close" onClick={onCloseDetail} title="收起详情" aria-label="收起详情">✕</button>
+          <button
+            className="aw-split-close"
+            onClick={onCloseDetail}
+            title="收起详情"
+            aria-label="收起详情"
+          >
+            ✕
+          </button>
           {detail}
         </aside>
       )}
@@ -138,7 +223,14 @@ export function SplitLayout({ list, detail, detailOpen, onCloseDetail }) {
 }
 
 // 通用资源行列表(单选)
-export function ResourceList({ items = [], selectedId, onSelect, getKey = (x) => x.id, renderItem, empty }) {
+export function ResourceList({
+  items = [],
+  selectedId,
+  onSelect,
+  getKey = (x) => x.id,
+  renderItem,
+  empty,
+}) {
   if (!items.length) return <div className="aw-empty">{empty || '暂无数据'}</div>;
   return (
     <div className="aw-rlist" role="listbox">
@@ -146,8 +238,13 @@ export function ResourceList({ items = [], selectedId, onSelect, getKey = (x) =>
         const k = getKey(it);
         const sel = k === selectedId;
         return (
-          <button key={k} className={`aw-rlist-item${sel ? ' sel' : ''}`} role="option" aria-selected={sel}
-            onClick={() => onSelect?.(it)}>
+          <button
+            key={k}
+            className={`aw-rlist-item${sel ? ' sel' : ''}`}
+            role="option"
+            aria-selected={sel}
+            onClick={() => onSelect?.(it)}
+          >
             {renderItem(it, sel)}
           </button>
         );
@@ -161,8 +258,13 @@ export function Tabs({ tabs = [], active, onChange }) {
   return (
     <div className="aw-tabs" role="tablist">
       {tabs.map((t) => (
-        <button key={t.id} role="tab" aria-selected={active === t.id}
-          className={`aw-tab${active === t.id ? ' active' : ''}`} onClick={() => onChange?.(t.id)}>
+        <button
+          key={t.id}
+          role="tab"
+          aria-selected={active === t.id}
+          className={`aw-tab${active === t.id ? ' active' : ''}`}
+          onClick={() => onChange?.(t.id)}
+        >
           {t.label}
           {t.badge != null && <span className="aw-tab-badge">{t.badge}</span>}
         </button>
@@ -191,14 +293,30 @@ export function FormSection({ title, description, actions, footer, children, den
 }
 
 // ── 全页向导(左侧步骤条) ────────────────────────────────────────────────────
-export function Wizard({ steps = [], active = 0, onNav, onCancel, onSubmit, submitLabel = '完成', submitting, canNext = true }) {
+export function Wizard({
+  steps = [],
+  active = 0,
+  onNav,
+  onCancel,
+  onSubmit,
+  submitLabel = '完成',
+  submitting,
+  canNext = true,
+}) {
   const last = active >= steps.length - 1;
   return (
     <div className="aw-wizard">
       <ol className="aw-wizard-rail">
         {steps.map((s, i) => (
-          <li key={i} className={`aw-wizard-step${i === active ? ' active' : ''}${i < active ? ' done' : ''}`}>
-            <button className="aw-wizard-step-btn" onClick={() => i < active && onNav?.(i)} disabled={i > active}>
+          <li
+            key={i}
+            className={`aw-wizard-step${i === active ? ' active' : ''}${i < active ? ' done' : ''}`}
+          >
+            <button
+              className="aw-wizard-step-btn"
+              onClick={() => i < active && onNav?.(i)}
+              disabled={i > active}
+            >
               <span className="aw-wizard-step-no">{i < active ? '✓' : i + 1}</span>
               <span className="aw-wizard-step-label">{s.title}</span>
             </button>
@@ -211,12 +329,22 @@ export function Wizard({ steps = [], active = 0, onNav, onCancel, onSubmit, subm
           {steps[active]?.content}
         </div>
         <div className="aw-wizard-foot">
-          {onCancel && <Btn variant="link" onClick={onCancel}>取消</Btn>}
+          {onCancel && (
+            <Btn variant="link" onClick={onCancel}>
+              取消
+            </Btn>
+          )}
           <div className="aw-wizard-foot-right">
             {active > 0 && <Btn onClick={() => onNav?.(active - 1)}>上一步</Btn>}
-            {last
-              ? <Btn variant="primary" loading={submitting} disabled={!canNext} onClick={onSubmit}>{submitLabel}</Btn>
-              : <Btn variant="primary" disabled={!canNext} onClick={() => onNav?.(active + 1)}>下一步</Btn>}
+            {last ? (
+              <Btn variant="primary" loading={submitting} disabled={!canNext} onClick={onSubmit}>
+                {submitLabel}
+              </Btn>
+            ) : (
+              <Btn variant="primary" disabled={!canNext} onClick={() => onNav?.(active + 1)}>
+                下一步
+              </Btn>
+            )}
           </div>
         </div>
       </div>
@@ -236,10 +364,17 @@ export function Drawer({ open, onClose, title, children, footer, width = 480 }) 
   return (
     <div className="aw-drawer-root">
       <div className="aw-drawer-scrim" onClick={onClose} />
-      <aside className="aw-drawer" style={{ '--aw-drawer-w': width + 'px' }} role="dialog" aria-modal="true">
+      <aside
+        className="aw-drawer"
+        style={{ '--aw-drawer-w': width + 'px' }}
+        role="dialog"
+        aria-modal="true"
+      >
         <div className="aw-drawer-head">
           <h3 className="aw-drawer-title">{title}</h3>
-          <button className="aw-drawer-close" onClick={onClose} aria-label="关闭">✕</button>
+          <button className="aw-drawer-close" onClick={onClose} aria-label="关闭">
+            ✕
+          </button>
         </div>
         <div className="aw-drawer-body">{children}</div>
         {footer && <div className="aw-drawer-foot">{footer}</div>}
@@ -249,7 +384,17 @@ export function Drawer({ open, onClose, title, children, footer, width = 480 }) 
 }
 
 // ── 确认弹窗(唯一保留的居中弹窗,仅破坏性操作) ────────────────────────────────
-export function ConfirmDialog({ open, title, body, confirmLabel = '确认', cancelLabel = '取消', danger, loading, onConfirm, onCancel }) {
+export function ConfirmDialog({
+  open,
+  title,
+  body,
+  confirmLabel = '确认',
+  cancelLabel = '取消',
+  danger,
+  loading,
+  onConfirm,
+  onCancel,
+}) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => e.key === 'Escape' && onCancel?.();
@@ -264,8 +409,12 @@ export function ConfirmDialog({ open, title, body, confirmLabel = '确认', canc
         <h3 className="aw-confirm-title">{title}</h3>
         {body && <div className="aw-confirm-body">{body}</div>}
         <div className="aw-confirm-foot">
-          <Btn variant="link" onClick={onCancel}>{cancelLabel}</Btn>
-          <Btn variant={danger ? 'danger' : 'primary'} loading={loading} onClick={onConfirm}>{confirmLabel}</Btn>
+          <Btn variant="link" onClick={onCancel}>
+            {cancelLabel}
+          </Btn>
+          <Btn variant={danger ? 'danger' : 'primary'} loading={loading} onClick={onConfirm}>
+            {confirmLabel}
+          </Btn>
         </div>
       </div>
     </div>
@@ -279,9 +428,15 @@ export function Flashbar({ items = [] }) {
     <div className="aw-flashbar">
       {items.map((it, i) => (
         <div key={it.id ?? i} className={`aw-flash aw-flash-${it.type || 'info'}`}>
-          <span className="aw-flash-ic" aria-hidden>{_STATUS[it.type === 'success' ? 'ok' : it.type === 'error' ? 'error' : it.type] || 'ℹ'}</span>
+          <span className="aw-flash-ic" aria-hidden>
+            {_STATUS[it.type === 'success' ? 'ok' : it.type === 'error' ? 'error' : it.type] || 'ℹ'}
+          </span>
           <div className="aw-flash-content">{it.content}</div>
-          {it.onDismiss && <button className="aw-flash-x" onClick={it.onDismiss} aria-label="关闭">✕</button>}
+          {it.onDismiss && (
+            <button className="aw-flash-x" onClick={it.onDismiss} aria-label="关闭">
+              ✕
+            </button>
+          )}
         </div>
       ))}
     </div>
@@ -294,7 +449,10 @@ export function useFlash() {
   const seq = useRef(1);
   const push = (type, content, ttl = 3000) => {
     const id = seq.current++;
-    setItems((xs) => [...xs, { id, type, content, onDismiss: () => setItems((ys) => ys.filter((y) => y.id !== id)) }]);
+    setItems((xs) => [
+      ...xs,
+      { id, type, content, onDismiss: () => setItems((ys) => ys.filter((y) => y.id !== id)) },
+    ]);
     if (ttl) setTimeout(() => setItems((ys) => ys.filter((y) => y.id !== id)), ttl);
     return id;
   };

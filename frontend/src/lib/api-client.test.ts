@@ -10,10 +10,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
 // Read the api-client source (IIFE, not ES module — no import)
-const apiClientSource = readFileSync(
-  resolve(__dirname, './api-client.ts'),
-  'utf-8',
-);
+const apiClientSource = readFileSync(resolve(__dirname, './api-client.ts'), 'utf-8');
 
 describe('api-client basics', () => {
   beforeAll(() => {
@@ -57,9 +54,7 @@ describe('api-client basics', () => {
     try {
       // Access the internal _send via the api helpers;
       // window.api.auth should have methods that call _send
-      await expect(
-        window.api.auth.me()
-      ).rejects.toThrow();
+      await expect(window.api.auth.me()).rejects.toThrow();
     } finally {
       window.fetch = originalFetch;
     }

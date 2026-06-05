@@ -53,7 +53,7 @@ test.describe('Login page', () => {
 
     // Filter out expected network errors (backend not running)
     const realErrors = errors.filter(
-      (e) => !e.includes('Failed to fetch') && !e.includes('net::ERR_')
+      (e) => !e.includes('Failed to fetch') && !e.includes('net::ERR_'),
     );
     expect(realErrors).toHaveLength(0);
   });

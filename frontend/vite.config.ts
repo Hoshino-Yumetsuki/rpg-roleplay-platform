@@ -126,10 +126,7 @@ export default defineConfig(({ mode }) => {
             if (id.includes('node_modules/@cloudscape-design/')) {
               return 'cloudscape';
             }
-            if (
-              id.includes('node_modules/i18next') ||
-              id.includes('node_modules/react-i18next')
-            ) {
+            if (id.includes('node_modules/i18next') || id.includes('node_modules/react-i18next')) {
               return 'i18n';
             }
             if (id.includes('node_modules/ace-builds')) {

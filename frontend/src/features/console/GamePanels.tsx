@@ -10,21 +10,21 @@ import { Icon } from './GameIcons';
 import { useTranslation } from 'react-i18next';
 
 const PANEL_TABS = [
-  { id: "status", labelKey: "game.tabs.status", icon: "status" },
-  { id: "rules", labelKey: "game.tabs.rules", icon: "debug" },
-  { id: "memory", labelKey: "game.tabs.memory", icon: "memory" },
-  { id: "worldbook", labelKey: "game.tabs.worldbook", icon: "world" },
+  { id: 'status', labelKey: 'game.tabs.status', icon: 'status' },
+  { id: 'rules', labelKey: 'game.tabs.rules', icon: 'debug' },
+  { id: 'memory', labelKey: 'game.tabs.memory', icon: 'memory' },
+  { id: 'worldbook', labelKey: 'game.tabs.worldbook', icon: 'world' },
   // Codex 评审:tab 改名"人物" — 不再是"完整角色卡库"的镜像,而是三层运行时索引:
   // 当前在场 (active_entities + encounter.combatants) / 关系 (relationships) /
   // 已固定角色卡 (entity.card_id 链接到平台 user_cards)。提升为长期角色卡只能在
   // 平台『角色卡』页操作,游戏内不创建。
-  { id: "cards", labelKey: "game.tabs.cards", icon: "cards" },
-  { id: "timeline", labelKey: "game.tabs.timeline", icon: "timeline" },
-  { id: "context", labelKey: "game.tabs.context", icon: "context" },
+  { id: 'cards', labelKey: 'game.tabs.cards', icon: 'cards' },
+  { id: 'timeline', labelKey: 'game.tabs.timeline', icon: 'timeline' },
+  { id: 'context', labelKey: 'game.tabs.context', icon: 'context' },
   // 调试 tab 仅当 localStorage.rpg_devmode === "1" 时启用; 玩家面看不到
-  ...(typeof localStorage !== "undefined" && localStorage.getItem("rpg_devmode") === "1"
-      ? [{ id: "debug", labelKey: "game.tabs.debug", icon: "debug" }]
-      : []),
+  ...(typeof localStorage !== 'undefined' && localStorage.getItem('rpg_devmode') === '1'
+    ? [{ id: 'debug', labelKey: 'game.tabs.debug', icon: 'debug' }]
+    : []),
 ];
 
 // ── PanelStatus —— content-pack-aware 状态栏 ─────────────────────────
@@ -56,9 +56,9 @@ const PANEL_TABS = [
 function _statusProfileFor(state) {
   const cp = (state && state.content_pack) || {};
   const scene = (state && state.scene) || {};
-  if (cp.kind === "module_adventure" || scene.module_id) return "module";
-  if (cp.kind === "novel_adaptation") return "novel";
-  return "freeform";  // 渲染层与 novel 共用 NovelStatusProfile
+  if (cp.kind === 'module_adventure' || scene.module_id) return 'module';
+  if (cp.kind === 'novel_adaptation') return 'novel';
+  return 'freeform'; // 渲染层与 novel 共用 NovelStatusProfile
 }
 
 function ModuleStatusProfile({ state }) {
@@ -73,12 +73,16 @@ function ModuleStatusProfile({ state }) {
   // 5E 模组的背包真值源:player_character.inventory(由 rules engine 维护)。
   // 旧 PanelStatus 误读 player.inventory → "0 件" 显示错误。
   const inventory = Array.isArray(pc.inventory) ? pc.inventory : [];
-  const conditions = Array.isArray(pc.conditions) && pc.conditions.length
-    ? pc.conditions.join(" · ")
-    : t('game.status.condition_normal');
-  const hpPct = pc.max_hp > 0 ? Math.max(0, Math.min(100, Math.round(100 * (pc.hp || 0) / pc.max_hp))) : 0;
+  const conditions =
+    Array.isArray(pc.conditions) && pc.conditions.length
+      ? pc.conditions.join(' · ')
+      : t('game.status.condition_normal');
+  const hpPct =
+    pc.max_hp > 0 ? Math.max(0, Math.min(100, Math.round((100 * (pc.hp || 0)) / pc.max_hp))) : 0;
   const lastRoll = diceLog.length ? diceLog[diceLog.length - 1] : null;
-  const liveEnemies = (encounter.combatants || []).filter(c => c && c.side === "enemy" && !c.defeated);
+  const liveEnemies = (encounter.combatants || []).filter(
+    (c) => c && c.side === 'enemy' && !c.defeated,
+  );
   const turnActor = (() => {
     if (!encounter.active) return null;
     const order = encounter.initiative_order || [];
@@ -92,24 +96,28 @@ function ModuleStatusProfile({ state }) {
       <div className="gp-section">
         <div className="section-head">
           <h3>{t('game.status.player')}</h3>
-          <span className="pill"><span className="dot ok" /> {pc.class_name || "—"}</span>
+          <span className="pill">
+            <span className="dot ok" /> {pc.class_name || '—'}
+          </span>
         </div>
         <div className="gp-kv">
           <div className="gp-row">
             <span className="gp-label">{t('game.status.name')}</span>
             <strong>
-              {pc.name || "—"}
-              {pc.level ? ` · Lv${pc.level}` : ""}
-              {pc.class_name ? ` ${pc.class_name}` : ""}
+              {pc.name || '—'}
+              {pc.level ? ` · Lv${pc.level}` : ''}
+              {pc.class_name ? ` ${pc.class_name}` : ''}
             </strong>
           </div>
           <div className="gp-row">
             <span className="gp-label">{t('game.status.hp')}</span>
-            <span className="mono">{pc.hp ?? "—"}/{pc.max_hp ?? "—"} {pc.max_hp > 0 ? `(${hpPct}%)` : ""}</span>
+            <span className="mono">
+              {pc.hp ?? '—'}/{pc.max_hp ?? '—'} {pc.max_hp > 0 ? `(${hpPct}%)` : ''}
+            </span>
           </div>
           <div className="gp-row">
             <span className="gp-label">{t('game.status.ac')}</span>
-            <span className="mono">{pc.ac ?? "—"}</span>
+            <span className="mono">{pc.ac ?? '—'}</span>
           </div>
           <div className="gp-row">
             <span className="gp-label">{t('game.status.condition')}</span>
@@ -122,33 +130,42 @@ function ModuleStatusProfile({ state }) {
       <div className="gp-section">
         <div className="section-head">
           <h3>{t('game.status.adventure_scene')}</h3>
-          {encounter.active
-            ? <span className="pill" style={{color:"var(--danger)"}}><span className="dot" style={{background:"var(--danger)"}}/> {t('game.status.in_combat')}</span>
-            : <span className="pill ok"><span className="dot ok" /> {t('game.status.exploring')}</span>}
+          {encounter.active ? (
+            <span className="pill" style={{ color: 'var(--danger)' }}>
+              <span className="dot" style={{ background: 'var(--danger)' }} />{' '}
+              {t('game.status.in_combat')}
+            </span>
+          ) : (
+            <span className="pill ok">
+              <span className="dot ok" /> {t('game.status.exploring')}
+            </span>
+          )}
         </div>
         <div className="gp-kv">
           <div className="gp-row">
             <span className="gp-label">{t('game.status.position')}</span>
-            <strong>{room.name || scene.location_id || "—"}</strong>
+            <strong>{room.name || scene.location_id || '—'}</strong>
           </div>
-          {(memory.current_objective || manifest.tagline) ? (
+          {memory.current_objective || manifest.tagline ? (
             <div className="gp-row">
               <span className="gp-label">{t('game.status.objective')}</span>
-              <span style={{fontStyle:"italic"}}>{memory.current_objective || manifest.tagline}</span>
+              <span style={{ fontStyle: 'italic' }}>
+                {memory.current_objective || manifest.tagline}
+              </span>
             </div>
           ) : null}
         </div>
-        {room.description ? (
-          <p className="gp-bio">{room.description}</p>
-        ) : null}
+        {room.description ? <p className="gp-bio">{room.description}</p> : null}
       </div>
 
       {/* 可见线索 */}
-      {(room.visible_clues && room.visible_clues.length) ? (
+      {room.visible_clues && room.visible_clues.length ? (
         <div className="gp-section">
           <div className="section-head">
             <h3>{t('game.status.visible_clues')}</h3>
-            <span className="muted-2 mono" style={{fontSize: 11}}>{room.visible_clues.length}</span>
+            <span className="muted-2 mono" style={{ fontSize: 11 }}>
+              {room.visible_clues.length}
+            </span>
           </div>
           <ul className="gp-flat-list">
             {room.visible_clues.map((c, i) => (
@@ -161,17 +178,21 @@ function ModuleStatusProfile({ state }) {
       ) : null}
 
       {/* 出口 */}
-      {(room.exits && room.exits.length) ? (
+      {room.exits && room.exits.length ? (
         <div className="gp-section">
           <div className="section-head">
             <h3>{t('game.status.exits')}</h3>
-            <span className="muted-2 mono" style={{fontSize: 11}}>{room.exits.length}</span>
+            <span className="muted-2 mono" style={{ fontSize: 11 }}>
+              {room.exits.length}
+            </span>
           </div>
           <ul className="gp-flat-list">
             {room.exits.map((ex, i) => (
               <li key={ex.to || i}>
                 <span>{(ex && ex.label) || ex.to || t('game.status.exit_label')}</span>
-                <span className="muted-2 mono" style={{fontSize: 11.5}}>{ex.to || ""}</span>
+                <span className="muted-2 mono" style={{ fontSize: 11.5 }}>
+                  {ex.to || ''}
+                </span>
               </li>
             ))}
           </ul>
@@ -182,17 +203,21 @@ function ModuleStatusProfile({ state }) {
       <div className="gp-section">
         <div className="section-head">
           <h3>{t('game.status.resources')}</h3>
-          <span className="muted-2 mono" style={{fontSize: 11}}>{t('game.status.items_count', { count: inventory.length })}</span>
+          <span className="muted-2 mono" style={{ fontSize: 11 }}>
+            {t('game.status.items_count', { count: inventory.length })}
+          </span>
         </div>
         {inventory.length === 0 ? (
-          <p className="muted-2" style={{fontSize: 12.5, margin: "4px 0 0"}}>{t('game.status.backpack_empty')}</p>
+          <p className="muted-2" style={{ fontSize: 12.5, margin: '4px 0 0' }}>
+            {t('game.status.backpack_empty')}
+          </p>
         ) : (
           <ul className="gp-flat-list">
             {inventory.map((it, i) => (
               <li key={it.id || it.name || i}>
                 <span>{(it && (it.name || it.id)) || t('game.status.unnamed_item')}</span>
-                <span className="muted-2 mono" style={{fontSize: 11.5}}>
-                  {(it && it.qty != null) ? `×${it.qty}` : (it && it.quality) || ""}
+                <span className="muted-2 mono" style={{ fontSize: 11.5 }}>
+                  {it && it.qty != null ? `×${it.qty}` : (it && it.quality) || ''}
                 </span>
               </li>
             ))}
@@ -205,7 +230,7 @@ function ModuleStatusProfile({ state }) {
         <div className="gp-section">
           <div className="section-head">
             <h3>{t('game.status.combat')}</h3>
-            <span className="pill" style={{color:"var(--danger)"}}>
+            <span className="pill" style={{ color: 'var(--danger)' }}>
               {t('game.status.round', { round: encounter.round || 1 })}
             </span>
           </div>
@@ -213,7 +238,7 @@ function ModuleStatusProfile({ state }) {
             <div className="gp-kv">
               <div className="gp-row">
                 <span className="gp-label">{t('game.status.current_action')}</span>
-                <strong>{turnActor.name || turnActor.id || "—"}</strong>
+                <strong>{turnActor.name || turnActor.id || '—'}</strong>
               </div>
             </div>
           ) : null}
@@ -222,7 +247,9 @@ function ModuleStatusProfile({ state }) {
               {liveEnemies.map((c, i) => (
                 <li key={c.id || i}>
                   <span>{c.name || c.id || t('game.status.enemy')}</span>
-                  <span className="muted-2 mono" style={{fontSize: 11.5}}>HP {c.hp ?? "—"}/{c.max_hp ?? "—"}</span>
+                  <span className="muted-2 mono" style={{ fontSize: 11.5 }}>
+                    HP {c.hp ?? '—'}/{c.max_hp ?? '—'}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -235,31 +262,38 @@ function ModuleStatusProfile({ state }) {
         <div className="gp-section">
           <div className="section-head">
             <h3>{t('game.status.last_ruling')}</h3>
-            <span className="muted-2 mono" style={{fontSize: 11}}>{lastRoll.kind || "?"}</span>
+            <span className="muted-2 mono" style={{ fontSize: 11 }}>
+              {lastRoll.kind || '?'}
+            </span>
           </div>
           <div className="gp-kv">
             <div className="gp-row">
-              <span className="gp-label">{lastRoll.actor || "—"}</span>
+              <span className="gp-label">{lastRoll.actor || '—'}</span>
               <span className="mono">
-                {lastRoll.expression || ""}{lastRoll.total != null ? ` = ${lastRoll.total}` : ""}
-                {lastRoll.dc != null ? ` vs DC ${lastRoll.dc}` : ""}
-                {lastRoll.success === true ? t('game.status.roll_success') : lastRoll.success === false ? t('game.status.roll_failure') : ""}
+                {lastRoll.expression || ''}
+                {lastRoll.total != null ? ` = ${lastRoll.total}` : ''}
+                {lastRoll.dc != null ? ` vs DC ${lastRoll.dc}` : ''}
+                {lastRoll.success === true
+                  ? t('game.status.roll_success')
+                  : lastRoll.success === false
+                    ? t('game.status.roll_failure')
+                    : ''}
               </span>
             </div>
             {lastRoll.damage ? (
               <div className="gp-row">
                 <span className="gp-label">{t('game.status.damage')}</span>
-                <span className="mono">{
-                  typeof lastRoll.damage === "object"
-                    ? `${lastRoll.damage.amount ?? "—"} ${lastRoll.damage.type || ""}`.trim()
-                    : String(lastRoll.damage)
-                }</span>
+                <span className="mono">
+                  {typeof lastRoll.damage === 'object'
+                    ? `${lastRoll.damage.amount ?? '—'} ${lastRoll.damage.type || ''}`.trim()
+                    : String(lastRoll.damage)}
+                </span>
               </div>
             ) : null}
             {lastRoll.reason ? (
               <div className="gp-row">
                 <span className="gp-label">{t('game.status.ruling_source')}</span>
-                <span style={{fontSize: 12, fontStyle:"italic"}}>{lastRoll.reason}</span>
+                <span style={{ fontSize: 12, fontStyle: 'italic' }}>{lastRoll.reason}</span>
               </div>
             ) : null}
           </div>
@@ -280,7 +314,14 @@ function NovelStatusProfile({ state }) {
   const knownEvents = Array.isArray(w.known_events) ? w.known_events : [];
   const [playerExpanded, setPlayerExpanded] = React.useState(false);
 
-  const hasDetail = !!(p.appearance || p.personality || p.speech_style || p.secrets || p.background || p.identity_role_desc);
+  const hasDetail = !!(
+    p.appearance ||
+    p.personality ||
+    p.speech_style ||
+    p.secrets ||
+    p.background ||
+    p.identity_role_desc
+  );
 
   return (
     <div className="gp-stack">
@@ -290,9 +331,11 @@ function NovelStatusProfile({ state }) {
           {hasDetail && (
             <button
               className="iconbtn"
-              style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4 }}
-              onClick={() => setPlayerExpanded(v => !v)}
-              data-tip={playerExpanded ? t('game.status.collapse_detail') : t('game.status.expand_detail')}
+              style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4 }}
+              onClick={() => setPlayerExpanded((v) => !v)}
+              data-tip={
+                playerExpanded ? t('game.status.collapse_detail') : t('game.status.expand_detail')
+              }
             >
               {playerExpanded ? t('game.status.collapse_detail') : t('game.status.expand_detail')}
             </button>
@@ -302,71 +345,135 @@ function NovelStatusProfile({ state }) {
           <div className="gp-row">
             <span className="gp-label">{t('game.status.name')}</span>
             <strong style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span>{p.name || "—"}</span>
+              <span>{p.name || '—'}</span>
               {(() => {
                 // 老存档兼容：isekai → 按 soul 显示
                 const origin = p.player_origin === 'isekai' ? 'soul' : p.player_origin;
                 const ORIGIN_BADGES = {
-                  soul:   { icon: '◈', label: t('game.status.origin_soul'),   title: t('game.status.origin_soul_title'),   bg: 'rgba(85,130,200,.18)',  color: '#8db4e8', border: 'rgba(85,130,200,.35)' },
-                  body:   { icon: '◉', label: t('game.status.origin_body'),   title: t('game.status.origin_body_title'),   bg: 'rgba(220,140,80,.16)', color: '#e8a87c', border: 'rgba(220,140,80,.38)' },
-                  dual:   { icon: '◑', label: t('game.status.origin_dual'),   title: t('game.status.origin_dual_title'),   bg: 'rgba(160,130,210,.16)', color: '#b8a0e8', border: 'rgba(160,130,210,.35)' },
-                  native: { icon: '◎', label: t('game.status.origin_native'), title: t('game.status.origin_native_title'), bg: 'rgba(150,143,133,.15)', color: '#b8b0a5', border: 'rgba(150,143,133,.3)' },
+                  soul: {
+                    icon: '◈',
+                    label: t('game.status.origin_soul'),
+                    title: t('game.status.origin_soul_title'),
+                    bg: 'rgba(85,130,200,.18)',
+                    color: '#8db4e8',
+                    border: 'rgba(85,130,200,.35)',
+                  },
+                  body: {
+                    icon: '◉',
+                    label: t('game.status.origin_body'),
+                    title: t('game.status.origin_body_title'),
+                    bg: 'rgba(220,140,80,.16)',
+                    color: '#e8a87c',
+                    border: 'rgba(220,140,80,.38)',
+                  },
+                  dual: {
+                    icon: '◑',
+                    label: t('game.status.origin_dual'),
+                    title: t('game.status.origin_dual_title'),
+                    bg: 'rgba(160,130,210,.16)',
+                    color: '#b8a0e8',
+                    border: 'rgba(160,130,210,.35)',
+                  },
+                  native: {
+                    icon: '◎',
+                    label: t('game.status.origin_native'),
+                    title: t('game.status.origin_native_title'),
+                    bg: 'rgba(150,143,133,.15)',
+                    color: '#b8b0a5',
+                    border: 'rgba(150,143,133,.3)',
+                  },
                 };
                 const badge = origin && ORIGIN_BADGES[origin];
                 if (!badge) return null;
                 return (
-                  <span title={badge.title}
+                  <span
+                    title={badge.title}
                     style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 3,
-                      padding: '1px 7px', borderRadius: 10, fontSize: 11, fontWeight: 600,
-                      background: badge.bg, color: badge.color,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      padding: '1px 7px',
+                      borderRadius: 10,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      background: badge.bg,
+                      color: badge.color,
                       border: `1px solid ${badge.border}`,
-                    }}>{badge.icon} {badge.label}</span>
+                    }}
+                  >
+                    {badge.icon} {badge.label}
+                  </span>
                 );
               })()}
             </strong>
           </div>
-          <div className="gp-row"><span className="gp-label">{t('game.status.identity')}</span><span>{p.role || "—"}</span></div>
-          <div className="gp-row"><span className="gp-label">{t('game.status.location')}</span><span>{p.current_location || "—"}</span></div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.status.identity')}</span>
+            <span>{p.role || '—'}</span>
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.status.location')}</span>
+            <span>{p.current_location || '—'}</span>
+          </div>
         </div>
         {playerExpanded && hasDetail && (
           <div className="gp-player-detail" style={{ marginTop: 8 }}>
             {p.appearance && (
               <div style={{ marginBottom: 6 }}>
-                <div className="gp-label" style={{ marginBottom: 2 }}>{t('game.status.appearance')}</div>
+                <div className="gp-label" style={{ marginBottom: 2 }}>
+                  {t('game.status.appearance')}
+                </div>
                 <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>{p.appearance}</p>
               </div>
             )}
             {p.personality && (
               <div style={{ marginBottom: 6 }}>
-                <div className="gp-label" style={{ marginBottom: 2 }}>{t('game.status.personality')}</div>
+                <div className="gp-label" style={{ marginBottom: 2 }}>
+                  {t('game.status.personality')}
+                </div>
                 <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>{p.personality}</p>
               </div>
             )}
             {p.speech_style && (
               <div style={{ marginBottom: 6 }}>
-                <div className="gp-label" style={{ marginBottom: 2 }}>{t('game.status.speech_style')}</div>
+                <div className="gp-label" style={{ marginBottom: 2 }}>
+                  {t('game.status.speech_style')}
+                </div>
                 <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>{p.speech_style}</p>
               </div>
             )}
             {p.background && !p.personality && (
               <div style={{ marginBottom: 6 }}>
-                <div className="gp-label" style={{ marginBottom: 2 }}>{t('game.status.background')}</div>
+                <div className="gp-label" style={{ marginBottom: 2 }}>
+                  {t('game.status.background')}
+                </div>
                 <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>{p.background}</p>
               </div>
             )}
             {p.identity_role_desc && (
               <div style={{ marginBottom: 6 }}>
-                <div className="gp-label" style={{ marginBottom: 2 }}>{t('game.status.entry_position')}</div>
+                <div className="gp-label" style={{ marginBottom: 2 }}>
+                  {t('game.status.entry_position')}
+                </div>
                 <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>{p.identity_role_desc}</p>
               </div>
             )}
             {p.secrets && (
-              <div style={{ marginBottom: 6, padding: "6px 8px", background: "var(--panel-3)", borderRadius: 6, border: "1px dashed var(--line)" }}>
-                <div className="gp-label" style={{ marginBottom: 2, color: "var(--accent)" }}>
+              <div
+                style={{
+                  marginBottom: 6,
+                  padding: '6px 8px',
+                  background: 'var(--panel-3)',
+                  borderRadius: 6,
+                  border: '1px dashed var(--line)',
+                }}
+              >
+                <div className="gp-label" style={{ marginBottom: 2, color: 'var(--accent)' }}>
                   {t('game.status.secrets_label')}
                 </div>
-                <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, fontStyle: "italic" }}>{p.secrets}</p>
+                <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, fontStyle: 'italic' }}>
+                  {p.secrets}
+                </p>
               </div>
             )}
           </div>
@@ -376,31 +483,56 @@ function NovelStatusProfile({ state }) {
       <div className="gp-section">
         <div className="section-head">
           <h3>{t('game.status.world_now')}</h3>
-          <span className="pill ok"><span className="dot ok" /> {t('game.status.locked')}</span>
+          <span className="pill ok">
+            <span className="dot ok" /> {t('game.status.locked')}
+          </span>
         </div>
         <div className="gp-kv">
-          <div className="gp-row"><span className="gp-label">{t('game.status.time')}</span><span>{w.time || "—"}</span></div>
-          <div className="gp-row"><span className="gp-label">{t('game.status.weather')}</span><span>{w.weather || "—"}</span></div>
-          <div className="gp-row"><span className="gp-label">{t('game.status.event')}</span><span>{timeline.current_label || "—"}{timeline.current_phase ? ` · ${timeline.current_phase}` : ""}</span></div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.status.time')}</span>
+            <span>{w.time || '—'}</span>
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.status.weather')}</span>
+            <span>{w.weather || '—'}</span>
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.status.event')}</span>
+            <span>
+              {timeline.current_label || '—'}
+              {timeline.current_phase ? ` · ${timeline.current_phase}` : ''}
+            </span>
+          </div>
         </div>
       </div>
 
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.status.inventory')}</h3><span className="muted-2 mono" style={{fontSize: 11}}>{t('game.status.items_count', { count: inventory.length })}</span></div>
+        <div className="section-head">
+          <h3>{t('game.status.inventory')}</h3>
+          <span className="muted-2 mono" style={{ fontSize: 11 }}>
+            {t('game.status.items_count', { count: inventory.length })}
+          </span>
+        </div>
         <ul className="gp-flat-list">
           {inventory.map((it, i) => (
             <li key={i}>
               <span>{(it && it.name) || t('game.status.unnamed_item')}</span>
-              <span className="muted-2" style={{fontSize: 11.5}}>{(it && it.quality) || ""}</span>
+              <span className="muted-2" style={{ fontSize: 11.5 }}>
+                {(it && it.quality) || ''}
+              </span>
             </li>
           ))}
         </ul>
       </div>
 
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.status.known_events')}</h3></div>
+        <div className="section-head">
+          <h3>{t('game.status.known_events')}</h3>
+        </div>
         <ol className="gp-events">
-          {knownEvents.map((e, i) => (<li key={i}>{e}</li>))}
+          {knownEvents.map((e, i) => (
+            <li key={i}>{e}</li>
+          ))}
         </ol>
       </div>
     </div>
@@ -411,7 +543,7 @@ function PanelStatus({ state }) {
   // 单一 PanelStatus 入口,根据 content_pack.kind / scene.module_id 选 profile。
   // 同组件、不同数据适配器 — 不做两套面板,避免双方 drift。
   const profile = _statusProfileFor(state);
-  if (profile === "module") return <ModuleStatusProfile state={state} />;
+  if (profile === 'module') return <ModuleStatusProfile state={state} />;
   // novel & freeform 共用旧版渲染
   return <NovelStatusProfile state={state} />;
 }
@@ -422,73 +554,79 @@ function PanelMemory({ state, density }) {
   return (
     <div className="gp-stack">
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.memory.current_objective')}</h3><span className="pill">{t('game.memory.main_quest_pill')}</span></div>
+        <div className="section-head">
+          <h3>{t('game.memory.current_objective')}</h3>
+          <span className="pill">{t('game.memory.main_quest_pill')}</span>
+        </div>
         <p className="serif gp-quest">{m.main_quest}</p>
-        <p className="muted" style={{fontSize: 13, marginTop: 6}}>{m.current_objective}</p>
+        <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
+          {m.current_objective}
+        </p>
       </div>
 
       <div className="gp-section">
         <div className="section-head">
-          <h3>{t('game.memory.pinned')}<span className="muted-2" style={{marginLeft: 8, fontSize: 11, textTransform: "none"}}>{t('game.memory.pinned_subtitle')}</span></h3>
-          <button className="iconbtn" data-tip={t('game.memory.add_pinned_tip')} data-tip-pos="below"
+          <h3>
+            {t('game.memory.pinned')}
+            <span
+              className="muted-2"
+              style={{ marginLeft: 8, fontSize: 11, textTransform: 'none' }}
+            >
+              {t('game.memory.pinned_subtitle')}
+            </span>
+          </h3>
+          <button
+            className="iconbtn"
+            data-tip={t('game.memory.add_pinned_tip')}
+            data-tip-pos="below"
             onClick={async () => {
-              const txt = prompt(t('game.memory.add_pinned_prompt'), "");
+              const txt = prompt(t('game.memory.add_pinned_prompt'), '');
               if (!txt) return;
               // bucket=pinned(后端 Pydantic 字段名,旧版误用 kind 被 extra='ignore' 吞掉
               // 实际全落 notes 桶,等于固定记忆按钮一直在加到笔记 — 现修)
-              try { await window.api.game.memoryAdd({ bucket: "pinned", text: txt }); try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {} window.__apiToast?.(t('game.memory.added_ok'), { kind: "ok" }); }
-              catch (e) { window.__apiToast?.(t('game.memory.add_failed'), { kind: "danger", detail: e?.message }); }
-            }}>
+              try {
+                await window.api.game.memoryAdd({ bucket: 'pinned', text: txt });
+                try {
+                  window.dispatchEvent(new CustomEvent('game-state-refresh'));
+                } catch (_) {}
+                window.__apiToast?.(t('game.memory.added_ok'), { kind: 'ok' });
+              } catch (e) {
+                window.__apiToast?.(t('game.memory.add_failed'), {
+                  kind: 'danger',
+                  detail: e?.message,
+                });
+              }
+            }}
+          >
             <Icon name="plus" />
           </button>
         </div>
         <ul className="gp-pin-list">
           {(m.pinned || []).map((item, i) => (
             <li key={i}>
-              <span className="gp-pin-mark"><Icon name="pin" size={12} /></span>
+              <span className="gp-pin-mark">
+                <Icon name="pin" size={12} />
+              </span>
               <span className="serif">{item}</span>
-              <button className="iconbtn" data-tip={t('game.memory.unpin_tip')}
+              <button
+                className="iconbtn"
+                data-tip={t('game.memory.unpin_tip')}
                 onClick={async () => {
                   if (!confirm(t('game.memory.unpin_confirm'))) return;
-                  try { await window.api.game.memoryRemove({ bucket: "pinned", index: i }); try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {} window.__apiToast?.(t('game.memory.unpinned_ok'), { kind: "ok" }); }
-                  catch (e) { window.__apiToast?.(t('game.memory.action_failed'), { kind: "danger", detail: e?.message }); }
-                }}>
-                <Icon name="close" size={12} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="gp-section">
-        <div className="section-head"><h3>{t('game.memory.facts')}<span className="muted-2" style={{marginLeft: 8, fontSize: 11, textTransform: "none"}}>{t('game.memory.facts_subtitle')}</span></h3></div>
-        <ul className="gp-flat-list">
-          {(m.facts || []).map((item, i) => (<li key={i}><span>{item}</span></li>))}
-        </ul>
-      </div>
-
-      <div className="gp-section">
-        <div className="section-head"><h3>{t('game.memory.notes')}</h3>
-          <button className="iconbtn" data-tip={t('game.memory.add_note_tip')} data-tip-pos="below"
-            onClick={async () => {
-              const txt = prompt(t('game.memory.add_note_prompt'), "");
-              if (!txt) return;
-              try { await window.api.game.memoryAdd({ bucket: "notes", text: txt }); try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {} window.__apiToast?.(t('game.memory.added_ok'), { kind: "ok" }); }
-              catch (e) { window.__apiToast?.(t('game.memory.add_failed'), { kind: "danger", detail: e?.message }); }
-            }}>
-            <Icon name="plus" />
-          </button>
-        </div>
-        <ul className="gp-flat-list">
-          {(m.notes || []).map((item, i) => (
-            <li key={i} style={{display: "flex", alignItems: "center", gap: 6}}>
-              <span style={{flex: 1}}>{item}</span>
-              <button className="iconbtn" data-tip={t('game.memory.delete_note_tip')}
-                onClick={async () => {
-                  if (!confirm(t('game.memory.delete_note_confirm'))) return;
-                  try { await window.api.game.memoryRemove({ bucket: "notes", index: i }); try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {} window.__apiToast?.(t('game.memory.deleted_ok'), { kind: "ok" }); }
-                  catch (e) { window.__apiToast?.(t('game.memory.action_failed'), { kind: "danger", detail: e?.message }); }
-                }}>
+                  try {
+                    await window.api.game.memoryRemove({ bucket: 'pinned', index: i });
+                    try {
+                      window.dispatchEvent(new CustomEvent('game-state-refresh'));
+                    } catch (_) {}
+                    window.__apiToast?.(t('game.memory.unpinned_ok'), { kind: 'ok' });
+                  } catch (e) {
+                    window.__apiToast?.(t('game.memory.action_failed'), {
+                      kind: 'danger',
+                      detail: e?.message,
+                    });
+                  }
+                }}
+              >
                 <Icon name="close" size={12} />
               </button>
             </li>
@@ -498,8 +636,102 @@ function PanelMemory({ state, density }) {
 
       <div className="gp-section">
         <div className="section-head">
-          <h3>{t('game.memory.retrieval')}<span className="muted-2" style={{marginLeft: 8, fontSize: 11, textTransform: "none"}}>{t('game.memory.retrieval_subtitle')}</span></h3>
-          <span className="pill mono">{t('game.memory.retrieval_chunks', { count: (state.memory && state.memory.last_context && state.memory.last_context.retrieval_chunks) || 0 })}</span>
+          <h3>
+            {t('game.memory.facts')}
+            <span
+              className="muted-2"
+              style={{ marginLeft: 8, fontSize: 11, textTransform: 'none' }}
+            >
+              {t('game.memory.facts_subtitle')}
+            </span>
+          </h3>
+        </div>
+        <ul className="gp-flat-list">
+          {(m.facts || []).map((item, i) => (
+            <li key={i}>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="gp-section">
+        <div className="section-head">
+          <h3>{t('game.memory.notes')}</h3>
+          <button
+            className="iconbtn"
+            data-tip={t('game.memory.add_note_tip')}
+            data-tip-pos="below"
+            onClick={async () => {
+              const txt = prompt(t('game.memory.add_note_prompt'), '');
+              if (!txt) return;
+              try {
+                await window.api.game.memoryAdd({ bucket: 'notes', text: txt });
+                try {
+                  window.dispatchEvent(new CustomEvent('game-state-refresh'));
+                } catch (_) {}
+                window.__apiToast?.(t('game.memory.added_ok'), { kind: 'ok' });
+              } catch (e) {
+                window.__apiToast?.(t('game.memory.add_failed'), {
+                  kind: 'danger',
+                  detail: e?.message,
+                });
+              }
+            }}
+          >
+            <Icon name="plus" />
+          </button>
+        </div>
+        <ul className="gp-flat-list">
+          {(m.notes || []).map((item, i) => (
+            <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ flex: 1 }}>{item}</span>
+              <button
+                className="iconbtn"
+                data-tip={t('game.memory.delete_note_tip')}
+                onClick={async () => {
+                  if (!confirm(t('game.memory.delete_note_confirm'))) return;
+                  try {
+                    await window.api.game.memoryRemove({ bucket: 'notes', index: i });
+                    try {
+                      window.dispatchEvent(new CustomEvent('game-state-refresh'));
+                    } catch (_) {}
+                    window.__apiToast?.(t('game.memory.deleted_ok'), { kind: 'ok' });
+                  } catch (e) {
+                    window.__apiToast?.(t('game.memory.action_failed'), {
+                      kind: 'danger',
+                      detail: e?.message,
+                    });
+                  }
+                }}
+              >
+                <Icon name="close" size={12} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="gp-section">
+        <div className="section-head">
+          <h3>
+            {t('game.memory.retrieval')}
+            <span
+              className="muted-2"
+              style={{ marginLeft: 8, fontSize: 11, textTransform: 'none' }}
+            >
+              {t('game.memory.retrieval_subtitle')}
+            </span>
+          </h3>
+          <span className="pill mono">
+            {t('game.memory.retrieval_chunks', {
+              count:
+                (state.memory &&
+                  state.memory.last_context &&
+                  state.memory.last_context.retrieval_chunks) ||
+                0,
+            })}
+          </span>
         </div>
         <pre className="gp-quote">{m.last_retrieval || t('game.memory.retrieval_empty')}</pre>
       </div>
@@ -512,42 +744,70 @@ function PanelMemory({ state, density }) {
 function InlineEditField({ value, placeholder, emptyLabel, onSubmit, busy }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value || "");
-  React.useEffect(() => { if (!editing) setDraft(value || ""); }, [value, editing]);
+  const [draft, setDraft] = useState(value || '');
+  React.useEffect(() => {
+    if (!editing) setDraft(value || '');
+  }, [value, editing]);
   const submittingRef = React.useRef(false);
   const commit = async () => {
     if (submittingRef.current) return;
-    const v = (draft || "").trim();
-    if (!v || v === (value || "")) { setEditing(false); return; }
+    const v = (draft || '').trim();
+    if (!v || v === (value || '')) {
+      setEditing(false);
+      return;
+    }
     submittingRef.current = true;
-    try { await onSubmit(v); setEditing(false); }
-    catch (e) { window.__apiToast?.(t('game.inline_edit.save_failed'), { kind: "danger", detail: e?.message }); }
-    finally { setTimeout(() => { submittingRef.current = false; }, 100); }
+    try {
+      await onSubmit(v);
+      setEditing(false);
+    } catch (e) {
+      window.__apiToast?.(t('game.inline_edit.save_failed'), {
+        kind: 'danger',
+        detail: e?.message,
+      });
+    } finally {
+      setTimeout(() => {
+        submittingRef.current = false;
+      }, 100);
+    }
   };
   if (!editing) {
     return (
-      <span style={{cursor: "pointer", display: "inline-flex", gap: 4, alignItems: "center"}}
-            onClick={() => setEditing(true)}
-            title={t('game.inline_edit.click_to_edit')}>
-        <span>{value || (emptyLabel || "—")}</span>
-        <Icon name="edit" size={10} style={{opacity: 0.4}} />
+      <span
+        style={{ cursor: 'pointer', display: 'inline-flex', gap: 4, alignItems: 'center' }}
+        onClick={() => setEditing(true)}
+        title={t('game.inline_edit.click_to_edit')}
+      >
+        <span>{value || emptyLabel || '—'}</span>
+        <Icon name="edit" size={10} style={{ opacity: 0.4 }} />
       </span>
     );
   }
   return (
-    <input className="gp-inline-input" autoFocus disabled={busy}
+    <input
+      className="gp-inline-input"
+      autoFocus
+      disabled={busy}
       value={draft}
-      placeholder={placeholder || ""}
+      placeholder={placeholder || ''}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
-        if (e.key === "Enter") commit();
-        else if (e.key === "Escape") { setDraft(value || ""); setEditing(false); }
+        if (e.key === 'Enter') commit();
+        else if (e.key === 'Escape') {
+          setDraft(value || '');
+          setEditing(false);
+        }
       }}
       style={{
-        background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.2)",
-        borderRadius: 4, padding: "2px 6px", color: "inherit", font: "inherit",
-        minWidth: 80, maxWidth: 260,
+        background: 'rgba(255,255,255,0.06)',
+        border: '1px solid rgba(255,255,255,0.2)',
+        borderRadius: 4,
+        padding: '2px 6px',
+        color: 'inherit',
+        font: 'inherit',
+        minWidth: 80,
+        maxWidth: 260,
       }}
     />
   );
@@ -560,63 +820,108 @@ function PanelWorldbook({ state }) {
   const p = (state && state.player) || {};
   const tl = (w && w.timeline) || {};
   const constraints = Array.isArray(state && state.worldline && state.worldline.constraints)
-    ? state.worldline.constraints : [];
+    ? state.worldline.constraints
+    : [];
   // 任意字段写后由 dispatch_ui_tool 自动 _persist_runtime_checkpoint + 回 state;
   // 这里仅 toast 反馈,刷新由 game-state-refresh / state polling 处理(同 memory 模式)。
   const setField = (key, toastMsg) => async (value) => {
     await window.api.game.worldSet({ key, value });
-    try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {}
-    window.__apiToast?.(toastMsg + value, { kind: "ok", duration: 1800 });
+    try {
+      window.dispatchEvent(new CustomEvent('game-state-refresh'));
+    } catch (_) {}
+    window.__apiToast?.(toastMsg + value, { kind: 'ok', duration: 1800 });
   };
   return (
     <div className="gp-stack">
       <div className="gp-section">
         <div className="section-head">
           <h3>{t('game.worldbook.location_time')}</h3>
-          <span className="muted-2" style={{fontSize: 11}}>{t('game.worldbook.click_to_edit')}</span>
+          <span className="muted-2" style={{ fontSize: 11 }}>
+            {t('game.worldbook.click_to_edit')}
+          </span>
         </div>
         <div className="gp-kv">
-          <div className="gp-row"><span className="gp-label">{t('game.worldbook.location_label')}</span>
-            <InlineEditField value={p.current_location} emptyLabel="—"
+          <div className="gp-row">
+            <span className="gp-label">{t('game.worldbook.location_label')}</span>
+            <InlineEditField
+              value={p.current_location}
+              emptyLabel="—"
               placeholder={t('game.worldbook.location_placeholder')}
-              onSubmit={setField("location", t('game.status.location') + " → ")} /></div>
-          <div className="gp-row"><span className="gp-label">{t('game.worldbook.time_label')}</span>
-            <InlineEditField value={w.time} emptyLabel="—"
+              onSubmit={setField('location', t('game.status.location') + ' → ')}
+            />
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.worldbook.time_label')}</span>
+            <InlineEditField
+              value={w.time}
+              emptyLabel="—"
               placeholder={t('game.worldbook.time_placeholder')}
-              onSubmit={setField("time", t('game.status.time') + " → ")} /></div>
-          <div className="gp-row"><span className="gp-label">{t('game.worldbook.weather_label')}</span>
-            <InlineEditField value={w.weather} emptyLabel="—"
+              onSubmit={setField('time', t('game.status.time') + ' → ')}
+            />
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.worldbook.weather_label')}</span>
+            <InlineEditField
+              value={w.weather}
+              emptyLabel="—"
               placeholder={t('game.worldbook.weather_placeholder')}
-              onSubmit={setField("weather", t('game.status.weather') + " → ")} /></div>
-          <div className="gp-row"><span className="gp-label">{t('game.worldbook.phase_label')}</span>
-            <InlineEditField value={tl.current_phase} emptyLabel="—"
+              onSubmit={setField('weather', t('game.status.weather') + ' → ')}
+            />
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.worldbook.phase_label')}</span>
+            <InlineEditField
+              value={tl.current_phase}
+              emptyLabel="—"
               placeholder={t('game.worldbook.phase_placeholder')}
-              onSubmit={setField("phase", t('game.worldbook.phase_label') + " → ")} /></div>
+              onSubmit={setField('phase', t('game.worldbook.phase_label') + ' → ')}
+            />
+          </div>
         </div>
       </div>
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.worldbook.world_rules')}</h3><span className="muted-2" style={{fontSize: 11}}>{t('game.worldbook.constraints_count', { count: constraints.length })}</span></div>
+        <div className="section-head">
+          <h3>{t('game.worldbook.world_rules')}</h3>
+          <span className="muted-2" style={{ fontSize: 11 }}>
+            {t('game.worldbook.constraints_count', { count: constraints.length })}
+          </span>
+        </div>
         <ul className="gp-flat-list">
           {/* task 48：原代码 constraints.map 之后还硬加一行『灯塔不可在天黑前点燃』示例，
               在导入剧本里完全不相关。删掉。空 constraints 时显示空态。 */}
           {constraints.length === 0 && (
-            <li><span className="muted-2">{t('game.worldbook.no_rules')}</span></li>
+            <li>
+              <span className="muted-2">{t('game.worldbook.no_rules')}</span>
+            </li>
           )}
           {constraints.map((c, i) => (
-            <li key={i}><span><Icon name="lock" size={12} style={{verticalAlign: "-2px", marginRight: 6}} />{typeof c === "string" ? c : (c?.text || c?.label || JSON.stringify(c))}</span></li>
+            <li key={i}>
+              <span>
+                <Icon name="lock" size={12} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                {typeof c === 'string' ? c : c?.text || c?.label || JSON.stringify(c)}
+              </span>
+            </li>
           ))}
         </ul>
       </div>
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.worldbook.keywords')}</h3></div>
+        <div className="section-head">
+          <h3>{t('game.worldbook.keywords')}</h3>
+        </div>
         {/* task 48：原硬编码 8 个 chip（雾港/残页/黑铁怀表/沈知微/韩司直/阿衡/北港/灯塔）
             完全不顾当前剧本/state。改为从 state.world.known_events 派生；空就空态。 */}
         <div className="gp-chips">
-          {Array.isArray(w.known_events) && w.known_events.length > 0
-            ? w.known_events.map((ev, i) => (
-                <span key={i} className="gp-chip">{typeof ev === "string" ? ev : (ev?.label || ev?.text || JSON.stringify(ev))}</span>
-              ))
-            : <span className="muted-2" style={{fontSize: 12}}>{t('game.worldbook.keywords_empty')}</span>}
+          {Array.isArray(w.known_events) && w.known_events.length > 0 ? (
+            w.known_events.map((ev, i) => (
+              <span key={i} className="gp-chip">
+                {typeof ev === 'string' ? ev : ev?.label || ev?.text || JSON.stringify(ev)}
+              </span>
+            ))
+          ) : (
+            <span className="muted-2" style={{ fontSize: 12 }}>
+              {t('game.worldbook.keywords_empty')}
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -644,20 +949,21 @@ function PanelWorldbook({ state }) {
 function _toneColorOfDisposition(disposition) {
   // disposition: friendly/hostile/neutral/unknown (5E 模组实体)
   // 或旧 tone 字串 (信任/亲近/戒备/敌意/未知) — 都映射到 pill 配色。
-  const d = String(disposition || "").toLowerCase();
-  if (d === "信任" || d === "friendly" || d === "ally") return "ok";
-  if (d === "戒备" || d === "warn") return "warn";
-  if (d === "亲近" || d === "info") return "info";
-  if (d === "敌意" || d === "hostile" || d === "enemy") return "danger";
-  return "";
+  const d = String(disposition || '').toLowerCase();
+  if (d === '信任' || d === 'friendly' || d === 'ally') return 'ok';
+  if (d === '戒备' || d === 'warn') return 'warn';
+  if (d === '亲近' || d === 'info') return 'info';
+  if (d === '敌意' || d === 'hostile' || d === 'enemy') return 'danger';
+  return '';
 }
 
 function _entityTypeLabel(kind, source, t) {
-  if (kind === "enemy") return t('game.characters.entity_enemy');
-  if (kind === "npc") return t('game.characters.entity_npc');
-  if (kind === "ally") return t('game.characters.entity_ally');
-  if (kind === "unknown" && source === "gm_provisional") return t('game.characters.entity_unconfirmed');
-  return "—";
+  if (kind === 'enemy') return t('game.characters.entity_enemy');
+  if (kind === 'npc') return t('game.characters.entity_npc');
+  if (kind === 'ally') return t('game.characters.entity_ally');
+  if (kind === 'unknown' && source === 'gm_provisional')
+    return t('game.characters.entity_unconfirmed');
+  return '—';
 }
 
 function CharacterCard({ name, info, subtitle, onEditStatus, onDelete }) {
@@ -665,59 +971,79 @@ function CharacterCard({ name, info, subtitle, onEditStatus, onDelete }) {
   // info: { tone | disposition, note?, role? }
   // 可选 props: onEditStatus(newValue)/onDelete() — 仅 relationships 区传入,
   //            on-stage/pinned 不传,保持原本只读语义。
-  const dispLabel = info.tone || info.disposition || "—";
+  const dispLabel = info.tone || info.disposition || '—';
   const toneColor = _toneColorOfDisposition(dispLabel);
   const onDragStart = (e) => {
-    e.dataTransfer.effectAllowed = "copy";
-    e.dataTransfer.setData("text/plain", `@${name}`);
-    e.dataTransfer.setData("application/x-rpg-character", JSON.stringify({ name, info }));
-    e.currentTarget.classList.add("dragging");
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', `@${name}`);
+    e.dataTransfer.setData('application/x-rpg-character', JSON.stringify({ name, info }));
+    e.currentTarget.classList.add('dragging');
   };
-  const onDragEnd = (e) => { e.currentTarget.classList.remove("dragging"); };
+  const onDragEnd = (e) => {
+    e.currentTarget.classList.remove('dragging');
+  };
   return (
     <div className="gp-card" draggable="true" onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="gp-card-head">
-        <div className="gp-card-avatar serif">{(name || "?").slice(0, 1)}</div>
-        <div style={{minWidth: 0, flex: 1}}>
+        <div className="gp-card-avatar serif">{(name || '?').slice(0, 1)}</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div className="gp-card-name">{name}</div>
           <div className="gp-card-tone">
             {onEditStatus ? (
               // 关系区:click-to-edit 状态文本(替代静态 pill)
-              <span className={`pill ${toneColor}`} style={{paddingRight: 6}}>
+              <span className={`pill ${toneColor}`} style={{ paddingRight: 6 }}>
                 <span className={`dot ${toneColor}`} />
-                <InlineEditField value={dispLabel === "—" ? "" : dispLabel}
+                <InlineEditField
+                  value={dispLabel === '—' ? '' : dispLabel}
                   placeholder={t('game.characters.status_placeholder')}
                   emptyLabel={t('game.characters.set_status')}
-                  onSubmit={onEditStatus} />
+                  onSubmit={onEditStatus}
+                />
               </span>
             ) : (
-              <span className={`pill ${toneColor}`}><span className={`dot ${toneColor}`} />{dispLabel}</span>
+              <span className={`pill ${toneColor}`}>
+                <span className={`dot ${toneColor}`} />
+                {dispLabel}
+              </span>
             )}
-            {subtitle ? <span className="muted-2 mono" style={{marginLeft: 6, fontSize: 11}}>{subtitle}</span> : null}
+            {subtitle ? (
+              <span className="muted-2 mono" style={{ marginLeft: 6, fontSize: 11 }}>
+                {subtitle}
+              </span>
+            ) : null}
           </div>
         </div>
         {/* 仅保留 @mention 插入交互;移除『编辑』『转为用户角色卡』按钮 —
             创建 / 提升只在平台『角色卡』页操作 (Codex 评审硬要求)。 */}
-        <button className="iconbtn" data-tip={t('game.characters.mention_tip')} data-tip-pos="below"
+        <button
+          className="iconbtn"
+          data-tip={t('game.characters.mention_tip')}
+          data-tip-pos="below"
           onClick={() => {
-            if (typeof window.__rpgInsertMention === "function") window.__rpgInsertMention(name);
+            if (typeof window.__rpgInsertMention === 'function') window.__rpgInsertMention(name);
             else if (navigator.clipboard) {
-              navigator.clipboard.writeText("@" + name);
-              window.__apiToast?.(t('game.characters.mention_copied', { name }), { kind: "ok", duration: 1500 });
+              navigator.clipboard.writeText('@' + name);
+              window.__apiToast?.(t('game.characters.mention_copied', { name }), {
+                kind: 'ok',
+                duration: 1500,
+              });
             }
-          }}>
+          }}
+        >
           <Icon name="at" size={14} />
         </button>
         {onDelete ? (
-          <button className="iconbtn" data-tip={t('game.characters.delete_relationship_tip')} data-tip-pos="below"
-            onClick={onDelete}>
+          <button
+            className="iconbtn"
+            data-tip={t('game.characters.delete_relationship_tip')}
+            data-tip-pos="below"
+            onClick={onDelete}
+          >
             <Icon name="close" size={12} />
           </button>
         ) : null}
       </div>
-      {(info.note || info.role) ? (
-        <p className="gp-card-note">{info.note || info.role}</p>
-      ) : null}
+      {info.note || info.role ? <p className="gp-card-note">{info.note || info.role}</p> : null}
     </div>
   );
 }
@@ -737,22 +1063,24 @@ function PanelCharacters({ state }) {
   // 当前在场:active_entities + (战斗中的 combatants 兜底);按 id 去重
   const byId = new Map();
   for (const e of activeRaw) {
-    if (e && e.id && e.status !== "defeated") byId.set(String(e.id), e);
+    if (e && e.id && e.status !== 'defeated') byId.set(String(e.id), e);
   }
   if (encounter.active) {
     for (const c of combatants) {
       if (!c || c.defeated) continue;
-      const side = String(c.side || "").toLowerCase();
-      if (side === "party") continue;  // 玩家自己不进
-      const cid = String(c.id || c.instance_id || "");
+      const side = String(c.side || '').toLowerCase();
+      if (side === 'party') continue; // 玩家自己不进
+      const cid = String(c.id || c.instance_id || '');
       if (!cid || byId.has(cid)) continue;
       byId.set(cid, {
-        id: cid, name: c.name || cid,
-        kind: side === "enemy" ? "enemy" : side === "ally" ? "ally" : "unknown",
-        disposition: side === "enemy" ? "hostile" : side === "ally" ? "friendly" : "unknown",
-        source: "encounter",
-        stat_block_id: c.stat_block_id || "",
-        hp: c.hp, max_hp: c.max_hp,
+        id: cid,
+        name: c.name || cid,
+        kind: side === 'enemy' ? 'enemy' : side === 'ally' ? 'ally' : 'unknown',
+        disposition: side === 'enemy' ? 'hostile' : side === 'ally' ? 'friendly' : 'unknown',
+        source: 'encounter',
+        stat_block_id: c.stat_block_id || '',
+        hp: c.hp,
+        max_hp: c.max_hp,
       });
     }
   }
@@ -760,36 +1088,55 @@ function PanelCharacters({ state }) {
 
   // 关系:统一规范化
   const normalize = (info) => {
-    if (typeof info === "string") return { tone: info, note: "" };
-    if (info && typeof info === "object") return { tone: info.tone || t('game.characters.normalize_neutral'), note: info.note || info.description || "" };
-    return { tone: t('game.characters.normalize_neutral'), note: "" };
+    if (typeof info === 'string') return { tone: info, note: '' };
+    if (info && typeof info === 'object')
+      return {
+        tone: info.tone || t('game.characters.normalize_neutral'),
+        note: info.note || info.description || '',
+      };
+    return { tone: t('game.characters.normalize_neutral'), note: '' };
   };
-  const relEntries = Object.entries(relationships).map(([name, info]) => ({ name, info: normalize(info) }));
+  const relEntries = Object.entries(relationships).map(([name, info]) => ({
+    name,
+    info: normalize(info),
+  }));
 
   // 已固定角色卡:active_entities 里 card_id 不空的
-  const pinned = activeRaw.filter(e => e && e.card_id);
+  const pinned = activeRaw.filter((e) => e && e.card_id);
 
   return (
     <div className="gp-stack">
       {/* 当前在场 */}
       <div className="gp-section">
         <div className="section-head">
-          <h3>{t('game.characters.on_stage')}<span className="muted-2" style={{marginLeft: 8, fontSize: 11, textTransform: "none"}}>{t('game.characters.on_stage_subtitle')}</span></h3>
-          <span className="muted-2 mono" style={{fontSize: 11}}>{inScene.length}</span>
+          <h3>
+            {t('game.characters.on_stage')}
+            <span
+              className="muted-2"
+              style={{ marginLeft: 8, fontSize: 11, textTransform: 'none' }}
+            >
+              {t('game.characters.on_stage_subtitle')}
+            </span>
+          </h3>
+          <span className="muted-2 mono" style={{ fontSize: 11 }}>
+            {inScene.length}
+          </span>
         </div>
         {inScene.length === 0 ? (
-          <div className="muted-2" style={{padding: "12px 4px", fontSize: 12.5, lineHeight: 1.7}}>
+          <div className="muted-2" style={{ padding: '12px 4px', fontSize: 12.5, lineHeight: 1.7 }}>
             {t('game.characters.on_stage_empty')}
           </div>
         ) : (
           <div className="gp-cards">
             {inScene.map((e) => {
-              const subtitle = _entityTypeLabel(e.kind, e.source, t) +
-                (e.hp != null && e.max_hp != null ? ` · HP ${e.hp}/${e.max_hp}` : "");
+              const subtitle =
+                _entityTypeLabel(e.kind, e.source, t) +
+                (e.hp != null && e.max_hp != null ? ` · HP ${e.hp}/${e.max_hp}` : '');
               return (
-                <CharacterCard key={e.id}
+                <CharacterCard
+                  key={e.id}
                   name={e.name || e.id}
-                  info={{ disposition: e.disposition, note: e.role || "", role: e.role }}
+                  info={{ disposition: e.disposition, note: e.role || '', role: e.role }}
                   subtitle={subtitle}
                 />
               );
@@ -801,43 +1148,82 @@ function PanelCharacters({ state }) {
       {/* 关系 */}
       <div className="gp-section">
         <div className="section-head">
-          <h3>{t('game.characters.relationships')}<span className="muted-2" style={{marginLeft: 8, fontSize: 11, textTransform: "none"}}>{t('game.characters.relationships_subtitle')}</span></h3>
-          <span className="muted-2 mono" style={{fontSize: 11}}>{relEntries.length}</span>
+          <h3>
+            {t('game.characters.relationships')}
+            <span
+              className="muted-2"
+              style={{ marginLeft: 8, fontSize: 11, textTransform: 'none' }}
+            >
+              {t('game.characters.relationships_subtitle')}
+            </span>
+          </h3>
+          <span className="muted-2 mono" style={{ fontSize: 11 }}>
+            {relEntries.length}
+          </span>
         </div>
         {relEntries.length === 0 ? (
-          <div className="muted-2" style={{padding: "12px 4px", fontSize: 12.5, lineHeight: 1.7}}>
+          <div className="muted-2" style={{ padding: '12px 4px', fontSize: 12.5, lineHeight: 1.7 }}>
             {t('game.characters.relationships_empty')}
           </div>
         ) : (
           <div className="gp-cards">
             {relEntries.map(({ name, info }) => (
-              <CharacterCard key={name} name={name} info={info}
+              <CharacterCard
+                key={name}
+                name={name}
+                info={info}
                 onEditStatus={async (status) => {
                   await window.api.game.relationshipSet({ character: name, status });
-                  window.__apiToast?.(t('game.characters.relationship_updated', { name, status }), { kind: "ok", duration: 1500 });
+                  window.__apiToast?.(t('game.characters.relationship_updated', { name, status }), {
+                    kind: 'ok',
+                    duration: 1500,
+                  });
                 }}
                 onDelete={async () => {
                   if (!confirm(t('game.characters.delete_relationship_confirm', { name }))) return;
-                  try { await window.api.game.relationshipDelete({ character: name });
-                    try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {}
-                    window.__apiToast?.(t('game.characters.deleted_ok'), { kind: "ok" }); }
-                  catch (e) { window.__apiToast?.(t('game.characters.delete_failed'), { kind: "danger", detail: e?.message }); }
+                  try {
+                    await window.api.game.relationshipDelete({ character: name });
+                    try {
+                      window.dispatchEvent(new CustomEvent('game-state-refresh'));
+                    } catch (_) {}
+                    window.__apiToast?.(t('game.characters.deleted_ok'), { kind: 'ok' });
+                  } catch (e) {
+                    window.__apiToast?.(t('game.characters.delete_failed'), {
+                      kind: 'danger',
+                      detail: e?.message,
+                    });
+                  }
                 }}
               />
             ))}
           </div>
         )}
         {/* 手动添加关系入口 */}
-        <button className="iconbtn" style={{marginTop: 8, fontSize: 12, padding: "4px 10px", width: "auto"}}
+        <button
+          className="iconbtn"
+          style={{ marginTop: 8, fontSize: 12, padding: '4px 10px', width: 'auto' }}
           onClick={async () => {
-            const ch = prompt(t('game.characters.npc_name_prompt'), "");
+            const ch = prompt(t('game.characters.npc_name_prompt'), '');
             if (!ch) return;
-            const st = prompt(t('game.characters.relationship_status_prompt', { name: ch }), t('game.characters.status_default'));
+            const st = prompt(
+              t('game.characters.relationship_status_prompt', { name: ch }),
+              t('game.characters.status_default'),
+            );
             if (!st) return;
-            try { await window.api.game.relationshipSet({ character: ch.trim(), status: st.trim() });
-              window.__apiToast?.(t('game.characters.relationship_updated', { name: ch, status: st }), { kind: "ok" }); }
-            catch (e) { window.__apiToast?.(t('game.characters.add_failed'), { kind: "danger", detail: e?.message }); }
-          }}>
+            try {
+              await window.api.game.relationshipSet({ character: ch.trim(), status: st.trim() });
+              window.__apiToast?.(
+                t('game.characters.relationship_updated', { name: ch, status: st }),
+                { kind: 'ok' },
+              );
+            } catch (e) {
+              window.__apiToast?.(t('game.characters.add_failed'), {
+                kind: 'danger',
+                detail: e?.message,
+              });
+            }
+          }}
+        >
           <Icon name="plus" size={12} /> {t('game.characters.add_relationship')}
         </button>
       </div>
@@ -846,14 +1232,25 @@ function PanelCharacters({ state }) {
       {pinned.length > 0 ? (
         <div className="gp-section">
           <div className="section-head">
-            <h3>{t('game.characters.pinned_cards')}<span className="muted-2" style={{marginLeft: 8, fontSize: 11, textTransform: "none"}}>{t('game.characters.pinned_cards_subtitle')}</span></h3>
-            <span className="muted-2 mono" style={{fontSize: 11}}>{pinned.length}</span>
+            <h3>
+              {t('game.characters.pinned_cards')}
+              <span
+                className="muted-2"
+                style={{ marginLeft: 8, fontSize: 11, textTransform: 'none' }}
+              >
+                {t('game.characters.pinned_cards_subtitle')}
+              </span>
+            </h3>
+            <span className="muted-2 mono" style={{ fontSize: 11 }}>
+              {pinned.length}
+            </span>
           </div>
           <div className="gp-cards">
             {pinned.map((e) => (
-              <CharacterCard key={e.id}
+              <CharacterCard
+                key={e.id}
                 name={e.name || e.id}
-                info={{ disposition: e.disposition, note: e.role || "", role: e.role }}
+                info={{ disposition: e.disposition, note: e.role || '', role: e.role }}
                 subtitle={t('game.characters.pinned_suffix', { card_id: e.card_id })}
               />
             ))}
@@ -862,9 +1259,14 @@ function PanelCharacters({ state }) {
       ) : null}
 
       {/* 创建 / 提升入口提示 — 引导用户去平台,不在此创建 */}
-      <div className="gp-section" style={{background: "transparent", borderTop: "1px dashed var(--line)", marginTop: 4}}>
-        <p className="muted-2" style={{fontSize: 12, lineHeight: 1.7, margin: "8px 4px 0"}}>
-          {t('game.characters.platform_tip')}<strong>{t('game.characters.platform_link')}</strong>{t('game.characters.platform_tip2')}
+      <div
+        className="gp-section"
+        style={{ background: 'transparent', borderTop: '1px dashed var(--line)', marginTop: 4 }}
+      >
+        <p className="muted-2" style={{ fontSize: 12, lineHeight: 1.7, margin: '8px 4px 0' }}>
+          {t('game.characters.platform_tip')}
+          <strong>{t('game.characters.platform_link')}</strong>
+          {t('game.characters.platform_tip2')}
         </p>
       </div>
     </div>
@@ -881,47 +1283,67 @@ function WorldlineAnchorsSection({ saveId }) {
   const { t } = useTranslation();
   const { useEffect, useRef } = React;
   const [data, setData] = useState(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [expandedPhase, setExpandedPhase] = useState({});
   const lastSaveId = useRef(null);
 
   useEffect(() => {
-    if (!saveId) { setData(null); setError(""); return; }
+    if (!saveId) {
+      setData(null);
+      setError('');
+      return;
+    }
     if (saveId === lastSaveId.current && data !== null) return;
     lastSaveId.current = saveId;
     let cancelled = false;
     setLoading(true);
-    setError("");
-    const base = (typeof window !== "undefined" && window.__API_BASE) || "";
-    fetch(`${base}/api/saves/${saveId}/anchors`, { credentials: "include" })
-      .then(r => {
+    setError('');
+    const base = (typeof window !== 'undefined' && window.__API_BASE) || '';
+    fetch(`${base}/api/saves/${saveId}/anchors`, { credentials: 'include' })
+      .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then(json => {
-        if (!cancelled) { setData(json); setLoading(false); }
+      .then((json) => {
+        if (!cancelled) {
+          setData(json);
+          setLoading(false);
+        }
       })
-      .catch(e => {
-        if (!cancelled) { setError(String(e?.message || e)); setLoading(false); }
+      .catch((e) => {
+        if (!cancelled) {
+          setError(String(e?.message || e));
+          setLoading(false);
+        }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [saveId]);
 
   if (!saveId) return null;
   if (error) {
     return (
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.timeline.anchors_section')}</h3></div>
-        <p style={{fontSize: 12.5, color: "var(--danger)", padding: "4px"}}>{t('game.timeline.anchors_load_failed', { error })}</p>
+        <div className="section-head">
+          <h3>{t('game.timeline.anchors_section')}</h3>
+        </div>
+        <p style={{ fontSize: 12.5, color: 'var(--danger)', padding: '4px' }}>
+          {t('game.timeline.anchors_load_failed', { error })}
+        </p>
       </div>
     );
   }
   if (loading || data === null) {
     return (
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.timeline.anchors_section')}</h3></div>
-        <p className="muted-2" style={{fontSize: 12.5, padding: "4px"}}>{t('game.timeline.anchors_loading')}</p>
+        <div className="section-head">
+          <h3>{t('game.timeline.anchors_section')}</h3>
+        </div>
+        <p className="muted-2" style={{ fontSize: 12.5, padding: '4px' }}>
+          {t('game.timeline.anchors_loading')}
+        </p>
       </div>
     );
   }
@@ -934,8 +1356,10 @@ function WorldlineAnchorsSection({ saveId }) {
   if (total === 0) {
     return (
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.timeline.anchors_section')}</h3></div>
-        <p className="muted-2" style={{fontSize: 12.5, padding: "4px"}}>
+        <div className="section-head">
+          <h3>{t('game.timeline.anchors_section')}</h3>
+        </div>
+        <p className="muted-2" style={{ fontSize: 12.5, padding: '4px' }}>
           {t('game.timeline.anchors_empty')}
         </p>
       </div>
@@ -943,7 +1367,8 @@ function WorldlineAnchorsSection({ saveId }) {
   }
 
   const driftPct = Math.round((summary.avg_drift || 0) * 100);
-  const driftColor = driftPct >= 60 ? "var(--danger)" : driftPct >= 30 ? "var(--warn)" : "var(--ok)";
+  const driftColor =
+    driftPct >= 60 ? 'var(--danger)' : driftPct >= 30 ? 'var(--warn)' : 'var(--ok)';
 
   return (
     <>
@@ -951,42 +1376,59 @@ function WorldlineAnchorsSection({ saveId }) {
       <div className="gp-section">
         <div className="section-head">
           <h3>{t('game.timeline.anchors_section')}</h3>
-          <span className="muted-2 mono" style={{fontSize: 11}}>{t('game.timeline.anchors_total', { count: total })}</span>
+          <span className="muted-2 mono" style={{ fontSize: 11 }}>
+            {t('game.timeline.anchors_total', { count: total })}
+          </span>
         </div>
-        <div className="gp-kv" style={{marginBottom: 6}}>
+        <div className="gp-kv" style={{ marginBottom: 6 }}>
           <div className="gp-row">
             <span className="gp-label">{t('game.timeline.convergence_overall')}</span>
             <span className="serif">
-              <span style={{color: "var(--muted-2)"}}>{t('game.timeline.pending_stat')}</span>
+              <span style={{ color: 'var(--muted-2)' }}>{t('game.timeline.pending_stat')}</span>
               <strong>{summary.pending || 0}</strong>
-              <span style={{color: "var(--muted-2)"}}>{t('game.timeline.occurred_stat')}</span>
-              <strong style={{color: "var(--ok)"}}>{summary.occurred || 0}</strong>
-              <span style={{color: "var(--muted-2)"}}>{t('game.timeline.variant_stat')}</span>
-              <strong style={{color: "var(--warn)"}}>{summary.variant || 0}</strong>
-              <span style={{color: "var(--muted-2)"}}>{t('game.timeline.superseded_stat')}</span>
-              <strong style={{color: "var(--danger)"}}>{summary.superseded || 0}</strong>
+              <span style={{ color: 'var(--muted-2)' }}>{t('game.timeline.occurred_stat')}</span>
+              <strong style={{ color: 'var(--ok)' }}>{summary.occurred || 0}</strong>
+              <span style={{ color: 'var(--muted-2)' }}>{t('game.timeline.variant_stat')}</span>
+              <strong style={{ color: 'var(--warn)' }}>{summary.variant || 0}</strong>
+              <span style={{ color: 'var(--muted-2)' }}>{t('game.timeline.superseded_stat')}</span>
+              <strong style={{ color: 'var(--danger)' }}>{summary.superseded || 0}</strong>
             </span>
           </div>
           <div className="gp-row">
             <span className="gp-label">{t('game.timeline.avg_drift')}</span>
-            <span className="mono" style={{color: driftColor}}>
+            <span className="mono" style={{ color: driftColor }}>
               {(summary.avg_drift || 0).toFixed(2)} ({driftPct}%)
             </span>
           </div>
           {summary.fatal_pending > 0 && (
             <div className="gp-row">
               <span className="gp-label">{t('game.timeline.fatal_pending')}</span>
-              <span className="mono" style={{color: "var(--danger)", fontWeight: 600}}>
+              <span className="mono" style={{ color: 'var(--danger)', fontWeight: 600 }}>
                 {t('game.timeline.fatal_pending_count', { count: summary.fatal_pending })}
               </span>
             </div>
           )}
         </div>
         {/* drift 进度条 */}
-        <div style={{height: 4, background: "var(--panel-3)", borderRadius: 2, overflow: "hidden", marginBottom: 4}}>
-          <div style={{width: driftPct + "%", height: "100%", background: driftColor, transition: "width 0.3s"}} />
+        <div
+          style={{
+            height: 4,
+            background: 'var(--panel-3)',
+            borderRadius: 2,
+            overflow: 'hidden',
+            marginBottom: 4,
+          }}
+        >
+          <div
+            style={{
+              width: driftPct + '%',
+              height: '100%',
+              background: driftColor,
+              transition: 'width 0.3s',
+            }}
+          />
         </div>
-        <p className="muted-2" style={{fontSize: 11, margin: "4px 0 0"}}>
+        <p className="muted-2" style={{ fontSize: 11, margin: '4px 0 0' }}>
           {t('game.timeline.drift_hint')}
         </p>
       </div>
@@ -994,35 +1436,62 @@ function WorldlineAnchorsSection({ saveId }) {
       {/* 按 phase 分组 */}
       {byPhase.length > 0 && (
         <div className="gp-section">
-          <div className="section-head"><h3>{t('game.timeline.by_phase')}</h3></div>
+          <div className="section-head">
+            <h3>{t('game.timeline.by_phase')}</h3>
+          </div>
           <div className="gp-track">
             {byPhase.map((ph, i) => {
               const pressure = ph.convergence_pressure || 0;
-              const pressureColor = pressure >= 0.6 ? "var(--danger)" :
-                                    pressure >= 0.3 ? "var(--warn)" : "var(--ok)";
+              const pressureColor =
+                pressure >= 0.6 ? 'var(--danger)' : pressure >= 0.3 ? 'var(--warn)' : 'var(--ok)';
               const expanded = !!expandedPhase[ph.phase_label];
               return (
                 <div key={i} className="gp-anchor">
-                  <div className="gp-anchor-dot" style={{background: pressureColor, border: "2px solid var(--line)"}} />
+                  <div
+                    className="gp-anchor-dot"
+                    style={{ background: pressureColor, border: '2px solid var(--line)' }}
+                  />
                   <div className="gp-anchor-body">
                     <div
                       className="gp-anchor-label"
-                      style={{cursor: "pointer"}}
-                      onClick={() => setExpandedPhase(prev => ({...prev, [ph.phase_label]: !prev[ph.phase_label]}))}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() =>
+                        setExpandedPhase((prev) => ({
+                          ...prev,
+                          [ph.phase_label]: !prev[ph.phase_label],
+                        }))
+                      }
                     >
                       {ph.phase_label || t('game.timeline.no_phase')}
-                      <span className="muted-2" style={{marginLeft: 6, fontSize: 10}}>
-                        {t('game.timeline.convergence_label', { done: ph.occurred + ph.variant, total: ph.total })}
+                      <span className="muted-2" style={{ marginLeft: 6, fontSize: 10 }}>
+                        {t('game.timeline.convergence_label', {
+                          done: ph.occurred + ph.variant,
+                          total: ph.total,
+                        })}
                       </span>
                       {ph.fatal_pending > 0 && (
-                        <span className="pill" style={{marginLeft: 6, fontSize: 10, background: "var(--danger)", color: "#fff"}}>
+                        <span
+                          className="pill"
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 10,
+                            background: 'var(--danger)',
+                            color: '#fff',
+                          }}
+                        >
                           {t('game.timeline.fatal_must', { count: ph.fatal_pending })}
                         </span>
                       )}
                     </div>
-                    <div className="gp-anchor-phase" style={{color: "var(--muted-2)", fontSize: 11}}>
-                      {t('game.timeline.drift_pressure', { drift: Number(ph.avg_drift || 0).toFixed(2), pressure: Math.round(pressure * 100) })}
-                      {expanded ? " · ▲" : " · ▼"}
+                    <div
+                      className="gp-anchor-phase"
+                      style={{ color: 'var(--muted-2)', fontSize: 11 }}
+                    >
+                      {t('game.timeline.drift_pressure', {
+                        drift: Number(ph.avg_drift || 0).toFixed(2),
+                        pressure: Math.round(pressure * 100),
+                      })}
+                      {expanded ? ' · ▲' : ' · ▼'}
                     </div>
                   </div>
                   {i < byPhase.length - 1 && <div className="gp-anchor-line" />}
@@ -1038,21 +1507,36 @@ function WorldlineAnchorsSection({ saveId }) {
         <div className="gp-section">
           <div className="section-head">
             <h3>{t('game.timeline.pending_anchors')}</h3>
-            <span className="muted-2 mono" style={{fontSize: 11}}>{t('game.timeline.top_n', { count: recentPending.length })}</span>
+            <span className="muted-2 mono" style={{ fontSize: 11 }}>
+              {t('game.timeline.top_n', { count: recentPending.length })}
+            </span>
           </div>
           <ul className="gp-flat-list">
             {recentPending.map((a, i) => (
-              <li key={"p:" + i}>
+              <li key={'p:' + i}>
                 <span>
-                  <span className="mono" style={{fontSize: 10.5, color: "var(--muted-2)", marginRight: 6}}>
+                  <span
+                    className="mono"
+                    style={{ fontSize: 10.5, color: 'var(--muted-2)', marginRight: 6 }}
+                  >
                     ch{a.chapter}
                   </span>
                   {a.is_fatal && (
-                    <span className="pill" style={{fontSize: 10, marginRight: 4, background: "var(--danger)", color: "#fff"}}>{t('game.timeline.must_happen')}</span>
+                    <span
+                      className="pill"
+                      style={{
+                        fontSize: 10,
+                        marginRight: 4,
+                        background: 'var(--danger)',
+                        color: '#fff',
+                      }}
+                    >
+                      {t('game.timeline.must_happen')}
+                    </span>
                   )}
                   {a.summary || a.anchor_key}
                 </span>
-                <span className="mono" style={{fontSize: 10.5, color: "var(--muted-2)"}}>
+                <span className="mono" style={{ fontSize: 10.5, color: 'var(--muted-2)' }}>
                   imp {a.importance}
                 </span>
               </li>
@@ -1066,29 +1550,39 @@ function WorldlineAnchorsSection({ saveId }) {
         <div className="gp-section">
           <div className="section-head">
             <h3>{t('game.timeline.occurred_anchors')}</h3>
-            <span className="muted-2 mono" style={{fontSize: 11}}>{t('game.timeline.recent_n', { count: recentOccurred.length })}</span>
+            <span className="muted-2 mono" style={{ fontSize: 11 }}>
+              {t('game.timeline.recent_n', { count: recentOccurred.length })}
+            </span>
           </div>
           <ul className="gp-flat-list">
             {recentOccurred.map((a, i) => {
-              const statusColor = a.status === "occurred" ? "var(--ok)" : "var(--warn)";
+              const statusColor = a.status === 'occurred' ? 'var(--ok)' : 'var(--warn)';
               const driftPctOne = Math.round((a.drift_score || 0) * 100);
               return (
-                <li key={"o:" + i}>
+                <li key={'o:' + i}>
                   <span>
-                    <span className="mono" style={{fontSize: 10.5, color: "var(--muted-2)", marginRight: 6}}>
+                    <span
+                      className="mono"
+                      style={{ fontSize: 10.5, color: 'var(--muted-2)', marginRight: 6 }}
+                    >
                       ch{a.chapter}
                     </span>
-                    <span style={{color: statusColor, fontWeight: 600, marginRight: 4}}>
-                      {a.status === "occurred" ? t('game.timeline.original') : t('game.timeline.variant')}
+                    <span style={{ color: statusColor, fontWeight: 600, marginRight: 4 }}>
+                      {a.status === 'occurred'
+                        ? t('game.timeline.original')
+                        : t('game.timeline.variant')}
                     </span>
                     {a.summary || a.anchor_key}
                     {a.how_it_happened && (
-                      <div className="muted-2" style={{fontSize: 11, marginTop: 2, paddingLeft: 12}}>
+                      <div
+                        className="muted-2"
+                        style={{ fontSize: 11, marginTop: 2, paddingLeft: 12 }}
+                      >
                         → {a.how_it_happened}
                       </div>
                     )}
                   </span>
-                  <span className="mono" style={{fontSize: 10.5, color: statusColor}}>
+                  <span className="mono" style={{ fontSize: 10.5, color: statusColor }}>
                     drift {driftPctOne}%
                   </span>
                 </li>
@@ -1101,47 +1595,58 @@ function WorldlineAnchorsSection({ saveId }) {
   );
 }
 
-
 // task 107G: 双时间线 panel — 剧本期望线 + 实际足迹线
 // 从 /api/saves/:id/timeline 按需拉取,saveId 由 state._raw.save_id 提供。
 function PanelTimeline({ state }) {
   const { t } = useTranslation();
   const { useEffect, useRef } = React;
   const saveId = state && state._raw && state._raw.save_id;
-  const [data, setData] = useState(null);    // null = 未加载, {} = 加载中/完毕
-  const [error, setError] = useState("");
+  const [data, setData] = useState(null); // null = 未加载, {} = 加载中/完毕
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [expandedPhase, setExpandedPhase] = useState({});  // {phase_index: bool}
+  const [expandedPhase, setExpandedPhase] = useState({}); // {phase_index: bool}
   const lastSaveId = useRef(null);
 
   useEffect(() => {
-    if (!saveId) { setData(null); setError(""); return; }
-    if (saveId === lastSaveId.current && data !== null) return;  // 已加载且 save 没变
+    if (!saveId) {
+      setData(null);
+      setError('');
+      return;
+    }
+    if (saveId === lastSaveId.current && data !== null) return; // 已加载且 save 没变
     lastSaveId.current = saveId;
     let cancelled = false;
     setLoading(true);
-    setError("");
+    setError('');
     // task 107G fix: 前端 5173, backend 7860 — 必须绝对 URL + credentials
-    const base = (typeof window !== "undefined" && window.__API_BASE) || "";
-    fetch(`${base}/api/saves/${saveId}/timeline`, { credentials: "include" })
-      .then(r => {
+    const base = (typeof window !== 'undefined' && window.__API_BASE) || '';
+    fetch(`${base}/api/saves/${saveId}/timeline`, { credentials: 'include' })
+      .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then(json => {
-        if (!cancelled) { setData(json); setLoading(false); }
+      .then((json) => {
+        if (!cancelled) {
+          setData(json);
+          setLoading(false);
+        }
       })
-      .catch(e => {
-        if (!cancelled) { setError(String(e?.message || e)); setLoading(false); }
+      .catch((e) => {
+        if (!cancelled) {
+          setError(String(e?.message || e));
+          setLoading(false);
+        }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [saveId]);
 
   if (!saveId) {
     return (
       <div className="gp-stack">
         <div className="gp-section">
-          <p className="muted-2" style={{fontSize: 12.5, padding: "12px 4px"}}>
+          <p className="muted-2" style={{ fontSize: 12.5, padding: '12px 4px' }}>
             {t('game.timeline.no_save')}
           </p>
         </div>
@@ -1154,10 +1659,10 @@ function PanelTimeline({ state }) {
     return (
       <div className="gp-stack">
         <div className="gp-section">
-          <p style={{fontSize: 12.5, color: "var(--danger)", padding: "12px 4px"}}>
+          <p style={{ fontSize: 12.5, color: 'var(--danger)', padding: '12px 4px' }}>
             {t('game.timeline.load_failed', { error })}
           </p>
-          <p className="muted-2" style={{fontSize: 11.5, padding: "0 4px"}}>
+          <p className="muted-2" style={{ fontSize: 11.5, padding: '0 4px' }}>
             {t('game.timeline.load_failed_hint')}
           </p>
         </div>
@@ -1169,14 +1674,16 @@ function PanelTimeline({ state }) {
     return (
       <div className="gp-stack">
         <div className="gp-section">
-          <p className="muted-2" style={{fontSize: 12.5, padding: "12px 4px"}}>{t('game.timeline.loading')}</p>
+          <p className="muted-2" style={{ fontSize: 12.5, padding: '12px 4px' }}>
+            {t('game.timeline.loading')}
+          </p>
         </div>
       </div>
     );
   }
 
   const scriptAnchors = Array.isArray(data.script_anchors) ? data.script_anchors : [];
-  const savePhases   = Array.isArray(data.save_phases)    ? data.save_phases    : [];
+  const savePhases = Array.isArray(data.save_phases) ? data.save_phases : [];
   const currentPhaseIndex = data.current_phase_index ?? 0;
 
   // 判断剧本锚点相对当前 phase 的状态
@@ -1190,42 +1697,77 @@ function PanelTimeline({ state }) {
       <div className="gp-section">
         <div className="section-head">
           <h3>{t('game.timeline.expected')}</h3>
-          <span className="muted-2 mono" style={{fontSize: 11}}>{t('game.timeline.anchors_count', { count: scriptAnchors.length })}</span>
+          <span className="muted-2 mono" style={{ fontSize: 11 }}>
+            {t('game.timeline.anchors_count', { count: scriptAnchors.length })}
+          </span>
         </div>
         {scriptAnchors.length === 0 ? (
-          <p className="muted-2" style={{fontSize: 12.5, margin: "4px 0 0"}}>{t('game.timeline.no_anchors')}</p>
+          <p className="muted-2" style={{ fontSize: 12.5, margin: '4px 0 0' }}>
+            {t('game.timeline.no_anchors')}
+          </p>
         ) : (
           <div className="gp-track">
             {scriptAnchors.map((a, i) => {
               // 状态判断：chapter_min < (currentPhaseIndex 对应的 chapter) = 已过
               // 简化方案：按序列位置和 currentPhaseIndex 比较
-              const isDone    = i < currentPhaseIndex;
+              const isDone = i < currentPhaseIndex;
               const isCurrent = i === currentPhaseIndex;
               const isPending = i > currentPhaseIndex;
               return (
                 <div
                   key={i}
-                  className={`gp-anchor ${isCurrent ? "current" : ""} ${isDone ? "done" : ""} ${isPending ? "pending" : ""}`}
+                  className={`gp-anchor ${isCurrent ? 'current' : ''} ${isDone ? 'done' : ''} ${isPending ? 'pending' : ''}`}
                 >
-                  <div className="gp-anchor-dot" style={{
-                    background: isDone ? "var(--ok)" : isCurrent ? "var(--accent)" : "var(--panel-3)",
-                    border: isCurrent ? "2px solid var(--accent)" : "2px solid var(--line)",
-                  }} />
+                  <div
+                    className="gp-anchor-dot"
+                    style={{
+                      background: isDone
+                        ? 'var(--ok)'
+                        : isCurrent
+                          ? 'var(--accent)'
+                          : 'var(--panel-3)',
+                      border: isCurrent ? '2px solid var(--accent)' : '2px solid var(--line)',
+                    }}
+                  />
                   <div className="gp-anchor-body">
-                    <div className="gp-anchor-label" style={{
-                      color: isPending ? "var(--muted-2)" : undefined,
-                      fontWeight: isCurrent ? 600 : undefined,
-                    }}>
-                      {a.phase_label || t('game.timeline.chapter_label', { chapter: a.chapter_min })}
-                      {isCurrent && <span className="pill" style={{marginLeft: 6, fontSize: 10, background: "var(--accent)", color: "#fff"}}>{t('game.timeline.current_pill')}</span>}
-                      {isDone && <span className="muted-2" style={{marginLeft: 6, fontSize: 10}}>{t('game.timeline.done_label')}</span>}
-                      {isPending && <span className="muted-2" style={{marginLeft: 6, fontSize: 10}}>{t('game.timeline.pending_label')}</span>}
+                    <div
+                      className="gp-anchor-label"
+                      style={{
+                        color: isPending ? 'var(--muted-2)' : undefined,
+                        fontWeight: isCurrent ? 600 : undefined,
+                      }}
+                    >
+                      {a.phase_label ||
+                        t('game.timeline.chapter_label', { chapter: a.chapter_min })}
+                      {isCurrent && (
+                        <span
+                          className="pill"
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 10,
+                            background: 'var(--accent)',
+                            color: '#fff',
+                          }}
+                        >
+                          {t('game.timeline.current_pill')}
+                        </span>
+                      )}
+                      {isDone && (
+                        <span className="muted-2" style={{ marginLeft: 6, fontSize: 10 }}>
+                          {t('game.timeline.done_label')}
+                        </span>
+                      )}
+                      {isPending && (
+                        <span className="muted-2" style={{ marginLeft: 6, fontSize: 10 }}>
+                          {t('game.timeline.pending_label')}
+                        </span>
+                      )}
                     </div>
-                    <div className="gp-anchor-phase" style={{color: "var(--muted-2)"}}>
-                      {a.story_time_label ? `${a.story_time_label}` : ""}
+                    <div className="gp-anchor-phase" style={{ color: 'var(--muted-2)' }}>
+                      {a.story_time_label ? `${a.story_time_label}` : ''}
                       {a.chapter_min != null
-                        ? ` · ${t('game.timeline.chapter_label', { chapter: a.chapter_min })}${a.chapter_max != null && a.chapter_max !== a.chapter_min ? `–${a.chapter_max}` : ""}`
-                        : ""}
+                        ? ` · ${t('game.timeline.chapter_label', { chapter: a.chapter_min })}${a.chapter_max != null && a.chapter_max !== a.chapter_min ? `–${a.chapter_max}` : ''}`
+                        : ''}
                     </div>
                   </div>
                   {i < scriptAnchors.length - 1 && <div className="gp-anchor-line" />}
@@ -1240,62 +1782,99 @@ function PanelTimeline({ state }) {
       <div className="gp-section">
         <div className="section-head">
           <h3>{t('game.timeline.footprint')}</h3>
-          <span className="muted-2 mono" style={{fontSize: 11}}>{t('game.timeline.phases_count', { count: savePhases.length })}</span>
+          <span className="muted-2 mono" style={{ fontSize: 11 }}>
+            {t('game.timeline.phases_count', { count: savePhases.length })}
+          </span>
         </div>
         {savePhases.length === 0 ? (
-          <p className="muted-2" style={{fontSize: 12.5, margin: "4px 0 0"}}>
+          <p className="muted-2" style={{ fontSize: 12.5, margin: '4px 0 0' }}>
             {t('game.timeline.no_footprint')}
           </p>
         ) : (
           <div className="gp-track">
             {savePhases.map((ph, i) => {
-              const isOpen    = ph.status === "open";
+              const isOpen = ph.status === 'open';
               const isCurrent = ph.phase_index === currentPhaseIndex && isOpen;
-              const expanded  = !!expandedPhase[ph.phase_index];
+              const expanded = !!expandedPhase[ph.phase_index];
               const keyEvents = Array.isArray(ph.key_events) ? ph.key_events : [];
               return (
-                <div key={ph.phase_index}
-                  className={`gp-anchor ${isCurrent ? "current" : ""}`}
-                  style={{cursor: keyEvents.length ? "pointer" : undefined}}
-                  onClick={() => keyEvents.length && setExpandedPhase(s => ({...s, [ph.phase_index]: !s[ph.phase_index]}))}
+                <div
+                  key={ph.phase_index}
+                  className={`gp-anchor ${isCurrent ? 'current' : ''}`}
+                  style={{ cursor: keyEvents.length ? 'pointer' : undefined }}
+                  onClick={() =>
+                    keyEvents.length &&
+                    setExpandedPhase((s) => ({ ...s, [ph.phase_index]: !s[ph.phase_index] }))
+                  }
                 >
-                  <div className="gp-anchor-dot" style={{
-                    background: isCurrent ? "var(--accent)" : "var(--ok)",
-                    border: isCurrent ? "2px solid var(--accent)" : "2px solid var(--ok)",
-                  }} />
+                  <div
+                    className="gp-anchor-dot"
+                    style={{
+                      background: isCurrent ? 'var(--accent)' : 'var(--ok)',
+                      border: isCurrent ? '2px solid var(--accent)' : '2px solid var(--ok)',
+                    }}
+                  />
                   <div className="gp-anchor-body">
-                    <div className="gp-anchor-label" style={{fontWeight: isCurrent ? 600 : undefined}}>
-                      <span className="muted-2 mono" style={{fontSize: 11, marginRight: 6}}>
+                    <div
+                      className="gp-anchor-label"
+                      style={{ fontWeight: isCurrent ? 600 : undefined }}
+                    >
+                      <span className="muted-2 mono" style={{ fontSize: 11, marginRight: 6 }}>
                         Phase {ph.phase_index}
                       </span>
-                      {ph.phase_label || `(turn ${ph.turn_start}–${isOpen ? "…" : ph.turn_end})`}
-                      {isCurrent && <span className="pill" style={{marginLeft: 6, fontSize: 10, background: "var(--accent)", color: "#fff"}}>{t('game.timeline.in_progress_pill')}</span>}
+                      {ph.phase_label || `(turn ${ph.turn_start}–${isOpen ? '…' : ph.turn_end})`}
+                      {isCurrent && (
+                        <span
+                          className="pill"
+                          style={{
+                            marginLeft: 6,
+                            fontSize: 10,
+                            background: 'var(--accent)',
+                            color: '#fff',
+                          }}
+                        >
+                          {t('game.timeline.in_progress_pill')}
+                        </span>
+                      )}
                     </div>
-                    <div className="gp-anchor-phase" style={{color: "var(--muted-2)"}}>
-                      {`turn ${ph.turn_start}–${isOpen ? "…" : ph.turn_end}`}
-                      {ph.story_time_label ? ` · ${ph.story_time_label}` : ""}
+                    <div className="gp-anchor-phase" style={{ color: 'var(--muted-2)' }}>
+                      {`turn ${ph.turn_start}–${isOpen ? '…' : ph.turn_end}`}
+                      {ph.story_time_label ? ` · ${ph.story_time_label}` : ''}
                     </div>
                     {ph.summary ? (
-                      <p className="gp-bio" style={{marginTop: 4, fontSize: 12}}>{ph.summary}</p>
+                      <p className="gp-bio" style={{ marginTop: 4, fontSize: 12 }}>
+                        {ph.summary}
+                      </p>
                     ) : null}
                     {expanded && keyEvents.length > 0 && (
-                      <ul className="gp-flat-list" style={{marginTop: 4}}>
+                      <ul className="gp-flat-list" style={{ marginTop: 4 }}>
                         {keyEvents.map((ev, ei) => {
-                          const evText = typeof ev === "string" ? ev
-                            : (ev && (ev.summary || ev.text || ev.label || JSON.stringify(ev)));
-                          const evTurn = ev && ev.turn != null ? `turn ${ev.turn}` : "";
+                          const evText =
+                            typeof ev === 'string'
+                              ? ev
+                              : ev && (ev.summary || ev.text || ev.label || JSON.stringify(ev));
+                          const evTurn = ev && ev.turn != null ? `turn ${ev.turn}` : '';
                           return (
                             <li key={ei}>
                               <span>{evText}</span>
-                              {evTurn && <span className="muted-2 mono" style={{fontSize: 10.5}}>{evTurn}</span>}
+                              {evTurn && (
+                                <span className="muted-2 mono" style={{ fontSize: 10.5 }}>
+                                  {evTurn}
+                                </span>
+                              )}
                             </li>
                           );
                         })}
                       </ul>
                     )}
                     {keyEvents.length > 0 && (
-                      <div className="muted-2" style={{fontSize: 10.5, marginTop: 2, cursor: "pointer"}}>
-                        {expanded ? t('game.timeline.collapse_events') : t('game.timeline.expand_events', { count: keyEvents.length })}
+                      <div
+                        className="muted-2"
+                        style={{ fontSize: 10.5, marginTop: 2, cursor: 'pointer' }}
+                      >
+                        {expanded
+                          ? t('game.timeline.collapse_events')
+                          : t('game.timeline.expand_events', { count: keyEvents.length })}
                       </div>
                     )}
                   </div>
@@ -1316,20 +1895,24 @@ function PanelTimeline({ state }) {
 // task 26: 把可能是 string / number / null / { value | text | label | ... } 的字段
 // 安全格式化成 React 能渲染的字符串。优先抓常见语义字段，最后兜底 JSON.stringify。
 function _renderVarValue(v) {
-  if (v == null) return "—";
-  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return String(v);
+  if (v == null) return '—';
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
   if (Array.isArray(v)) {
     // 数组里也可能套对象：递归取摘要
-    return v.map(_renderVarValue).join("，") || "—";
+    return v.map(_renderVarValue).join('，') || '—';
   }
-  if (typeof v === "object") {
+  if (typeof v === 'object') {
     // 富对象常见 schema：{value, locked, source, turn, updated_at}（变量）
     // 或 {text, time, turn, validated, variables}（推演结果）
-    if ("value" in v && v.value != null) return _renderVarValue(v.value);
-    if ("text" in v && v.text != null) return _renderVarValue(v.text);
-    if ("label" in v && v.label != null) return _renderVarValue(v.label);
-    if ("name" in v && v.name != null) return _renderVarValue(v.name);
-    try { return JSON.stringify(v); } catch (_) { return "[object]"; }
+    if ('value' in v && v.value != null) return _renderVarValue(v.value);
+    if ('text' in v && v.text != null) return _renderVarValue(v.text);
+    if ('label' in v && v.label != null) return _renderVarValue(v.label);
+    if ('name' in v && v.name != null) return _renderVarValue(v.name);
+    try {
+      return JSON.stringify(v);
+    } catch (_) {
+      return '[object]';
+    }
   }
   return String(v);
 }
@@ -1341,72 +1924,96 @@ function _renderVarValue(v) {
 // 这里组件本身只接收 plan + audit_log，由调用方负责挑路径。
 function DemandLedgerPanel({ curator_plan, audit_log }) {
   const { t } = useTranslation();
-  const plan = (curator_plan && typeof curator_plan === "object") ? curator_plan : {};
+  const plan = curator_plan && typeof curator_plan === 'object' ? curator_plan : {};
   const log = Array.isArray(audit_log) ? audit_log : [];
 
-  const intent = (typeof plan.intent === "string" && plan.intent.trim()) ? plan.intent.trim() : "";
-  const activeGoal = (typeof plan.active_goal === "string" && plan.active_goal.trim()) ? plan.active_goal.trim() : "";
+  const intent = typeof plan.intent === 'string' && plan.intent.trim() ? plan.intent.trim() : '';
+  const activeGoal =
+    typeof plan.active_goal === 'string' && plan.active_goal.trim() ? plan.active_goal.trim() : '';
   const hardConstraints = Array.isArray(plan.hard_constraints) ? plan.hard_constraints : [];
   const softPreferences = Array.isArray(plan.soft_preferences) ? plan.soft_preferences : [];
   const candidateActions = Array.isArray(plan.candidate_actions) ? plan.candidate_actions : [];
   const acceptance = Array.isArray(plan.acceptance) ? plan.acceptance : [];
   const riskFlags = Array.isArray(plan.risk_flags) ? plan.risk_flags : [];
-  const clarifying = (typeof plan.clarifying_question === "string" && plan.clarifying_question.trim()) ? plan.clarifying_question.trim() : "";
+  const clarifying =
+    typeof plan.clarifying_question === 'string' && plan.clarifying_question.trim()
+      ? plan.clarifying_question.trim()
+      : '';
 
   const confidenceRaw = plan.confidence;
-  const hasConfidence = typeof confidenceRaw === "number" && isFinite(confidenceRaw);
+  const hasConfidence = typeof confidenceRaw === 'number' && isFinite(confidenceRaw);
   const confidence = hasConfidence ? Math.max(0, Math.min(1, confidenceRaw)) : null;
-  const confidenceColor = confidence == null
-    ? "var(--muted-2)"
-    : confidence >= 0.7 ? "var(--ok)"
-    : confidence >= 0.5 ? "var(--warn)"
-    : "var(--danger)";
+  const confidenceColor =
+    confidence == null
+      ? 'var(--muted-2)'
+      : confidence >= 0.7
+        ? 'var(--ok)'
+        : confidence >= 0.5
+          ? 'var(--warn)'
+          : 'var(--danger)';
 
   // 判断 plan 是否完全为空：任一关键数组/字符串字段非空就算"有计划"
   const hasAny =
-    intent || activeGoal || clarifying ||
-    hardConstraints.length || softPreferences.length || candidateActions.length ||
-    acceptance.length || riskFlags.length || hasConfidence;
+    intent ||
+    activeGoal ||
+    clarifying ||
+    hardConstraints.length ||
+    softPreferences.length ||
+    candidateActions.length ||
+    acceptance.length ||
+    riskFlags.length ||
+    hasConfidence;
 
   // task 81：acceptance 验证未通过会写 audit_log kind=acceptance_unmet，
   // hint 形如 "未通过验收：{item[:160]}"。逐条 acceptance 用 substring 匹配。
   // 只看最近 30 条 audit_log 避免上一轮的残留误判当前轮（用户切换面板时尤其要紧）。
   const recentAudit = log.slice(-30);
   const unmetHints = recentAudit
-    .filter(a => a && a.kind === "acceptance_unmet" && typeof a.hint === "string")
-    .map(a => a.hint);
+    .filter((a) => a && a.kind === 'acceptance_unmet' && typeof a.hint === 'string')
+    .map((a) => a.hint);
   const isUnmet = (clause) => {
-    if (typeof clause !== "string" || !clause.trim()) return false;
+    if (typeof clause !== 'string' || !clause.trim()) return false;
     // hint 截到 160 字符；short clause 完整命中，长 clause 用前 80 字符做子串保险
     const probe = clause.trim().slice(0, 80);
-    return unmetHints.some(h => h.indexOf(probe) >= 0 || (probe.length >= 12 && h.indexOf(probe.slice(0, 40)) >= 0));
+    return unmetHints.some(
+      (h) => h.indexOf(probe) >= 0 || (probe.length >= 12 && h.indexOf(probe.slice(0, 40)) >= 0),
+    );
   };
 
   // 字段全空的兜底信息
   if (!hasAny) {
     return (
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.context.curator_title')}</h3></div>
+        <div className="section-head">
+          <h3>{t('game.context.curator_title')}</h3>
+        </div>
         <div className="empty-line">{t('game.context.curator_empty')}</div>
       </div>
     );
   }
 
   const renderItem = (v, i, prefix) => {
-    const text = typeof v === "string" ? v : (v && (v.text || v.label || v.name)) || JSON.stringify(v);
-    return <li key={prefix + ":" + i}><span>{text}</span></li>;
+    const text =
+      typeof v === 'string' ? v : (v && (v.text || v.label || v.name)) || JSON.stringify(v);
+    return (
+      <li key={prefix + ':' + i}>
+        <span>{text}</span>
+      </li>
+    );
   };
 
   return (
     <div className="gp-section">
       <div className="section-head">
         <h3>{t('game.context.curator_title')}</h3>
-        <span className="muted-2 mono" style={{fontSize: 11}}>{t('game.context.curator_demand')}</span>
+        <span className="muted-2 mono" style={{ fontSize: 11 }}>
+          {t('game.context.curator_demand')}
+        </span>
       </div>
 
       {/* 意图 + active_goal */}
       {(intent || activeGoal) && (
-        <div className="gp-kv" style={{marginBottom: 4}}>
+        <div className="gp-kv" style={{ marginBottom: 4 }}>
           <div className="gp-row">
             <span className="gp-label">{t('game.context.intent')}</span>
             <span className="serif">{intent || activeGoal}</span>
@@ -1414,7 +2021,7 @@ function DemandLedgerPanel({ curator_plan, audit_log }) {
           {activeGoal && activeGoal !== intent && (
             <div className="gp-row">
               <span className="gp-label">{t('game.context.goal')}</span>
-              <span style={{color: "var(--text-quiet)"}}>{activeGoal}</span>
+              <span style={{ color: 'var(--text-quiet)' }}>{activeGoal}</span>
             </div>
           )}
         </div>
@@ -1422,33 +2029,64 @@ function DemandLedgerPanel({ curator_plan, audit_log }) {
 
       {/* 置信度进度条 */}
       {hasConfidence && (
-        <div className="gp-row" style={{display: "grid", gridTemplateColumns: "64px 1fr auto", gap: 8, alignItems: "center"}}>
+        <div
+          className="gp-row"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '64px 1fr auto',
+            gap: 8,
+            alignItems: 'center',
+          }}
+        >
           <span className="gp-label">{t('game.context.confidence')}</span>
-          <div style={{height: 4, borderRadius: 999, background: "var(--line-soft)", overflow: "hidden"}}>
-            <div style={{width: Math.round(confidence * 100) + "%", height: "100%", background: confidenceColor}} />
+          <div
+            style={{
+              height: 4,
+              borderRadius: 999,
+              background: 'var(--line-soft)',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: Math.round(confidence * 100) + '%',
+                height: '100%',
+                background: confidenceColor,
+              }}
+            />
           </div>
-          <span className="mono" style={{fontSize: 11, color: "var(--muted)"}}>{Math.round(confidence * 100)}%</span>
+          <span className="mono" style={{ fontSize: 11, color: 'var(--muted)' }}>
+            {Math.round(confidence * 100)}%
+          </span>
         </div>
       )}
 
       {/* 澄清问题（confidence 低时常出现，单独提示） */}
       {clarifying && (
-        <div className="gp-quote" style={{borderLeftColor: "var(--warn)", fontSize: 12.5}}>
-          <strong className="warn" style={{marginRight: 6}}>{t('game.context.clarify')}</strong>{clarifying}
+        <div className="gp-quote" style={{ borderLeftColor: 'var(--warn)', fontSize: 12.5 }}>
+          <strong className="warn" style={{ marginRight: 6 }}>
+            {t('game.context.clarify')}
+          </strong>
+          {clarifying}
         </div>
       )}
 
       {/* 硬约束 */}
       {hardConstraints.length > 0 && (
-        <div style={{display: "grid", gap: 6}}>
+        <div style={{ display: 'grid', gap: 6 }}>
           <span className="gp-label">{t('game.context.hard_constraints')}</span>
           <ul className="gp-flat-list">
             {hardConstraints.map((v, i) => {
-              const text = typeof v === "string" ? v : (v && (v.text || v.label)) || JSON.stringify(v);
+              const text =
+                typeof v === 'string' ? v : (v && (v.text || v.label)) || JSON.stringify(v);
               return (
-                <li key={"hc:" + i}>
+                <li key={'hc:' + i}>
                   <span>
-                    <Icon name="lock" size={12} style={{verticalAlign: "-2px", marginRight: 6, color: "var(--accent)"}} />
+                    <Icon
+                      name="lock"
+                      size={12}
+                      style={{ verticalAlign: '-2px', marginRight: 6, color: 'var(--accent)' }}
+                    />
                     {text}
                   </span>
                 </li>
@@ -1460,13 +2098,14 @@ function DemandLedgerPanel({ curator_plan, audit_log }) {
 
       {/* 软偏好 */}
       {softPreferences.length > 0 && (
-        <div style={{display: "grid", gap: 6}}>
+        <div style={{ display: 'grid', gap: 6 }}>
           <span className="gp-label">{t('game.context.soft_preferences')}</span>
           <ul className="gp-flat-list">
             {softPreferences.map((v, i) => {
-              const text = typeof v === "string" ? v : (v && (v.text || v.label)) || JSON.stringify(v);
+              const text =
+                typeof v === 'string' ? v : (v && (v.text || v.label)) || JSON.stringify(v);
               return (
-                <li key={"sp:" + i} style={{borderStyle: "dashed"}}>
+                <li key={'sp:' + i} style={{ borderStyle: 'dashed' }}>
                   <span className="muted">{text}</span>
                 </li>
               );
@@ -1477,12 +2116,15 @@ function DemandLedgerPanel({ curator_plan, audit_log }) {
 
       {/* 候选动作（编号列表，复用 gp-events 序号样式） */}
       {candidateActions.length > 0 && (
-        <div style={{display: "grid", gap: 6}}>
+        <div style={{ display: 'grid', gap: 6 }}>
           <span className="gp-label">{t('game.context.candidate_actions')}</span>
           <ol className="gp-events">
             {candidateActions.map((v, i) => {
-              const text = typeof v === "string" ? v : (v && (v.text || v.label || v.name)) || JSON.stringify(v);
-              return <li key={"ca:" + i}>{text}</li>;
+              const text =
+                typeof v === 'string'
+                  ? v
+                  : (v && (v.text || v.label || v.name)) || JSON.stringify(v);
+              return <li key={'ca:' + i}>{text}</li>;
             })}
           </ol>
         </div>
@@ -1490,20 +2132,32 @@ function DemandLedgerPanel({ curator_plan, audit_log }) {
 
       {/* 验收（含通过/未通过状态） */}
       {acceptance.length > 0 && (
-        <div style={{display: "grid", gap: 6}}>
+        <div style={{ display: 'grid', gap: 6 }}>
           <span className="gp-label">{t('game.context.acceptance')}</span>
           <ul className="gp-flat-list">
             {acceptance.map((v, i) => {
-              const text = typeof v === "string" ? v : (v && (v.text || v.label)) || JSON.stringify(v);
+              const text =
+                typeof v === 'string' ? v : (v && (v.text || v.label)) || JSON.stringify(v);
               const unmet = isUnmet(text);
-              const mark = unmet
-                ? <span className="danger mono" style={{marginRight: 6, fontWeight: 600}}>{t('game.context.acceptance_unmet_mark')}</span>
-                : <span className="ok mono" style={{marginRight: 6, fontWeight: 600}}>{t('game.context.acceptance_passed_mark')}</span>;
+              const mark = unmet ? (
+                <span className="danger mono" style={{ marginRight: 6, fontWeight: 600 }}>
+                  {t('game.context.acceptance_unmet_mark')}
+                </span>
+              ) : (
+                <span className="ok mono" style={{ marginRight: 6, fontWeight: 600 }}>
+                  {t('game.context.acceptance_passed_mark')}
+                </span>
+              );
               return (
-                <li key={"ac:" + i}>
-                  <span>{mark}{text}</span>
-                  <span className={`mono ${unmet ? "danger" : "ok"}`} style={{fontSize: 10.5}}>
-                    {unmet ? t('game.context.acceptance_unmet') : t('game.context.acceptance_passed')}
+                <li key={'ac:' + i}>
+                  <span>
+                    {mark}
+                    {text}
+                  </span>
+                  <span className={`mono ${unmet ? 'danger' : 'ok'}`} style={{ fontSize: 10.5 }}>
+                    {unmet
+                      ? t('game.context.acceptance_unmet')
+                      : t('game.context.acceptance_passed')}
                   </span>
                 </li>
               );
@@ -1514,22 +2168,23 @@ function DemandLedgerPanel({ curator_plan, audit_log }) {
 
       {/* 风险标记（黄色 chip） */}
       {riskFlags.length > 0 && (
-        <div style={{display: "grid", gap: 6}}>
+        <div style={{ display: 'grid', gap: 6 }}>
           <span className="gp-label">{t('game.context.risk_flags')}</span>
           <div className="gp-chips">
             {riskFlags.map((v, i) => {
-              const text = typeof v === "string" ? v : (v && (v.text || v.label)) || JSON.stringify(v);
+              const text =
+                typeof v === 'string' ? v : (v && (v.text || v.label)) || JSON.stringify(v);
               return (
                 <span
-                  key={"rf:" + i}
+                  key={'rf:' + i}
                   className="gp-chip warn"
                   style={{
-                    color: "var(--warn)",
-                    borderColor: "rgba(212, 179, 102, 0.32)",
-                    background: "var(--warn-soft)",
+                    color: 'var(--warn)',
+                    borderColor: 'rgba(212, 179, 102, 0.32)',
+                    background: 'var(--warn-soft)',
                   }}
                 >
-                  <Icon name="warn" size={11} style={{marginRight: 4}} />
+                  <Icon name="warn" size={11} style={{ marginRight: 4 }} />
                   {text}
                 </span>
               );
@@ -1556,44 +2211,91 @@ function PanelContext({ state }) {
   // spec prop 顺序是 state.last_context_agent → state.last_context.debug → memory.last_context_agent → {}
   const curatorPlan =
     (state && state.last_context_agent && state.last_context_agent.curator_plan) ||
-    (state && state.last_context && state.last_context.debug && state.last_context.debug.curator_plan) ||
+    (state &&
+      state.last_context &&
+      state.last_context.debug &&
+      state.last_context.debug.curator_plan) ||
     (memory && memory.last_context_agent && memory.last_context_agent.curator_plan) ||
     {};
-  const auditLog = (state && state.permissions && Array.isArray(state.permissions.audit_log))
-    ? state.permissions.audit_log : [];
+  const auditLog =
+    state && state.permissions && Array.isArray(state.permissions.audit_log)
+      ? state.permissions.audit_log
+      : [];
   return (
     <div className="gp-stack">
       <div className="gp-section">
         <div className="section-head">
-          <h3>{t('game.context.title')}<span className="muted-2" style={{marginLeft: 8, fontSize: 11, textTransform: "none"}}>{t('game.context.tokens', { count: tokensUsed })}</span></h3>
+          <h3>
+            {t('game.context.title')}
+            <span
+              className="muted-2"
+              style={{ marginLeft: 8, fontSize: 11, textTransform: 'none' }}
+            >
+              {t('game.context.tokens', { count: tokensUsed })}
+            </span>
+          </h3>
           <span className="pill mono">{retrievalChunks} chunks</span>
         </div>
         <ul className="gp-flat-list">
           {chapterRefs.map((c, i) => (
-            <li key={i}><span><Icon name="quote" size={12} style={{verticalAlign: "-2px", marginRight: 6}} />{typeof c === "string" ? c : (c?.title || c?.label || JSON.stringify(c))}</span><span className="muted-2 mono" style={{fontSize: 11}}>0.{84 - i * 7}</span></li>
+            <li key={i}>
+              <span>
+                <Icon name="quote" size={12} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                {typeof c === 'string' ? c : c?.title || c?.label || JSON.stringify(c)}
+              </span>
+              <span className="muted-2 mono" style={{ fontSize: 11 }}>
+                0.{84 - i * 7}
+              </span>
+            </li>
           ))}
           {chapterRefs.length === 0 && (
-            <li><span className="muted-2">{t('game.context.no_chapter_refs')}</span></li>
+            <li>
+              <span className="muted-2">{t('game.context.no_chapter_refs')}</span>
+            </li>
           )}
           {/* task 48：原硬编码『固定记忆 · 2 段』和『历史摘要 · 最近 8 回合』改为读 state 真值 */}
           <li>
-            <span><Icon name="memory" size={12} style={{verticalAlign: "-2px", marginRight: 6}} />{t('game.context.pinned_count', { count: Array.isArray(memory.pinned) ? memory.pinned.length : 0 })}</span>
-            <span className="muted-2 mono" style={{fontSize: 11}}>—</span>
+            <span>
+              <Icon name="memory" size={12} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+              {t('game.context.pinned_count', {
+                count: Array.isArray(memory.pinned) ? memory.pinned.length : 0,
+              })}
+            </span>
+            <span className="muted-2 mono" style={{ fontSize: 11 }}>
+              —
+            </span>
           </li>
           <li>
-            <span><Icon name="user" size={12} style={{verticalAlign: "-2px", marginRight: 6}} />{t('game.context.history_turns', { count: (lastCtx && lastCtx.history_turns) || (state && Array.isArray(state.history) ? Math.floor(state.history.length / 2) : 0) })}</span>
-            <span className="muted-2 mono" style={{fontSize: 11}}>—</span>
+            <span>
+              <Icon name="user" size={12} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+              {t('game.context.history_turns', {
+                count:
+                  (lastCtx && lastCtx.history_turns) ||
+                  (state && Array.isArray(state.history)
+                    ? Math.floor(state.history.length / 2)
+                    : 0),
+              })}
+            </span>
+            <span className="muted-2 mono" style={{ fontSize: 11 }}>
+              —
+            </span>
           </li>
         </ul>
       </div>
       {/* task 86：本轮 Curator 决策（DemandLedger 可视化） */}
       <DemandLedgerPanel curator_plan={curatorPlan} audit_log={auditLog} />
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.context.retrieval_preview')}</h3></div>
+        <div className="section-head">
+          <h3>{t('game.context.retrieval_preview')}</h3>
+        </div>
         {/* task 48：原 pre 硬编码『顾承砚 · 漂流的史官 / 北港码头 / 申时三刻 · 霜降前两日 / 雾港事件第二日清晨』
             完全和当前剧本无关。改为读 state.memory.last_retrieval（context_agent + retrieve_context 后写入）。 */}
-        <pre className="gp-quote mono" style={{maxHeight: 280, overflow: "auto", whiteSpace: "pre-wrap"}}>
-{(memory.last_retrieval && String(memory.last_retrieval).trim()) || t('game.context.retrieval_empty')}
+        <pre
+          className="gp-quote mono"
+          style={{ maxHeight: 280, overflow: 'auto', whiteSpace: 'pre-wrap' }}
+        >
+          {(memory.last_retrieval && String(memory.last_retrieval).trim()) ||
+            t('game.context.retrieval_empty')}
         </pre>
       </div>
     </div>
@@ -1612,43 +2314,85 @@ function PanelDebug({ state }) {
   return (
     <div className="gp-stack">
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.debug.agent_steps')}</h3><span className="pill mono">{t('game.debug.latest_round')}</span></div>
+        <div className="section-head">
+          <h3>{t('game.debug.agent_steps')}</h3>
+          <span className="pill mono">{t('game.debug.latest_round')}</span>
+        </div>
         <ul className="gp-sse">
-          {steps.length === 0 && <li><span className="muted-2">{t('game.debug.no_steps')}</span></li>}
+          {steps.length === 0 && (
+            <li>
+              <span className="muted-2">{t('game.debug.no_steps')}</span>
+            </li>
+          )}
           {steps.map((s, i) => (
             <li key={i}>
-              <span className={`mono ${s.status === "done" ? "ok" : s.status === "stopped" ? "danger" : "accent"}`}>{s.phase || "step"}</span>
-              <span className="mono muted-2">{(s.message || "").slice(0, 80)} {typeof s.elapsed_ms === "number" ? `· ${(s.elapsed_ms/1000).toFixed(1)}s` : ""}</span>
+              <span
+                className={`mono ${s.status === 'done' ? 'ok' : s.status === 'stopped' ? 'danger' : 'accent'}`}
+              >
+                {s.phase || 'step'}
+              </span>
+              <span className="mono muted-2">
+                {(s.message || '').slice(0, 80)}{' '}
+                {typeof s.elapsed_ms === 'number' ? `· ${(s.elapsed_ms / 1000).toFixed(1)}s` : ''}
+              </span>
             </li>
           ))}
         </ul>
       </div>
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.debug.current_request')}</h3></div>
+        <div className="section-head">
+          <h3>{t('game.debug.current_request')}</h3>
+        </div>
         <div className="gp-kv">
           {(() => {
             const ctx = memory.last_context || {};
-            const tokens = `in ${ctx.tokens_used || 0}${ctx.tokens_out ? ` · out ${ctx.tokens_out}` : ""}`;
+            const tokens = `in ${ctx.tokens_used || 0}${ctx.tokens_out ? ` · out ${ctx.tokens_out}` : ''}`;
             return (
               <>
-                <div className="gp-row"><span className="gp-label">{t('game.debug.retrieval_chunks')}</span><span className="mono">{ctx.retrieval_chunks || 0}</span></div>
-                <div className="gp-row"><span className="gp-label">tokens</span><span className="mono">{tokens}</span></div>
-                <div className="gp-row"><span className="gp-label">turn</span><span className="mono">{(state && state.turn) ?? 0}</span></div>
+                <div className="gp-row">
+                  <span className="gp-label">{t('game.debug.retrieval_chunks')}</span>
+                  <span className="mono">{ctx.retrieval_chunks || 0}</span>
+                </div>
+                <div className="gp-row">
+                  <span className="gp-label">tokens</span>
+                  <span className="mono">{tokens}</span>
+                </div>
+                <div className="gp-row">
+                  <span className="gp-label">turn</span>
+                  <span className="mono">{(state && state.turn) ?? 0}</span>
+                </div>
               </>
             );
           })()}
         </div>
       </div>
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.debug.permission_log')}</h3><span className="muted-2 mono" style={{fontSize: 11}}>{audit.length}</span></div>
+        <div className="section-head">
+          <h3>{t('game.debug.permission_log')}</h3>
+          <span className="muted-2 mono" style={{ fontSize: 11 }}>
+            {audit.length}
+          </span>
+        </div>
         <ul className="gp-flat-list">
-          {audit.length === 0 && <li><span className="muted-2">{t('game.debug.no_audit')}</span></li>}
-          {audit.slice(-8).reverse().map((a, i) => (
-            <li key={i}>
-              <span className={`mono ${a.source === "user:/set" ? "accent" : ""}`}>{a.source || "auto"}</span>
-              <span className="muted">{a.path}{a.value != null ? `: ${String(a.value).slice(0, 60)}` : ""}</span>
+          {audit.length === 0 && (
+            <li>
+              <span className="muted-2">{t('game.debug.no_audit')}</span>
             </li>
-          ))}
+          )}
+          {audit
+            .slice(-8)
+            .reverse()
+            .map((a, i) => (
+              <li key={i}>
+                <span className={`mono ${a.source === 'user:/set' ? 'accent' : ''}`}>
+                  {a.source || 'auto'}
+                </span>
+                <span className="muted">
+                  {a.path}
+                  {a.value != null ? `: ${String(a.value).slice(0, 60)}` : ''}
+                </span>
+              </li>
+            ))}
         </ul>
       </div>
     </div>
@@ -1667,16 +2411,19 @@ function PanelRules({ state }) {
   const diceLog = Array.isArray(state && state.dice_log) ? state.dice_log : [];
   const contentPack = (state && state.content_pack) || {};
   const [busy, setBusy] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState('');
 
   async function runRules(fnName, ...args) {
-    if (!window.api?.rules) { setErrorMsg(t('game.rules.api_not_registered')); return null; }
+    if (!window.api?.rules) {
+      setErrorMsg(t('game.rules.api_not_registered'));
+      return null;
+    }
     setBusy(true);
-    setErrorMsg("");
+    setErrorMsg('');
     try {
       const data = await window.api.rules[fnName](...args);
       if (!data || !data.ok) throw new Error(data?.error || data?.detail || `请求失败: ${fnName}`);
-      window.dispatchEvent(new CustomEvent("game-state-refresh"));
+      window.dispatchEvent(new CustomEvent('game-state-refresh'));
       return data;
     } catch (e) {
       setErrorMsg(String(e?.message || e));
@@ -1686,33 +2433,47 @@ function PanelRules({ state }) {
     }
   }
 
-  async function move(toId) { await runRules("move", toId); }
-  async function doAction(body) { await runRules("action", body); }
-  async function startEncounter(encId) { await runRules("encounterStart", encId); }
-  async function nextTurn() { await runRules("encounterNext"); }
-  async function enemyAttack(attackerId) { await runRules("encounterEnemy", attackerId); }
+  async function move(toId) {
+    await runRules('move', toId);
+  }
+  async function doAction(body) {
+    await runRules('action', body);
+  }
+  async function startEncounter(encId) {
+    await runRules('encounterStart', encId);
+  }
+  async function nextTurn() {
+    await runRules('encounterNext');
+  }
+  async function enemyAttack(attackerId) {
+    await runRules('encounterEnemy', attackerId);
+  }
 
   const moduleLoaded = !!scene.module_id;
   const currentRoom = scene.current_room || {};
-  const hpPct = pc.max_hp > 0 ? Math.max(0, Math.min(100, Math.round(100 * (pc.hp || 0) / pc.max_hp))) : 0;
+  const hpPct =
+    pc.max_hp > 0 ? Math.max(0, Math.min(100, Math.round((100 * (pc.hp || 0)) / pc.max_hp))) : 0;
 
   // 非 module_adventure 剧本（小说 / freeform）显式说明此 tab 不适用，
   // 避免在小说存档里误显示一套不属于该剧本的 5E 默认角色卡 + 模组按钮。
   // 加载模组的入口只在 Platform『冒险模组』页（那里会建新存档，不污染当前剧本）。
-  const packKind = contentPack.kind || "freeform";
-  if (packKind !== "module_adventure") {
-    const packTitle = packKind === "novel_adaptation" ? t('game.rules.novel_pack') : t('game.rules.freeform_pack');
+  const packKind = contentPack.kind || 'freeform';
+  if (packKind !== 'module_adventure') {
+    const packTitle =
+      packKind === 'novel_adaptation' ? t('game.rules.novel_pack') : t('game.rules.freeform_pack');
     return (
       <div className="gp-stack">
         <div className="gp-section">
           <div className="section-head">
             <h3>{t('game.rules.not_applicable')}</h3>
-            <span className="pill"><span className="dot" /> {packTitle}</span>
+            <span className="pill">
+              <span className="dot" /> {packTitle}
+            </span>
           </div>
-          <p className="gp-bio" style={{margin: "8px 0 0"}}>
+          <p className="gp-bio" style={{ margin: '8px 0 0' }}>
             {t('game.rules.not_applicable_desc', { pack: packTitle })}
           </p>
-          <p className="muted-2" style={{fontSize: 12.5, marginTop: 10}}>
+          <p className="muted-2" style={{ fontSize: 12.5, marginTop: 10 }}>
             {t('game.rules.try_module_hint')}
           </p>
         </div>
@@ -1725,51 +2486,145 @@ function PanelRules({ state }) {
       {/* 模组元信息 */}
       <div className="gp-section">
         <div className="section-head">
-          <h3>{t('game.rules.module_info', { label: ruleset.public_label || "5E compatible / 五版规则兼容" })}</h3>
-          <span className="pill ok"><span className="dot ok" /> {t('game.rules.loaded')}</span>
+          <h3>
+            {t('game.rules.module_info', {
+              label: ruleset.public_label || '5E compatible / 五版规则兼容',
+            })}
+          </h3>
+          <span className="pill ok">
+            <span className="dot ok" /> {t('game.rules.loaded')}
+          </span>
         </div>
         <div className="gp-kv">
-          <div className="gp-row"><span className="gp-label">{t('game.rules.module_label')}</span><strong>{(scene.module_manifest||{}).name_cn || (scene.module_manifest||{}).name || scene.module_id}</strong></div>
-          <div className="gp-row"><span className="gp-label">tagline</span><span style={{fontStyle:"italic",opacity:0.85}}>{(scene.module_manifest||{}).tagline || "—"}</span></div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.rules.module_label')}</span>
+            <strong>
+              {(scene.module_manifest || {}).name_cn ||
+                (scene.module_manifest || {}).name ||
+                scene.module_id}
+            </strong>
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">tagline</span>
+            <span style={{ fontStyle: 'italic', opacity: 0.85 }}>
+              {(scene.module_manifest || {}).tagline || '—'}
+            </span>
+          </div>
         </div>
-        {errorMsg ? <p className="muted-2" style={{color:"var(--danger)",marginTop:6}}>{errorMsg}</p> : null}
+        {errorMsg ? (
+          <p className="muted-2" style={{ color: 'var(--danger)', marginTop: 6 }}>
+            {errorMsg}
+          </p>
+        ) : null}
       </div>
 
       {/* 角色卡 */}
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.rules.character_card')}</h3>{pc.level ? <span className="pill"><span className="dot" /> Lv {pc.level}</span> : null}</div>
-        <div className="gp-kv">
-          <div className="gp-row"><span className="gp-label">{t('game.status.name')}</span><strong>{pc.name || "—"}</strong></div>
-          <div className="gp-row"><span className="gp-label">{t('game.rules.class')}</span><span>{pc.class_name || "—"}</span></div>
-          <div className="gp-row"><span className="gp-label">{t('game.rules.species')}</span><span>{pc.species || "—"}</span></div>
-          <div className="gp-row"><span className="gp-label">{t('game.status.hp')}</span><span>{pc.hp || 0} / {pc.max_hp || 0}
-            <span style={{display:"inline-block",width:80,height:6,background:"var(--panel-3)",borderRadius:3,marginLeft:8,verticalAlign:"middle"}}>
-              <span style={{display:"block",height:"100%",width:`${hpPct}%`,background:hpPct>50?"var(--green)":hpPct>25?"var(--accent)":"var(--danger)",borderRadius:3}} />
+        <div className="section-head">
+          <h3>{t('game.rules.character_card')}</h3>
+          {pc.level ? (
+            <span className="pill">
+              <span className="dot" /> Lv {pc.level}
             </span>
-          </span></div>
-          <div className="gp-row"><span className="gp-label">{t('game.status.ac')}</span><span>{pc.ac || "—"}</span></div>
-          <div className="gp-row"><span className="gp-label">{t('game.rules.proficiency_bonus')}</span><span>+{pc.proficiency_bonus || 0}</span></div>
+          ) : null}
+        </div>
+        <div className="gp-kv">
+          <div className="gp-row">
+            <span className="gp-label">{t('game.status.name')}</span>
+            <strong>{pc.name || '—'}</strong>
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.rules.class')}</span>
+            <span>{pc.class_name || '—'}</span>
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.rules.species')}</span>
+            <span>{pc.species || '—'}</span>
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.status.hp')}</span>
+            <span>
+              {pc.hp || 0} / {pc.max_hp || 0}
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: 80,
+                  height: 6,
+                  background: 'var(--panel-3)',
+                  borderRadius: 3,
+                  marginLeft: 8,
+                  verticalAlign: 'middle',
+                }}
+              >
+                <span
+                  style={{
+                    display: 'block',
+                    height: '100%',
+                    width: `${hpPct}%`,
+                    background:
+                      hpPct > 50 ? 'var(--green)' : hpPct > 25 ? 'var(--accent)' : 'var(--danger)',
+                    borderRadius: 3,
+                  }}
+                />
+              </span>
+            </span>
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.status.ac')}</span>
+            <span>{pc.ac || '—'}</span>
+          </div>
+          <div className="gp-row">
+            <span className="gp-label">{t('game.rules.proficiency_bonus')}</span>
+            <span>+{pc.proficiency_bonus || 0}</span>
+          </div>
         </div>
         {pc.abilities && Object.keys(pc.abilities).length > 0 ? (
-          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:4,marginTop:6,fontSize:12}}>
-            {["str","dex","con","int","wis","cha"].map(a => {
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(6,1fr)',
+              gap: 4,
+              marginTop: 6,
+              fontSize: 12,
+            }}
+          >
+            {['str', 'dex', 'con', 'int', 'wis', 'cha'].map((a) => {
               const score = pc.abilities[a];
               if (score == null) return null;
               const mod = Math.floor((score - 10) / 2);
               return (
-                <div key={a} style={{textAlign:"center",padding:"4px 0",background:"var(--panel-3)",borderRadius:4}}>
-                  <div className="muted-2" style={{fontSize:10,textTransform:"uppercase"}}>{a}</div>
+                <div
+                  key={a}
+                  style={{
+                    textAlign: 'center',
+                    padding: '4px 0',
+                    background: 'var(--panel-3)',
+                    borderRadius: 4,
+                  }}
+                >
+                  <div className="muted-2" style={{ fontSize: 10, textTransform: 'uppercase' }}>
+                    {a}
+                  </div>
                   <strong>{score}</strong>
-                  <div className="muted-2" style={{fontSize:10}}>{mod >= 0 ? "+" : ""}{mod}</div>
+                  <div className="muted-2" style={{ fontSize: 10 }}>
+                    {mod >= 0 ? '+' : ''}
+                    {mod}
+                  </div>
                 </div>
               );
             })}
           </div>
         ) : null}
         {Array.isArray(pc.conditions) && pc.conditions.length ? (
-          <div style={{marginTop:6}}>
-            <span className="muted-2" style={{fontSize:11,marginRight:6}}>{t('game.rules.condition_label')}</span>
-            {pc.conditions.map((c,i) => <span key={i} className="pill" style={{marginRight:4}}>{c}</span>)}
+          <div style={{ marginTop: 6 }}>
+            <span className="muted-2" style={{ fontSize: 11, marginRight: 6 }}>
+              {t('game.rules.condition_label')}
+            </span>
+            {pc.conditions.map((c, i) => (
+              <span key={i} className="pill" style={{ marginRight: 4 }}>
+                {c}
+              </span>
+            ))}
           </div>
         ) : null}
       </div>
@@ -1777,25 +2632,48 @@ function PanelRules({ state }) {
       {/* 当前房间 */}
       {moduleLoaded ? (
         <div className="gp-section">
-          <div className="section-head"><h3>{t('game.rules.current_room')}</h3><span className="muted-2 mono" style={{fontSize:11}}>{scene.location_id}</span></div>
-          <div className="gp-kv">
-            <div className="gp-row"><span className="gp-label">{t('game.rules.room_name')}</span><strong>{currentRoom.name || "—"}</strong></div>
+          <div className="section-head">
+            <h3>{t('game.rules.current_room')}</h3>
+            <span className="muted-2 mono" style={{ fontSize: 11 }}>
+              {scene.location_id}
+            </span>
           </div>
-          <p className="gp-bio" style={{whiteSpace:"pre-wrap"}}>{currentRoom.description || ""}</p>
+          <div className="gp-kv">
+            <div className="gp-row">
+              <span className="gp-label">{t('game.rules.room_name')}</span>
+              <strong>{currentRoom.name || '—'}</strong>
+            </div>
+          </div>
+          <p className="gp-bio" style={{ whiteSpace: 'pre-wrap' }}>
+            {currentRoom.description || ''}
+          </p>
           {Array.isArray(currentRoom.visible_clues) && currentRoom.visible_clues.length ? (
-            <div style={{marginTop:6}}>
-              <div className="muted-2" style={{fontSize:11,marginBottom:3}}>{t('game.rules.visible_clues_label')}</div>
-              <ul style={{margin:0,paddingLeft:16}}>
-                {currentRoom.visible_clues.map((c,i) => <li key={i} style={{fontSize:12}}>{c.text || c}</li>)}
+            <div style={{ marginTop: 6 }}>
+              <div className="muted-2" style={{ fontSize: 11, marginBottom: 3 }}>
+                {t('game.rules.visible_clues_label')}
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 16 }}>
+                {currentRoom.visible_clues.map((c, i) => (
+                  <li key={i} style={{ fontSize: 12 }}>
+                    {c.text || c}
+                  </li>
+                ))}
               </ul>
             </div>
           ) : null}
           {Array.isArray(currentRoom.exits) && currentRoom.exits.length ? (
-            <div style={{marginTop:6}}>
-              <div className="muted-2" style={{fontSize:11,marginBottom:3}}>{t('game.rules.exits_label')}</div>
-              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                {currentRoom.exits.map((e,i) => (
-                  <button key={i} disabled={busy} onClick={() => move(e.to)} style={{fontSize:12}}>
+            <div style={{ marginTop: 6 }}>
+              <div className="muted-2" style={{ fontSize: 11, marginBottom: 3 }}>
+                {t('game.rules.exits_label')}
+              </div>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {currentRoom.exits.map((e, i) => (
+                  <button
+                    key={i}
+                    disabled={busy}
+                    onClick={() => move(e.to)}
+                    style={{ fontSize: 12 }}
+                  >
                     {e.label || e.to}
                   </button>
                 ))}
@@ -1803,33 +2681,56 @@ function PanelRules({ state }) {
             </div>
           ) : null}
           {Array.isArray(currentRoom.checks) && currentRoom.checks.length ? (
-            <div style={{marginTop:8}}>
-              <div className="muted-2" style={{fontSize:11,marginBottom:3}}>{t('game.rules.checks_label')}</div>
-              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                {currentRoom.checks.map((c,i) => (
-                  <button key={i} disabled={busy} onClick={() => doAction({
-                    kind: c.kind || "skill_check",
-                    skill: c.skill,
-                    ability: c.ability,
-                    dc: c.dc,
-                    reason: c.fact || c.reveals,
-                    sets_flag: c.sets_flag,
-                  })} style={{fontSize:12}}>
-                    {c.kind === "saving_throw" ? t('game.rules.saving_throw', { ability: (c.ability||"").toUpperCase(), dc: c.dc }) : t('game.rules.skill_check', { skill: c.skill, dc: c.dc })}
+            <div style={{ marginTop: 8 }}>
+              <div className="muted-2" style={{ fontSize: 11, marginBottom: 3 }}>
+                {t('game.rules.checks_label')}
+              </div>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {currentRoom.checks.map((c, i) => (
+                  <button
+                    key={i}
+                    disabled={busy}
+                    onClick={() =>
+                      doAction({
+                        kind: c.kind || 'skill_check',
+                        skill: c.skill,
+                        ability: c.ability,
+                        dc: c.dc,
+                        reason: c.fact || c.reveals,
+                        sets_flag: c.sets_flag,
+                      })
+                    }
+                    style={{ fontSize: 12 }}
+                  >
+                    {c.kind === 'saving_throw'
+                      ? t('game.rules.saving_throw', {
+                          ability: (c.ability || '').toUpperCase(),
+                          dc: c.dc,
+                        })
+                      : t('game.rules.skill_check', { skill: c.skill, dc: c.dc })}
                   </button>
                 ))}
               </div>
             </div>
           ) : null}
           {(currentRoom.flags || {}).can_short_rest ? (
-            <div style={{marginTop:6}}>
-              <button disabled={busy} onClick={() => doAction({kind:"short_rest"})}>{t('game.rules.short_rest')}</button>
+            <div style={{ marginTop: 6 }}>
+              <button disabled={busy} onClick={() => doAction({ kind: 'short_rest' })}>
+                {t('game.rules.short_rest')}
+              </button>
             </div>
           ) : null}
           {Array.isArray(currentRoom.enemies) && currentRoom.enemies.length && !encounter.active ? (
-            <div style={{marginTop:8}}>
-              <div className="muted-2" style={{fontSize:11,marginBottom:3}}>{t('game.rules.encounter_label')}</div>
-              <button disabled={busy} className="primary" onClick={() => startEncounter(`${scene.location_id}_combat`)} style={{fontSize:12}}>
+            <div style={{ marginTop: 8 }}>
+              <div className="muted-2" style={{ fontSize: 11, marginBottom: 3 }}>
+                {t('game.rules.encounter_label')}
+              </div>
+              <button
+                disabled={busy}
+                className="primary"
+                onClick={() => startEncounter(`${scene.location_id}_combat`)}
+                style={{ fontSize: 12 }}
+              >
                 {t('game.rules.start_combat')}
               </button>
             </div>
@@ -1842,65 +2743,138 @@ function PanelRules({ state }) {
         <div className="gp-section">
           <div className="section-head">
             <h3>{t('game.rules.combat_title', { round: encounter.round })}</h3>
-            <span className="pill ok"><span className="dot ok" /> {t('game.rules.round_info', { current: encounter.turn_index + 1, total: (encounter.initiative_order||[]).length })}</span>
+            <span className="pill ok">
+              <span className="dot ok" />{' '}
+              {t('game.rules.round_info', {
+                current: encounter.turn_index + 1,
+                total: (encounter.initiative_order || []).length,
+              })}
+            </span>
           </div>
-          <div style={{marginTop:6}}>
-            <div className="muted-2" style={{fontSize:11,marginBottom:3}}>{t('game.rules.initiative_order')}</div>
-            <ol style={{margin:0,paddingLeft:18}}>
-              {(encounter.initiative_order||[]).map((o,i) => {
+          <div style={{ marginTop: 6 }}>
+            <div className="muted-2" style={{ fontSize: 11, marginBottom: 3 }}>
+              {t('game.rules.initiative_order')}
+            </div>
+            <ol style={{ margin: 0, paddingLeft: 18 }}>
+              {(encounter.initiative_order || []).map((o, i) => {
                 const isCurrent = i === encounter.turn_index;
-                const comb = (encounter.combatants||[]).find(c => c.id === o.id) || {};
+                const comb = (encounter.combatants || []).find((c) => c.id === o.id) || {};
                 return (
-                  <li key={i} style={{fontSize:12,fontWeight:isCurrent?700:400,opacity:comb.defeated?0.5:1}}>
-                    {o.name} <span className="muted-2">({o.init}, {comb.side})</span> · HP {comb.hp}/{comb.max_hp}
-                    {comb.defeated ? t('game.rules.defeated') : ""}
+                  <li
+                    key={i}
+                    style={{
+                      fontSize: 12,
+                      fontWeight: isCurrent ? 700 : 400,
+                      opacity: comb.defeated ? 0.5 : 1,
+                    }}
+                  >
+                    {o.name}{' '}
+                    <span className="muted-2">
+                      ({o.init}, {comb.side})
+                    </span>{' '}
+                    · HP {comb.hp}/{comb.max_hp}
+                    {comb.defeated ? t('game.rules.defeated') : ''}
                   </li>
                 );
               })}
             </ol>
           </div>
-          <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:8}}>
-            {(encounter.combatants||[]).filter(c => c.side === "enemy" && !c.defeated).map(e => (
-              <button key={e.id} disabled={busy} className="primary" onClick={() => doAction({kind:"attack", target: e.id})} style={{fontSize:12}}>
-                {t('game.rules.attack', { name: e.name })}
-              </button>
-            ))}
-            <button disabled={busy} onClick={nextTurn} style={{fontSize:12}}>{t('game.rules.next_turn')}</button>
-            {(encounter.combatants||[]).filter(c => c.side === "enemy" && !c.defeated).map(e => (
-              <button key={`enemy-${e.id}`} disabled={busy} onClick={() => enemyAttack(e.id)} style={{fontSize:12,background:"var(--panel-3)"}}>
-                {t('game.rules.let_attack', { name: e.name })}
-              </button>
-            ))}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
+            {(encounter.combatants || [])
+              .filter((c) => c.side === 'enemy' && !c.defeated)
+              .map((e) => (
+                <button
+                  key={e.id}
+                  disabled={busy}
+                  className="primary"
+                  onClick={() => doAction({ kind: 'attack', target: e.id })}
+                  style={{ fontSize: 12 }}
+                >
+                  {t('game.rules.attack', { name: e.name })}
+                </button>
+              ))}
+            <button disabled={busy} onClick={nextTurn} style={{ fontSize: 12 }}>
+              {t('game.rules.next_turn')}
+            </button>
+            {(encounter.combatants || [])
+              .filter((c) => c.side === 'enemy' && !c.defeated)
+              .map((e) => (
+                <button
+                  key={`enemy-${e.id}`}
+                  disabled={busy}
+                  onClick={() => enemyAttack(e.id)}
+                  style={{ fontSize: 12, background: 'var(--panel-3)' }}
+                >
+                  {t('game.rules.let_attack', { name: e.name })}
+                </button>
+              ))}
           </div>
         </div>
       ) : null}
 
       {/* 骰子日志 */}
       <div className="gp-section">
-        <div className="section-head"><h3>{t('game.rules.dice_log')}</h3><span className="muted-2 mono" style={{fontSize:11}}>{t('game.rules.dice_count', { count: diceLog.length })}</span></div>
+        <div className="section-head">
+          <h3>{t('game.rules.dice_log')}</h3>
+          <span className="muted-2 mono" style={{ fontSize: 11 }}>
+            {t('game.rules.dice_count', { count: diceLog.length })}
+          </span>
+        </div>
         {diceLog.length === 0 ? (
-          <p className="muted-2" style={{fontSize:12}}>{t('game.rules.dice_empty')}</p>
+          <p className="muted-2" style={{ fontSize: 12 }}>
+            {t('game.rules.dice_empty')}
+          </p>
         ) : (
-          <ul style={{margin:0,paddingLeft:0,listStyle:"none",maxHeight:240,overflowY:"auto"}}>
-            {diceLog.slice().reverse().map((d,i) => (
-              <li key={d.id || i} style={{padding:"4px 6px",borderBottom:"1px solid var(--line-soft)",fontSize:12}}>
-                <div>
-                  <strong>{d.kind}</strong>
-                  {d.actor ? <span className="muted-2"> · {d.actor}</span> : null}
-                  {d.target ? <span className="muted-2"> → {d.target}</span> : null}
-                  {d.success === true ? <span className="pill ok" style={{marginLeft:6}}>{t('game.rules.success')}</span>
-                    : d.success === false ? <span className="pill" style={{marginLeft:6,background:"var(--danger)",color:"#fff"}}>{t('game.rules.fail')}</span>
-                    : null}
-                </div>
-                <div className="muted-2" style={{fontSize:11}}>
-                  {d.expression || ""} = [{(d.rolls||[]).join(",")}]{typeof d.modifier === "number" && d.modifier ? ` ${d.modifier>=0?"+":""}${d.modifier}` : ""}
-                  {typeof d.total === "number" ? ` → ${d.total}` : ""}
-                  {typeof d.dc === "number" ? ` vs DC ${d.dc}` : ""}
-                  {d.damage ? ` · ${t('game.status.damage')} ${d.damage.total}` : ""}
-                  {d.reason ? ` · ${d.reason}` : ""}
-                </div>
-              </li>
-            ))}
+          <ul
+            style={{
+              margin: 0,
+              paddingLeft: 0,
+              listStyle: 'none',
+              maxHeight: 240,
+              overflowY: 'auto',
+            }}
+          >
+            {diceLog
+              .slice()
+              .reverse()
+              .map((d, i) => (
+                <li
+                  key={d.id || i}
+                  style={{
+                    padding: '4px 6px',
+                    borderBottom: '1px solid var(--line-soft)',
+                    fontSize: 12,
+                  }}
+                >
+                  <div>
+                    <strong>{d.kind}</strong>
+                    {d.actor ? <span className="muted-2"> · {d.actor}</span> : null}
+                    {d.target ? <span className="muted-2"> → {d.target}</span> : null}
+                    {d.success === true ? (
+                      <span className="pill ok" style={{ marginLeft: 6 }}>
+                        {t('game.rules.success')}
+                      </span>
+                    ) : d.success === false ? (
+                      <span
+                        className="pill"
+                        style={{ marginLeft: 6, background: 'var(--danger)', color: '#fff' }}
+                      >
+                        {t('game.rules.fail')}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="muted-2" style={{ fontSize: 11 }}>
+                    {d.expression || ''} = [{(d.rolls || []).join(',')}]
+                    {typeof d.modifier === 'number' && d.modifier
+                      ? ` ${d.modifier >= 0 ? '+' : ''}${d.modifier}`
+                      : ''}
+                    {typeof d.total === 'number' ? ` → ${d.total}` : ''}
+                    {typeof d.dc === 'number' ? ` vs DC ${d.dc}` : ''}
+                    {d.damage ? ` · ${t('game.status.damage')} ${d.damage.total}` : ''}
+                    {d.reason ? ` · ${d.reason}` : ''}
+                  </div>
+                </li>
+              ))}
           </ul>
         )}
       </div>
@@ -1908,34 +2882,56 @@ function PanelRules({ state }) {
   );
 }
 
-function RightPanel({ state, activeTab, setActiveTab, sidebarWidth, density, collapsed, onToggle, resizeHandle }) {
+function RightPanel({
+  state,
+  activeTab,
+  setActiveTab,
+  sidebarWidth,
+  density,
+  collapsed,
+  onToggle,
+  resizeHandle,
+}) {
   const { t } = useTranslation();
   const tabs = PANEL_TABS;
-  const active = tabs.find(tab => tab.id === activeTab) || tabs[0];
+  const active = tabs.find((tab) => tab.id === activeTab) || tabs[0];
   let body = null;
-  if (activeTab === "status") body = <PanelStatus state={state} panelWidth={sidebarWidth} />;
-  else if (activeTab === "rules") body = <PanelRules state={state} />;
-  else if (activeTab === "memory") body = <PanelMemory state={state} density={density} panelWidth={sidebarWidth} />;
-  else if (activeTab === "worldbook") body = <PanelWorldbook state={state} panelWidth={sidebarWidth} />;
-  else if (activeTab === "cards") body = <PanelCharacters state={state} panelWidth={sidebarWidth} />;
-  else if (activeTab === "timeline") body = <PanelTimeline state={state} panelWidth={sidebarWidth} />;
-  else if (activeTab === "context") body = <PanelContext state={state} />;
-  else if (activeTab === "debug") body = <PanelDebug state={state} />;
+  if (activeTab === 'status') body = <PanelStatus state={state} panelWidth={sidebarWidth} />;
+  else if (activeTab === 'rules') body = <PanelRules state={state} />;
+  else if (activeTab === 'memory')
+    body = <PanelMemory state={state} density={density} panelWidth={sidebarWidth} />;
+  else if (activeTab === 'worldbook')
+    body = <PanelWorldbook state={state} panelWidth={sidebarWidth} />;
+  else if (activeTab === 'cards')
+    body = <PanelCharacters state={state} panelWidth={sidebarWidth} />;
+  else if (activeTab === 'timeline')
+    body = <PanelTimeline state={state} panelWidth={sidebarWidth} />;
+  else if (activeTab === 'context') body = <PanelContext state={state} />;
+  else if (activeTab === 'debug') body = <PanelDebug state={state} />;
 
   return (
-    <aside className={`gp-panel ${collapsed ? "collapsed" : ""}`} style={{width: collapsed ? 0 : sidebarWidth}} aria-hidden={collapsed}>
+    <aside
+      className={`gp-panel ${collapsed ? 'collapsed' : ''}`}
+      style={{ width: collapsed ? 0 : sidebarWidth }}
+      aria-hidden={collapsed}
+    >
       {!collapsed && resizeHandle}
       <div className="gp-panel-inner">
         <header className="gp-panel-head">
           <div className="gp-tabs">
-            <button className="iconbtn gp-collapse-btn" onClick={onToggle} data-tip={t('game.panel.collapse_tip')} data-tip-pos="below">
+            <button
+              className="iconbtn gp-collapse-btn"
+              onClick={onToggle}
+              data-tip={t('game.panel.collapse_tip')}
+              data-tip-pos="below"
+            >
               <Icon name="chevron_right" size={14} />
             </button>
             <span className="gp-tabs-sep" />
-            {tabs.map(tab => (
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
-                className={`gp-tab ${activeTab === tab.id ? "active" : ""}`}
+                className={`gp-tab ${activeTab === tab.id ? 'active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
                 data-tip={t(tab.labelKey)}
                 data-tip-pos="below"
@@ -1950,10 +2946,23 @@ function RightPanel({ state, activeTab, setActiveTab, sidebarWidth, density, col
             <span className="muted-2 mono">{active.id}</span>
           </div>
         </header>
-        <div className={`gp-panel-body${sidebarWidth < 280 ? " narrow" : ""}`}>{body}</div>
+        <div className={`gp-panel-body${sidebarWidth < 280 ? ' narrow' : ''}`}>{body}</div>
       </div>
     </aside>
   );
 }
 
-export { RightPanel, PANEL_TABS, PanelRules, PanelCharacters, PanelStatus, PanelContext, PanelMemory, PanelTimeline, PanelWorldbook, PanelDebug, CharacterCard, WorldlineAnchorsSection };
+export {
+  RightPanel,
+  PANEL_TABS,
+  PanelRules,
+  PanelCharacters,
+  PanelStatus,
+  PanelContext,
+  PanelMemory,
+  PanelTimeline,
+  PanelWorldbook,
+  PanelDebug,
+  CharacterCard,
+  WorldlineAnchorsSection,
+};

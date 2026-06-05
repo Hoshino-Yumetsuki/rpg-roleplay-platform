@@ -24,7 +24,7 @@ const I18N = {
     leave: '未满 18 周岁，离开',
     loading: '正在确认…',
   },
-  'en': {
+  en: {
     title: 'Adult Content Disclaimer',
     body: 'This service is intended for users aged 18 and above. The platform contains adult-themed literary content. You must confirm your age to continue.',
     legalLink: 'Read the full adult content disclaimer',
@@ -64,7 +64,11 @@ export default function AdultSplash({ splashVersion, onAcked }) {
   };
 
   const handleLeave = () => {
-    try { window.location.replace('about:blank'); } catch (_) { window.close(); }
+    try {
+      window.location.replace('about:blank');
+    } catch (_) {
+      window.close();
+    }
   };
 
   return (
@@ -106,7 +110,14 @@ export default function AdultSplash({ splashVersion, onAcked }) {
         </h2>
 
         {/* Body */}
-        <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text-quiet, #b0a89e)', marginBottom: 16 }}>
+        <p
+          style={{
+            fontSize: 14,
+            lineHeight: 1.7,
+            color: 'var(--text-quiet, #b0a89e)',
+            marginBottom: 16,
+          }}
+        >
           {t.body}
         </p>
 
@@ -124,9 +135,7 @@ export default function AdultSplash({ splashVersion, onAcked }) {
 
         {/* Error */}
         {error && (
-          <p style={{ fontSize: 12, color: 'var(--danger, #e07070)', marginBottom: 12 }}>
-            {error}
-          </p>
+          <p style={{ fontSize: 12, color: 'var(--danger, #e07070)', marginBottom: 12 }}>{error}</p>
         )}
 
         {/* Buttons */}

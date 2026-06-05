@@ -22,10 +22,17 @@ export function stripNarrativeOps(txt) {
   // 2. 裸 JSON ops 数组: [{...,"op":...}, ...]  — 80 字内出现 "op" key 即视为 ops
   let idx;
   while ((idx = out.search(/\[\s*\{[^[\]]{0,80}"op"\s*:/)) !== -1) {
-    let depth = 0, end = -1;
+    let depth = 0,
+      end = -1;
     for (let i = idx; i < out.length; i++) {
       if (out[i] === '[') depth++;
-      else if (out[i] === ']') { depth--; if (depth === 0) { end = i; break; } }
+      else if (out[i] === ']') {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
     }
     let start = idx;
     while (start > 0 && out[start - 1] === '\n') start--;

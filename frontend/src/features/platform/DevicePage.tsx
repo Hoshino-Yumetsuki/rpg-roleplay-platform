@@ -14,21 +14,29 @@ import CSInput from '@cloudscape-design/components/input';
 import CSAlert from '@cloudscape-design/components/alert';
 import CSBadge from '@cloudscape-design/components/badge';
 
-const SCOPE_LABEL = { 'library:read': '浏览并导入在线剧本库', 'library:publish': '把剧本发布到在线库' };
+const SCOPE_LABEL = {
+  'library:read': '浏览并导入在线剧本库',
+  'library:publish': '把剧本发布到在线库',
+};
 
 export function DeviceAuthorizePage() {
   const initialCode = (() => {
-    try { return (new URLSearchParams(location.search).get('code') || '').toUpperCase(); } catch { return ''; }
+    try {
+      return (new URLSearchParams(location.search).get('code') || '').toUpperCase();
+    } catch {
+      return '';
+    }
   })();
   const [code, setCode] = useStatePL(initialCode);
-  const [info, setInfo] = useStatePL(null);          // {client_name, scopes}
-  const [phase, setPhase] = useStatePL('input');      // input | confirm | done | denied | error
+  const [info, setInfo] = useStatePL(null); // {client_name, scopes}
+  const [phase, setPhase] = useStatePL('input'); // input | confirm | done | denied | error
   const [busy, setBusy] = useStatePL(false);
   const [err, setErr] = useStatePL('');
-  const [provider, setProvider] = useStatePL(null);   // null=loading, true/false
+  const [provider, setProvider] = useStatePL(null); // null=loading, true/false
 
   useEffectPL(() => {
-    window.api?.federation?.providerInfo?.()
+    window.api?.federation
+      ?.providerInfo?.()
       .then((r) => setProvider(!!r?.provider_enabled))
       .catch(() => setProvider(false));
   }, []);
@@ -36,25 +44,36 @@ export function DeviceAuthorizePage() {
   const lookup = async (c) => {
     const uc = (c || code).trim().toUpperCase();
     if (!uc) return;
-    setBusy(true); setErr('');
+    setBusy(true);
+    setErr('');
     try {
       const r = await window.api.federation.deviceLookup(uc);
-      setInfo(r.device); setPhase('confirm');
+      setInfo(r.device);
+      setPhase('confirm');
     } catch (e) {
-      setErr(e?.payload?.error || '配对码不存在或已过期'); setPhase('error');
-    } finally { setBusy(false); }
+      setErr(e?.payload?.error || '配对码不存在或已过期');
+      setPhase('error');
+    } finally {
+      setBusy(false);
+    }
   };
 
-  useEffectPL(() => { if (initialCode) lookup(initialCode); /* eslint-disable-next-line */ }, []);
+  useEffectPL(() => {
+    if (initialCode) lookup(initialCode); /* eslint-disable-next-line */
+  }, []);
 
   const decide = async (deny) => {
-    setBusy(true); setErr('');
+    setBusy(true);
+    setErr('');
     try {
       await window.api.federation.deviceApprove(code.trim().toUpperCase(), deny);
       setPhase(deny ? 'denied' : 'done');
     } catch (e) {
-      setErr(e?.payload?.error || '操作失败'); setPhase('error');
-    } finally { setBusy(false); }
+      setErr(e?.payload?.error || '操作失败');
+      setPhase('error');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -74,11 +93,24 @@ export function DeviceAuthorizePage() {
               </CSBox>
               <div style={{ display: 'flex', gap: 8 }}>
                 <div style={{ flex: 1 }}>
-                  <CSInput value={code} placeholder="WXYZ-7K9M" autoFocus
+                  <CSInput
+                    value={code}
+                    placeholder="WXYZ-7K9M"
+                    autoFocus
                     onChange={({ detail }) => setCode(detail.value.toUpperCase())}
-                    onKeyDown={(e) => { if (e.detail.key === 'Enter') lookup(); }} />
+                    onKeyDown={(e) => {
+                      if (e.detail.key === 'Enter') lookup();
+                    }}
+                  />
                 </div>
-                <CSButton variant="primary" loading={busy} disabled={!code.trim()} onClick={() => lookup()}>下一步</CSButton>
+                <CSButton
+                  variant="primary"
+                  loading={busy}
+                  disabled={!code.trim()}
+                  onClick={() => lookup()}
+                >
+                  下一步
+                </CSButton>
               </div>
             </CSSpaceBetween>
           )}
@@ -86,7 +118,14 @@ export function DeviceAuthorizePage() {
           {phase === 'confirm' && info && (
             <CSSpaceBetween size="m">
               <CSBox variant="awsui-key-label">配对码</CSBox>
-              <CSBox fontSize="display-l" fontWeight="bold" padding="n" style={{ letterSpacing: 3 }}>{code.toUpperCase()}</CSBox>
+              <CSBox
+                fontSize="display-l"
+                fontWeight="bold"
+                padding="n"
+                style={{ letterSpacing: 3 }}
+              >
+                {code.toUpperCase()}
+              </CSBox>
 
               <div>
                 <CSBox variant="awsui-key-label">请求方</CSBox>
@@ -95,7 +134,11 @@ export function DeviceAuthorizePage() {
               <div>
                 <CSBox variant="awsui-key-label">申请权限</CSBox>
                 <CSSpaceBetween direction="horizontal" size="xs">
-                  {(info.scopes || []).map((s) => <CSBadge key={s} color="blue">{SCOPE_LABEL[s] || s}</CSBadge>)}
+                  {(info.scopes || []).map((s) => (
+                    <CSBadge key={s} color="blue">
+                      {SCOPE_LABEL[s] || s}
+                    </CSBadge>
+                  ))}
                 </CSSpaceBetween>
               </div>
 
@@ -105,8 +148,12 @@ export function DeviceAuthorizePage() {
               </CSAlert>
 
               <CSSpaceBetween direction="horizontal" size="xs">
-                <CSButton variant="primary" loading={busy} onClick={() => decide(false)}>批准授权</CSButton>
-                <CSButton loading={busy} onClick={() => decide(true)}>拒绝</CSButton>
+                <CSButton variant="primary" loading={busy} onClick={() => decide(false)}>
+                  批准授权
+                </CSButton>
+                <CSButton loading={busy} onClick={() => decide(true)}>
+                  拒绝
+                </CSButton>
               </CSSpaceBetween>
             </CSSpaceBetween>
           )}
@@ -117,12 +164,24 @@ export function DeviceAuthorizePage() {
             </CSAlert>
           )}
           {phase === 'denied' && (
-            <CSAlert type="info" header="已拒绝">该连接请求已被拒绝,未授予任何权限。</CSAlert>
+            <CSAlert type="info" header="已拒绝">
+              该连接请求已被拒绝,未授予任何权限。
+            </CSAlert>
           )}
           {phase === 'error' && (
             <CSSpaceBetween size="s">
-              <CSAlert type="error" header="无法继续">{err}</CSAlert>
-              <CSButton onClick={() => { setPhase('input'); setInfo(null); setErr(''); }}>重新输入配对码</CSButton>
+              <CSAlert type="error" header="无法继续">
+                {err}
+              </CSAlert>
+              <CSButton
+                onClick={() => {
+                  setPhase('input');
+                  setInfo(null);
+                  setErr('');
+                }}
+              >
+                重新输入配对码
+              </CSButton>
             </CSSpaceBetween>
           )}
         </CSSpaceBetween>

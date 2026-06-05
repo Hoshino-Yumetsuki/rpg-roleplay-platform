@@ -33,7 +33,7 @@ export default function AgentModelPicker({
   configHash = 'settings-models',
   variant = 'container',
   onChange = null,
-  persistOnMount = false,  // 无偏好时把解析出的默认(provider+model)一次性写入,保证"所见即所用"
+  persistOnMount = false, // 无偏好时把解析出的默认(provider+model)一次性写入,保证"所见即所用"
 }) {
   const { useState, useEffect } = React;
   const [apis, setApis] = useState([]);
@@ -56,7 +56,7 @@ export default function AgentModelPicker({
         setApis(Array.isArray(list) ? list : []);
         // AgentPlatform 是 Vertex 的 SA 凭证 — UI 里归一成 vertex_ai
         const ids = new Set();
-        for (const c of (creds?.items || creds?.credentials || [])) {
+        for (const c of creds?.items || creds?.credentials || []) {
           if (c.enabled === false) continue;
           if (!(c.has_credential || c.has_key || c.key_hint !== undefined)) continue;
           const aid = (c.api_id || c.id || '').trim();
@@ -67,26 +67,36 @@ export default function AgentModelPicker({
         const prefApi = p[`${prefPrefix}.api_id`];
         const prefModel = p[`${prefPrefix}.model_real_name`];
         // Provider:已存偏好 > 偏好的 provider(若已配 key) > 用户首个已配 provider
-        const chosenApi = prefApi
-          || (preferProvider && ids.has(preferProvider) ? preferProvider : null)
-          || Array.from(ids)[0]
-          || preferProvider || '';
+        const chosenApi =
+          prefApi ||
+          (preferProvider && ids.has(preferProvider) ? preferProvider : null) ||
+          Array.from(ids)[0] ||
+          preferProvider ||
+          '';
         // Model 必须属于 chosenApi(否则会出现 Anthropic + gemini 这种错配):
         //   已存偏好 model > defaultModel(若在该 provider 下) > 该 provider 首个非 embedding 模型
         const apiObj = list.find((x) => (x.api_id || x.id) === chosenApi);
-        const chosenModels = (apiObj?.models || apiObj?.entries || [])
-          .filter((m) => !((m.capabilities || m.caps || []).length === 1 && (m.capabilities || m.caps || [])[0] === 'embedding'));
+        const chosenModels = (apiObj?.models || apiObj?.entries || []).filter(
+          (m) =>
+            !(
+              (m.capabilities || m.caps || []).length === 1 &&
+              (m.capabilities || m.caps || [])[0] === 'embedding'
+            ),
+        );
         const hasDefault = chosenModels.some((m) => (m.real_name || m.id) === defaultModel);
         // 该 provider 下偏向便宜档(haiku/flash/mini/lite/small/nano),适合整理这种工具任务,
         // 避免默认落到旗舰(如 Opus)烧额度。
         const cheapRe = /haiku|flash|mini|lite|small|nano/i;
-        const cheap = chosenModels.find((m) => cheapRe.test(m.real_name || m.id || '') || cheapRe.test(m.display_name || ''));
-        const firstModel = chosenModels[0] ? (chosenModels[0].real_name || chosenModels[0].id) : '';
-        const chosenModel = prefModel
-          || (hasDefault ? defaultModel : null)
-          || (cheap ? (cheap.real_name || cheap.id) : null)
-          || firstModel
-          || defaultModel;
+        const cheap = chosenModels.find(
+          (m) => cheapRe.test(m.real_name || m.id || '') || cheapRe.test(m.display_name || ''),
+        );
+        const firstModel = chosenModels[0] ? chosenModels[0].real_name || chosenModels[0].id : '';
+        const chosenModel =
+          prefModel ||
+          (hasDefault ? defaultModel : null) ||
+          (cheap ? cheap.real_name || cheap.id : null) ||
+          firstModel ||
+          defaultModel;
         setApiId(chosenApi);
         setModel(chosenModel);
         // 无偏好时把解析出的一致默认写回(仅当 provider+model 都有效),避免"显示一套、后端用另一套"。
@@ -97,11 +107,15 @@ export default function AgentModelPicker({
               [`${prefPrefix}.model_real_name`]: chosenModel,
             });
             onChange && onChange(chosenApi, chosenModel);
-          } catch (_) { /* 静默 */ }
+          } catch (_) {
+            /* 静默 */
+          }
         }
       } catch (_) {}
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefPrefix]);
 
@@ -114,11 +128,15 @@ export default function AgentModelPicker({
         [`${prefPrefix}.model_real_name`]: m,
       });
       onChange && onChange(aid, m);
-    } catch (_) { /* 静默 */ } finally { setSaving(false); }
+    } catch (_) {
+      /* 静默 */
+    } finally {
+      setSaving(false);
+    }
   };
 
   const apiOf = (id) => apis.find((x) => (x.api_id || x.id) === id);
-  const modelsOf = (id) => (apiOf(id)?.models || apiOf(id)?.entries || []);
+  const modelsOf = (id) => apiOf(id)?.models || apiOf(id)?.entries || [];
   const isEmbeddingOnly = (m) => {
     const caps = m.capabilities || m.caps || [];
     return caps.length === 1 && caps[0] === 'embedding';
@@ -127,9 +145,20 @@ export default function AgentModelPicker({
   const body = (
     <>
       {credApiIds.size === 0 && (
-        <CSAlert type="warning" header="尚未配置任何 API key" action={
-          <CSButton iconName="settings" onClick={() => { window.location.hash = configHash; }}>去配 key</CSButton>
-        }>
+        <CSAlert
+          type="warning"
+          header="尚未配置任何 API key"
+          action={
+            <CSButton
+              iconName="settings"
+              onClick={() => {
+                window.location.hash = configHash;
+              }}
+            >
+              去配 key
+            </CSButton>
+          }
+        >
           请先去 设置 → 模型管理 给至少一家 provider 配 key。
         </CSAlert>
       )}
@@ -138,22 +167,32 @@ export default function AgentModelPicker({
           <CSSelect
             selectedOption={(() => {
               const a = apiOf(apiId);
-              return a ? { value: apiId, label: a.display_name || a.name || apiId }
-                : (apiId ? { value: apiId, label: apiId + ' (未配 key)' } : null);
+              return a
+                ? { value: apiId, label: a.display_name || a.name || apiId }
+                : apiId
+                  ? { value: apiId, label: apiId + ' (未配 key)' }
+                  : null;
             })()}
             options={apis
               .filter((a) => credApiIds.has(a.api_id || a.id))
-              .map((a) => ({ value: a.api_id || a.id, label: a.display_name || a.name || (a.api_id || a.id) }))}
+              .map((a) => ({
+                value: a.api_id || a.id,
+                label: a.display_name || a.name || a.api_id || a.id,
+              }))}
             placeholder={credApiIds.size === 0 ? '请先配 API key' : '选择 provider'}
             onChange={({ detail }) => {
               const aid = detail.selectedOption.value;
               setApiId(aid);
               const m0 = modelsOf(aid).find((m) => m.enabled !== false && !isEmbeddingOnly(m));
-              const mid = m0 ? (m0.real_name || m0.id) : '';
+              const mid = m0 ? m0.real_name || m0.id : '';
               // 切到「无可用模型」的 provider 时,绝不回写旧 provider 的 model
               // (否则会把 {新api_id, 旧model_real_name} 错配写进 preferences → 后端解析失败)。
-              if (mid) { setModel(mid); persist(aid, mid); }
-              else { setModel(''); }
+              if (mid) {
+                setModel(mid);
+                persist(aid, mid);
+              } else {
+                setModel('');
+              }
             }}
             disabled={saving || credApiIds.size === 0}
             empty="还没配 API key"
@@ -163,8 +202,11 @@ export default function AgentModelPicker({
           <CSSelect
             selectedOption={(() => {
               const m = modelsOf(apiId).find((x) => (x.real_name || x.id) === model);
-              return m ? { value: model, label: m.display_name || m.real_name || m.id }
-                : (model ? { value: model, label: model } : null);
+              return m
+                ? { value: model, label: m.display_name || m.real_name || m.id }
+                : model
+                  ? { value: model, label: model }
+                  : null;
             })()}
             options={modelsOf(apiId)
               .filter((m) => !isEmbeddingOnly(m))
@@ -174,7 +216,11 @@ export default function AgentModelPicker({
                 disabled: m.enabled === false,
               }))}
             placeholder="选择模型"
-            onChange={({ detail }) => { const mid = detail.selectedOption.value; setModel(mid); persist(apiId, mid); }}
+            onChange={({ detail }) => {
+              const mid = detail.selectedOption.value;
+              setModel(mid);
+              persist(apiId, mid);
+            }}
             disabled={saving || !apiId}
           />
         </CSFormField>
@@ -184,7 +230,13 @@ export default function AgentModelPicker({
 
   if (variant === 'bare') return body;
   return (
-    <CSContainer header={<CSHeader variant="h2" description={description}>{header}</CSHeader>}>
+    <CSContainer
+      header={
+        <CSHeader variant="h2" description={description}>
+          {header}
+        </CSHeader>
+      }
+    >
       {body}
     </CSContainer>
   );

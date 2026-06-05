@@ -1,53 +1,74 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="api-base" content="" />
-  <meta name="api-prefix" content="/api/v1" />
-  <title>RPG Roleplay</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
-  <!-- 全站共享样式 — 原先散落在 Login/Platform/Game Console 三个 HTML 的 <link> 合并到此处。
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="api-base" content="" />
+    <meta name="api-prefix" content="/api/v1" />
+    <title>RPG Roleplay</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+    <!-- 全站共享样式 — 原先散落在 Login/Platform/Game Console 三个 HTML 的 <link> 合并到此处。
        SPA 单壳一次加载,各路由块再按需 import Cloudscape 等组件样式。 -->
-  <link rel="stylesheet" href="/src/styles/tokens.css" />
-  <link rel="stylesheet" href="/src/styles/platform.css" />
-  <link rel="stylesheet" href="/src/styles/motion.css" />
-  <link rel="stylesheet" href="/src/styles/kit.css" />
-  <link rel="stylesheet" href="/src/features/console/game-console.css" />
-</head>
-<body>
-  <!-- 首屏 splash:JS bundle / 懒加载路由块下载期间避免白屏,React 挂载后由 main.jsx 移除。 -->
-  <style>
-    #app-splash {
-      position: fixed; inset: 0; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      background: var(--bg, #121110); color: var(--text, #c8c2b7);
-      font-family: 'Noto Sans SC', system-ui, sans-serif;
-      z-index: 1; transition: opacity .25s ease-out;
-    }
-    #app-splash .spinner {
-      width: 38px; height: 38px;
-      border: 3px solid rgba(201, 100, 66, .25);
-      border-top-color: var(--accent, #c96442);
-      border-radius: 50%;
-      animation: app-spin .85s linear infinite;
-      margin-bottom: 18px;
-    }
-    #app-splash .label { font-size: 14px; opacity: .72; letter-spacing: .04em; }
-    @keyframes app-spin { to { transform: rotate(360deg); } }
-    body.app-mounted #app-splash { opacity: 0; pointer-events: none; }
-  </style>
-  <div id="app-splash">
-    <div class="spinner" aria-hidden="true"></div>
-    <div class="label">加载中…</div>
-  </div>
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/platform.css" />
+    <link rel="stylesheet" href="/src/styles/motion.css" />
+    <link rel="stylesheet" href="/src/styles/kit.css" />
+    <link rel="stylesheet" href="/src/features/console/game-console.css" />
+  </head>
+  <body>
+    <!-- 首屏 splash:JS bundle / 懒加载路由块下载期间避免白屏,React 挂载后由 main.jsx 移除。 -->
+    <style>
+      #app-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg, #121110);
+        color: var(--text, #c8c2b7);
+        font-family: 'Noto Sans SC', system-ui, sans-serif;
+        z-index: 1;
+        transition: opacity 0.25s ease-out;
+      }
+      #app-splash .spinner {
+        width: 38px;
+        height: 38px;
+        border: 3px solid rgba(201, 100, 66, 0.25);
+        border-top-color: var(--accent, #c96442);
+        border-radius: 50%;
+        animation: app-spin 0.85s linear infinite;
+        margin-bottom: 18px;
+      }
+      #app-splash .label {
+        font-size: 14px;
+        opacity: 0.72;
+        letter-spacing: 0.04em;
+      }
+      @keyframes app-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      body.app-mounted #app-splash {
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
+    <div id="app-splash">
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="label">加载中…</div>
+    </div>
 
-  <div id="root"></div>
+    <div id="root"></div>
 
-  <!-- 唯一 ESM 入口:React Router 按路径懒加载 login / platform / console 路由块。 -->
-  <script type="module" src="/src/app/main.tsx"></script>
-</body>
+    <!-- 唯一 ESM 入口:React Router 按路径懒加载 login / platform / console 路由块。 -->
+    <script type="module" src="/src/app/main.tsx"></script>
+  </body>
 </html>

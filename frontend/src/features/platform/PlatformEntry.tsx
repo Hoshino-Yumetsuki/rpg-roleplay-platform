@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 // 基础设施 side-effect 模块(设置 window.api / window.MOCK_* / SSE bridge 等)
 import '../mock-data.js';
 import '../api-client.js';
-import '../a11y-tooltip-labels.js';   // data-tip → aria-label 镜像(屏幕阅读器)
+import '../a11y-tooltip-labels.js'; // data-tip → aria-label 镜像(屏幕阅读器)
 // 运行环境采集 — 反馈抽屉提交时附带最近 20 个错误 + 10 个失败 API 给管理员排查
 import '../runtime-telemetry.js';
 import '../data-loader.js';
@@ -14,7 +14,7 @@ import '../state-event-bridge.js';
 import '../worldbook-status-toast.js';
 import '../ui-atlas.js';
 import '../console-assistant-navigation.jsx';
-import '../i18n/index.js';   // 初始化 i18next + 接 interfaceLang
+import '../i18n/index.js'; // 初始化 i18next + 接 interfaceLang
 
 // Cloudscape 设计系统 + 暖色主题(UI 底座)
 import '@cloudscape-design/global-styles/index.css';
@@ -22,11 +22,31 @@ import { installWarmTheme } from '../../lib/cloudscape-theme';
 installWarmTheme();
 
 // 组件模块 — named import(ESM 自动拉入传递依赖)
-import { PlatformShellCS, ProfilePage, MePage, ModulesPage, LibraryPage, UsagePage, CapPage, PL_NAV, AdminGuard,
-  AdminUsersPage, AdminGlobalUsagePage, AdminAuditPage, AdminHealthPage,
-  AdminLogsPage, AdminRegistrationPage, AdminSecurityPage, AdminMaintenancePage,
-  AdminDmcaTakedownsPage, AdminDmcaStrikesPage, AdminCsamReportsPage, AdminAupActionsPage,
-  AdminFeedbackPage, AdminAchievementsPage, PublicAchievementsPage,
+import {
+  PlatformShellCS,
+  ProfilePage,
+  MePage,
+  ModulesPage,
+  LibraryPage,
+  UsagePage,
+  CapPage,
+  PL_NAV,
+  AdminGuard,
+  AdminUsersPage,
+  AdminGlobalUsagePage,
+  AdminAuditPage,
+  AdminHealthPage,
+  AdminLogsPage,
+  AdminRegistrationPage,
+  AdminSecurityPage,
+  AdminMaintenancePage,
+  AdminDmcaTakedownsPage,
+  AdminDmcaStrikesPage,
+  AdminCsamReportsPage,
+  AdminAupActionsPage,
+  AdminFeedbackPage,
+  AdminAchievementsPage,
+  PublicAchievementsPage,
 } from './PlatformApp';
 import { SavesPage } from '../saves/SavesPage';
 import { ScriptsPage } from '../scripts/ScriptsPage';
@@ -45,7 +65,9 @@ const SPLASH_VERSION = 'v1.0-2026-05-31';
 function ComingSoon({ title, desc }) {
   return (
     <section className="pl-sec">
-      <div className="pl-sec-head"><h2>{title}</h2></div>
+      <div className="pl-sec-head">
+        <h2>{title}</h2>
+      </div>
       <div style={{ padding: '36px 20px', textAlign: 'center' }}>
         <div style={{ fontSize: 26, marginBottom: 10, opacity: 0.7 }}>🚧</div>
         <div style={{ fontSize: 14, color: 'var(--text-quiet)', marginBottom: 6 }}>敬请期待</div>
@@ -64,17 +86,46 @@ const TWEAK_DEFAULTS = {
 // 合法 page id 全集(History 路由 /<id> 校验用)。settings-deploy 等旧别名在 router.js
 // PL_HASH_ALIASES 里归一。
 const PL_IDS = [
-  ...((PL_NAV || []).filter((i) => i.id).map((i) => i.id)),
-  'me', 'me-edit', 'me-settings', 'saves-branches', 'scripts-import', 'cards-npc',
+  ...(PL_NAV || []).filter((i) => i.id).map((i) => i.id),
+  'me',
+  'me-edit',
+  'me-settings',
+  'saves-branches',
+  'scripts-import',
+  'cards-npc',
   // 新 IA 子页(Cloudscape 迁移后):剧本 / 开始游戏 / 设置&账户 各模块的左栏子页
-  'scripts-library', 'scripts-editor', 'scripts-settings', 'play-settings',
-  'settings-models', 'settings-modelparams', 'settings-modules', 'settings-memory',
-  'settings-permissions', 'settings-danger', 'admin-deploy',
-  'admin-users', 'admin-usage', 'admin-audit', 'admin-health',
-  'admin-logs', 'admin-registration', 'admin-security', 'admin-maintenance',
-  'admin-dmca-takedowns', 'admin-dmca-strikes', 'admin-csam-reports', 'admin-aup-actions',
+  'scripts-library',
+  'scripts-editor',
+  'scripts-settings',
+  'play-settings',
+  'settings-models',
+  'settings-modelparams',
+  'settings-modules',
+  'settings-memory',
+  'settings-permissions',
+  'settings-danger',
+  'admin-deploy',
+  'admin-users',
+  'admin-usage',
+  'admin-audit',
+  'admin-health',
+  'admin-logs',
+  'admin-registration',
+  'admin-security',
+  'admin-maintenance',
+  'admin-dmca-takedowns',
+  'admin-dmca-strikes',
+  'admin-csam-reports',
+  'admin-aup-actions',
   'admin-feedback',
-  'usage', 'plugins', 'mcp', 'skills', 'apis', 'feedback', 'device', 'wall',
+  'usage',
+  'plugins',
+  'mcp',
+  'skills',
+  'apis',
+  'feedback',
+  'device',
+  'wall',
 ];
 function parsePage() {
   return plPathToPage(PL_IDS);
@@ -89,9 +140,13 @@ function PlatformApp() {
 
   useEffect(() => {
     fetch('/api/me/splash/status', { credentials: 'same-origin' })
-      .then((r) => r.ok ? r.json() : null)
-      .then((j) => { setSplashNeeded(j ? !j.acked : false); })
-      .catch(() => { setSplashNeeded(false); });
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        setSplashNeeded(j ? !j.acked : false);
+      })
+      .catch(() => {
+        setSplashNeeded(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -113,15 +168,22 @@ function PlatformApp() {
   useEffect(() => {
     const canonical = plPageToPath(page) + (location.search || '');
     if (location.pathname + location.search + location.hash !== canonical) {
-      try { history.replaceState(null, '', canonical); } catch (_) {}
+      try {
+        history.replaceState(null, '', canonical);
+      } catch (_) {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 浏览器前进/后退 → 按当前路径重解析;编程跳转(plNavigate)→ pl-navigate 事件。
   useEffect(() => {
-    const onPop = () => { const p = parsePage(); if (p) setPage(p); };
-    const onNav = (e) => { if (e && e.detail) setPage(e.detail); };
+    const onPop = () => {
+      const p = parsePage();
+      if (p) setPage(p);
+    };
+    const onNav = (e) => {
+      if (e && e.detail) setPage(e.detail);
+    };
     window.addEventListener('popstate', onPop);
     window.addEventListener('pl-navigate', onNav);
     return () => {
@@ -142,11 +204,13 @@ function PlatformApp() {
   else if (page === 'scripts-library') body = <ScriptsPage subPage="library" />;
   // iter#41: scripts-editor / scripts-settings 占位 route 删除 — 兼容旧 hash 重定向到 #scripts list
   else if (page === 'scripts-editor') body = <ScriptsPage subPage="list" />;
-  else if (page === 'scripts-settings') body = <ComingSoon title="剧本设置" desc="剧本级设定覆盖(script_overrides)。迁移中。" />;
+  else if (page === 'scripts-settings')
+    body = <ComingSoon title="剧本设置" desc="剧本级设定覆盖(script_overrides)。迁移中。" />;
   else if (page === 'modules') body = <ModulesPage />;
   else if (page === 'saves') body = <SavesPage subPage="list" />;
   else if (page === 'saves-branches') body = <SavesPage subPage="branches" />;
-  else if (page === 'play-settings') body = <ComingSoon title="游戏设置" desc="全局游玩默认(元知识/引导/防剧透)。迁移中。" />;
+  else if (page === 'play-settings')
+    body = <ComingSoon title="游戏设置" desc="全局游玩默认(元知识/引导/防剧透)。迁移中。" />;
   else if (page === 'library') body = <LibraryPage />;
   else if (page === 'cards') body = <CardsPage subPage="user" />;
   else if (page === 'cards-npc') body = <CardsPage subPage="npc" />;
@@ -157,22 +221,97 @@ function PlatformApp() {
   else if (page === 'settings-memory') body = <SettingsPage section="memory" />;
   else if (page === 'settings-permissions') body = <SettingsPage section="permissions" />;
   else if (page === 'settings-danger') body = <SettingsPage section="danger" />;
-  else if (page === 'admin-deploy') body = <AdminGuard><SettingsPage section="deploy" /></AdminGuard>;
-  else if (page === 'admin-users')        body = <AdminGuard><AdminUsersPage /></AdminGuard>;
-  else if (page === 'admin-usage')        body = <AdminGuard><AdminGlobalUsagePage /></AdminGuard>;
-  else if (page === 'admin-audit')        body = <AdminGuard><AdminAuditPage /></AdminGuard>;
-  else if (page === 'admin-health')       body = <AdminGuard><AdminHealthPage /></AdminGuard>;
-  else if (page === 'admin-logs')         body = <AdminGuard><AdminLogsPage /></AdminGuard>;
-  else if (page === 'admin-registration') body = <AdminGuard><AdminRegistrationPage /></AdminGuard>;
-  else if (page === 'admin-security')     body = <AdminGuard><AdminSecurityPage /></AdminGuard>;
-  else if (page === 'admin-maintenance')      body = <AdminGuard><AdminMaintenancePage /></AdminGuard>;
-  else if (page === 'admin-dmca-takedowns')   body = <AdminGuard><AdminDmcaTakedownsPage /></AdminGuard>;
-  else if (page === 'admin-dmca-strikes')     body = <AdminGuard><AdminDmcaStrikesPage /></AdminGuard>;
-  else if (page === 'admin-csam-reports')     body = <AdminGuard><AdminCsamReportsPage /></AdminGuard>;
-  else if (page === 'admin-aup-actions')      body = <AdminGuard><AdminAupActionsPage /></AdminGuard>;
-  else if (page === 'admin-feedback')         body = <AdminGuard><AdminFeedbackPage /></AdminGuard>;
-  else if (page === 'admin-achievements')     body = <AdminGuard><AdminAchievementsPage /></AdminGuard>;
-  else if (page === 'wall')                    body = <PublicAchievementsPage />;
+  else if (page === 'admin-deploy')
+    body = (
+      <AdminGuard>
+        <SettingsPage section="deploy" />
+      </AdminGuard>
+    );
+  else if (page === 'admin-users')
+    body = (
+      <AdminGuard>
+        <AdminUsersPage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-usage')
+    body = (
+      <AdminGuard>
+        <AdminGlobalUsagePage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-audit')
+    body = (
+      <AdminGuard>
+        <AdminAuditPage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-health')
+    body = (
+      <AdminGuard>
+        <AdminHealthPage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-logs')
+    body = (
+      <AdminGuard>
+        <AdminLogsPage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-registration')
+    body = (
+      <AdminGuard>
+        <AdminRegistrationPage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-security')
+    body = (
+      <AdminGuard>
+        <AdminSecurityPage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-maintenance')
+    body = (
+      <AdminGuard>
+        <AdminMaintenancePage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-dmca-takedowns')
+    body = (
+      <AdminGuard>
+        <AdminDmcaTakedownsPage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-dmca-strikes')
+    body = (
+      <AdminGuard>
+        <AdminDmcaStrikesPage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-csam-reports')
+    body = (
+      <AdminGuard>
+        <AdminCsamReportsPage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-aup-actions')
+    body = (
+      <AdminGuard>
+        <AdminAupActionsPage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-feedback')
+    body = (
+      <AdminGuard>
+        <AdminFeedbackPage />
+      </AdminGuard>
+    );
+  else if (page === 'admin-achievements')
+    body = (
+      <AdminGuard>
+        <AdminAchievementsPage />
+      </AdminGuard>
+    );
+  else if (page === 'wall') body = <PublicAchievementsPage />;
   else if (page === 'usage') body = <UsagePage />;
   else if (page === 'plugins') body = <CapPage kind="plugins" />;
   else if (page === 'mcp') body = <CapPage kind="mcp" />;
@@ -183,17 +322,11 @@ function PlatformApp() {
 
   return (
     <>
-      <PlatformShellCS
-        page={page}
-        setPage={go}
-      >
+      <PlatformShellCS page={page} setPage={go}>
         {body}
       </PlatformShellCS>
       {splashNeeded && (
-        <AdultSplash
-          splashVersion={SPLASH_VERSION}
-          onAcked={() => setSplashNeeded(false)}
-        />
+        <AdultSplash splashVersion={SPLASH_VERSION} onAcked={() => setSplashNeeded(false)} />
       )}
     </>
   );

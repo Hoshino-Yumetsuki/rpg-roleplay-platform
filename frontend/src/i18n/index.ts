@@ -27,22 +27,24 @@ i18n
     resources: {
       'zh-CN': { translation: zhCN },
       'zh-TW': { translation: zhCN }, // 暂时复用简体;后续补繁体 locale
-      'en':    { translation: en },
+      en: { translation: en },
     },
-    lng: getStoredLang(),           // prefs 优先;未设则走 LanguageDetector
+    lng: getStoredLang(), // prefs 优先;未设则走 LanguageDetector
     fallbackLng: 'zh-CN',
     interpolation: { escapeValue: false },
     // 检测顺序: localStorage key → navigator.language
     detection: {
       order: ['localStorage', 'navigator'],
       lookupLocalStorage: STORAGE_KEY,
-      caches: [],  // 不让 detector 自己写 localStorage;由 settings 的 save() 管
+      caches: [], // 不让 detector 自己写 localStorage;由 settings 的 save() 管
     },
   });
 
 /** 切换语言并同步写 localStorage(prefs save 也会写后端,这里只保证本地立即生效) */
 export function changeLanguage(lng: string) {
-  try { localStorage.setItem(STORAGE_KEY, lng); } catch (_) {}
+  try {
+    localStorage.setItem(STORAGE_KEY, lng);
+  } catch (_) {}
   return i18n.changeLanguage(lng);
 }
 

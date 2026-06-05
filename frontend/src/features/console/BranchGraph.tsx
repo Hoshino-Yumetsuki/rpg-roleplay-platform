@@ -32,12 +32,12 @@ import { Icon } from './GameIcons';
 // 颜色调色板:column index → CSS 变量。循环复用。
 // VSCode Git Graph 默认 8 色,我们对齐主题用 6 色。
 const BG_COLORS = [
-  "var(--accent)",     // column 0 — 主干 (橙)
-  "var(--info)",       // column 1 — 第一个 fork
-  "var(--ok)",         // column 2
-  "var(--warn)",       // column 3
-  "var(--danger)",     // column 4
-  "var(--muted-3)",    // column 5+
+  'var(--accent)', // column 0 — 主干 (橙)
+  'var(--info)', // column 1 — 第一个 fork
+  'var(--ok)', // column 2
+  'var(--warn)', // column 3
+  'var(--danger)', // column 4
+  'var(--muted-3)', // column 5+
 ];
 
 function _colorForColumn(col) {
@@ -49,9 +49,9 @@ function _colorForColumn(col) {
 function _colorForRef(refName) {
   if (!refName) return BG_COLORS[0];
   // HEAD 永远是主色 (accent)
-  if (/^HEAD\b/i.test(refName) || refName === "refs/heads/main") return BG_COLORS[0];
+  if (/^HEAD\b/i.test(refName) || refName === 'refs/heads/main') return BG_COLORS[0];
   // 取尾段 hash → palette index
-  const tail = String(refName).split("/").pop() || refName;
+  const tail = String(refName).split('/').pop() || refName;
   let h = 0;
   for (let i = 0; i < tail.length; i++) {
     h = (h * 31 + tail.charCodeAt(i)) >>> 0;
@@ -162,7 +162,7 @@ function _filterToHeadAncestors(rawNodes, refs, activeId) {
   let cur = byId.get(activeId);
   while (cur) {
     const cid = cur.commit_id ?? cur.id;
-    if (seen.has(cid)) break;  // 防御性:不应该发生但兜底
+    if (seen.has(cid)) break; // 防御性:不应该发生但兜底
     seen.add(cid);
     chain.push(cur);
     const pid = cur.parent_id ?? cur.parent;
@@ -174,16 +174,23 @@ function _filterToHeadAncestors(rawNodes, refs, activeId) {
 
 // ── 主组件 ──────────────────────────────────────────────────────
 
-function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate, onContinue, onDelete, onSelect }) {
+function BranchGraph({
+  data,
+  variant = 'full',
+  headOnly,
+  selectedId,
+  onActivate,
+  onContinue,
+  onDelete,
+  onSelect,
+}) {
   const rawNodes = (data && data.nodes) || [];
   const refs = (data && data.refs) || [];
   const activeId = data && (data.active_commit_id ?? data.active_id);
   // 决定是否过滤成 HEAD 单线:compact 默认 true (游戏内"当前子分支"),
   // full 默认 false (Platform 完整 DAG)
-  const effectiveHeadOnly = headOnly != null ? headOnly : (variant === "compact");
-  const nodes = effectiveHeadOnly
-    ? _filterToHeadAncestors(rawNodes, refs, activeId)
-    : rawNodes;
+  const effectiveHeadOnly = headOnly != null ? headOnly : variant === 'compact';
+  const nodes = effectiveHeadOnly ? _filterToHeadAncestors(rawNodes, refs, activeId) : rawNodes;
 
   // ref pills 按 target_commit_id 分组
   const refsByTarget = useMemoB(() => {
@@ -197,7 +204,10 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
     return m;
   }, [refs]);
 
-  const { sortedDesc, columnOf, rows, totalColumns } = useMemoB(() => _assignColumns(nodes), [nodes]);
+  const { sortedDesc, columnOf, rows, totalColumns } = useMemoB(
+    () => _assignColumns(nodes),
+    [nodes],
+  );
 
   if (nodes.length === 0) {
     return (
@@ -209,13 +219,28 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
   }
 
   // 视觉参数(按 variant 切换)
-  const conf = variant === "compact" ? {
-    rowH: 22, columnW: 14, dotR: 4, leftPad: 8, font: 11,
-    showMeta: false, showActions: false, msgMax: 22,
-  } : {
-    rowH: 36, columnW: 20, dotR: 5, leftPad: 12, font: 13,
-    showMeta: true, showActions: true, msgMax: 60,
-  };
+  const conf =
+    variant === 'compact'
+      ? {
+          rowH: 22,
+          columnW: 14,
+          dotR: 4,
+          leftPad: 8,
+          font: 11,
+          showMeta: false,
+          showActions: false,
+          msgMax: 22,
+        }
+      : {
+          rowH: 36,
+          columnW: 20,
+          dotR: 5,
+          leftPad: 12,
+          font: 13,
+          showMeta: true,
+          showActions: true,
+          msgMax: 60,
+        };
 
   const graphW = conf.leftPad * 2 + Math.max(1, totalColumns) * conf.columnW;
   const graphH = sortedDesc.length * conf.rowH;
@@ -264,22 +289,26 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
   return (
     <div className={`bg-root bg-${variant}`}>
       {/* 行容器:每行一个 row,row 内部分左 SVG (graph) + 右内容 */}
-      <div className="bg-rows" style={{position: "relative"}}>
+      <div className="bg-rows" style={{ position: 'relative' }}>
         {/* 左侧 SVG 层:画所有 edges 和 dots */}
         <svg
           className="bg-svg"
           width={graphW}
           height={graphH}
-          style={{position: "absolute", top: 0, left: 0, pointerEvents: "none"}}
+          style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
         >
-          {edges.map(e => (
-            <path key={e.key} d={e.d}
-              stroke={e.color} strokeWidth={2}
-              strokeDasharray={e.deleted ? "3 3" : null}
-              fill="none" opacity={e.deleted ? 0.4 : 0.9}
+          {edges.map((e) => (
+            <path
+              key={e.key}
+              d={e.d}
+              stroke={e.color}
+              strokeWidth={2}
+              strokeDasharray={e.deleted ? '3 3' : null}
+              fill="none"
+              opacity={e.deleted ? 0.4 : 0.9}
             />
           ))}
-          {sortedDesc.map(n => {
+          {sortedDesc.map((n) => {
             const cid = n.commit_id ?? n.id;
             const col = columnOf.get(cid);
             const row = rows.get(cid);
@@ -289,15 +318,23 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
             const isActive = cid === activeId;
             return (
               <g key={`d-${cid}`}>
-                <circle cx={cx} cy={cy} r={conf.dotR}
-                  fill={n.deleted ? "var(--bg-2)" : color}
-                  stroke={isActive ? "var(--text)" : color}
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={conf.dotR}
+                  fill={n.deleted ? 'var(--bg-2)' : color}
+                  stroke={isActive ? 'var(--text)' : color}
                   strokeWidth={isActive ? 2 : 1}
                   opacity={n.deleted ? 0.5 : 1}
                 />
                 {isActive && (
-                  <circle cx={cx} cy={cy} r={conf.dotR + 3}
-                    fill="none" stroke={color} strokeWidth={1.5}
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={conf.dotR + 3}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={1.5}
                     opacity={0.5}
                   />
                 )}
@@ -306,50 +343,53 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
           })}
         </svg>
         {/* 右侧内容:每行一个 div,左 padding = graphW + 间距 */}
-        {sortedDesc.map(n => {
+        {sortedDesc.map((n) => {
           const cid = n.commit_id ?? n.id;
           const row = rows.get(cid);
           const isActive = cid === activeId;
           const isSelected = cid === selectedId;
           const turnIdx = n.turn_index ?? null;
           const message = n.summary || n.message || n.title || `节点 #${cid}`;
-          const truncMessage = message.length > conf.msgMax
-            ? message.slice(0, conf.msgMax) + "…"
-            : message;
+          const truncMessage =
+            message.length > conf.msgMax ? message.slice(0, conf.msgMax) + '…' : message;
           const nodeRefs = refsByTarget.get(cid) || [];
           return (
-            <div key={`r-${cid}`}
-              className={`bg-row ${isActive ? "bg-active" : ""} ${isSelected ? "bg-selected" : ""} ${n.deleted ? "bg-deleted" : ""}`}
+            <div
+              key={`r-${cid}`}
+              className={`bg-row ${isActive ? 'bg-active' : ''} ${isSelected ? 'bg-selected' : ''} ${n.deleted ? 'bg-deleted' : ''}`}
               style={{
-                position: "relative",
+                position: 'relative',
                 height: conf.rowH,
                 paddingLeft: graphW + 6,
                 fontSize: conf.font,
-                cursor: onSelect ? "pointer" : "default",
+                cursor: onSelect ? 'pointer' : 'default',
               }}
               onClick={onSelect ? () => onSelect(cid) : undefined}
-              title={`#${cid}${turnIdx != null ? " · turn " + turnIdx : ""}\n${message}`}
+              title={`#${cid}${turnIdx != null ? ' · turn ' + turnIdx : ''}\n${message}`}
             >
               <div className="bg-row-inner">
                 {/* ref pills (branch / HEAD)。每条 ref 用稳定 hash 着色,
                     即便所有 commits 都在 column 0,不同分支 ref 也能视觉区分。 */}
                 {nodeRefs.map((r, i) => {
-                  const refName = r.name || r.ref_name || "";
+                  const refName = r.name || r.ref_name || '';
                   const refColor = r.is_active ? BG_COLORS[0] : _colorForRef(refName);
                   // 截短显示:refs/heads/legacy-96-abc → legacy-96-abc
-                  const shortName = refName.startsWith("refs/")
-                    ? refName.split("/").slice(2).join("/")
+                  const shortName = refName.startsWith('refs/')
+                    ? refName.split('/').slice(2).join('/')
                     : refName;
                   return (
-                    <span key={i}
-                      className={`bg-ref-pill ${r.is_active ? "bg-ref-head" : ""}`}
+                    <span
+                      key={i}
+                      className={`bg-ref-pill ${r.is_active ? 'bg-ref-head' : ''}`}
                       style={{
                         borderColor: refColor,
-                        color: r.is_active ? refColor : "var(--text-quiet)",
-                        background: r.is_active ? "var(--accent-soft)" : "transparent",
+                        color: r.is_active ? refColor : 'var(--text-quiet)',
+                        background: r.is_active ? 'var(--accent-soft)' : 'transparent',
                       }}
-                      title={refName}>
-                      {r.is_active ? "HEAD → " : ""}{shortName || refName}
+                      title={refName}
+                    >
+                      {r.is_active ? 'HEAD → ' : ''}
+                      {shortName || refName}
                     </span>
                   );
                 })}
@@ -358,25 +398,46 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
                 {/* meta(仅 full): turn_index + time */}
                 {conf.showMeta && (
                   <span className="bg-meta mono muted-2">
-                    {turnIdx != null ? `turn ${turnIdx}` : ""}
-                    {n.created_at ? ` · ${_fmtTime(n.created_at)}` : ""}
+                    {turnIdx != null ? `turn ${turnIdx}` : ''}
+                    {n.created_at ? ` · ${_fmtTime(n.created_at)}` : ''}
                   </span>
                 )}
                 {/* 操作按钮(仅 full + hover 显示) */}
                 {conf.showActions && (
                   <span className="bg-actions">
                     {onContinue && (
-                      <button className="iconbtn" data-tip="从此继续" onClick={(e) => { e.stopPropagation(); onContinue(cid); }}>
+                      <button
+                        className="iconbtn"
+                        data-tip="从此继续"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onContinue(cid);
+                        }}
+                      >
                         <Icon name="play" size={11} />
                       </button>
                     )}
                     {onActivate && !isActive && (
-                      <button className="iconbtn" data-tip="切到此分支" onClick={(e) => { e.stopPropagation(); onActivate(cid); }}>
+                      <button
+                        className="iconbtn"
+                        data-tip="切到此分支"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onActivate(cid);
+                        }}
+                      >
                         <Icon name="check" size={11} />
                       </button>
                     )}
                     {onDelete && (
-                      <button className="iconbtn" data-tip="删除子树" onClick={(e) => { e.stopPropagation(); onDelete(cid); }}>
+                      <button
+                        className="iconbtn"
+                        data-tip="删除子树"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(cid);
+                        }}
+                      >
                         <Icon name="trash" size={11} />
                       </button>
                     )}
@@ -392,15 +453,17 @@ function BranchGraph({ data, variant = "full", headOnly, selectedId, onActivate,
 }
 
 function _fmtTime(ts) {
-  if (!ts) return "";
+  if (!ts) return '';
   try {
     const d = new Date(ts);
-    if (isNaN(d.getTime())) return "";
+    if (isNaN(d.getTime())) return '';
     const now = new Date();
     const sameDay = d.toDateString() === now.toDateString();
     if (sameDay) return d.toTimeString().slice(0, 5);
     return `${d.getMonth() + 1}/${d.getDate()} ${d.toTimeString().slice(0, 5)}`;
-  } catch (_) { return ""; }
+  } catch (_) {
+    return '';
+  }
 }
 
 export { BranchGraph };

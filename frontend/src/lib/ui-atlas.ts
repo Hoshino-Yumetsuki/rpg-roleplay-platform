@@ -23,7 +23,7 @@
  *   [data-form-id] 祖先 > modal 第一个 <h2> 的 hash > modal class 后缀 > "page"
  */
 (function () {
-  "use strict";
+  'use strict';
 
   if (window.__UI_ATLAS) {
     // 已初始化，直接返回（防 HMR 重复执行）
@@ -32,12 +32,12 @@
 
   // ── 工具函数 ────────────────────────────────────────────────
   function slugify(text) {
-    if (!text) return "";
+    if (!text) return '';
     return String(text)
       .trim()
       .toLowerCase()
-      .replace(/\s+/g, "_")
-      .replace(/[^\w一-龥]/g, "")
+      .replace(/\s+/g, '_')
+      .replace(/[^\w一-龥]/g, '')
       .slice(0, 40);
   }
 
@@ -52,10 +52,10 @@
 
   /** 获取元素可用 CSS 选择器（尽量唯一） */
   function getSelector(el) {
-    if (!el) return "";
-    if (el.id) return "#" + CSS.escape(el.id);
+    if (!el) return '';
+    if (el.id) return '#' + CSS.escape(el.id);
     // 用 data-cap-field 属性
-    const capField = el.getAttribute("data-cap-field");
+    const capField = el.getAttribute('data-cap-field');
     if (capField) {
       const tag = el.tagName.toLowerCase();
       return `${tag}[data-cap-field="${CSS.escape(capField)}"]`;
@@ -70,12 +70,12 @@
     let cur = el;
     for (let i = 0; i < 4 && cur && cur !== document.body; i++) {
       let seg = cur.tagName.toLowerCase();
-      const cls = Array.from(cur.classList).slice(0, 2).join(".");
-      if (cls) seg += "." + cls;
+      const cls = Array.from(cur.classList).slice(0, 2).join('.');
+      if (cls) seg += '.' + cls;
       parts.unshift(seg);
       cur = cur.parentElement;
     }
-    return parts.join(" > ");
+    return parts.join(' > ');
   }
 
   /** 从最近祖先 label 提取文本 */
@@ -83,32 +83,32 @@
     // 1. <label for="id"> 关联
     if (el.id) {
       const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-      if (lbl) return lbl.textContent.replace(/\s*\*\s*/g, "").trim();
+      if (lbl) return lbl.textContent.replace(/\s*\*\s*/g, '').trim();
     }
     // 2. 包裹的 <label>
-    const parentLabel = el.closest("label");
+    const parentLabel = el.closest('label');
     if (parentLabel) {
       // 排除 input 自身文本
       const clone = parentLabel.cloneNode(true);
-      clone.querySelectorAll("input, select, textarea").forEach((e) => e.remove());
-      const t = clone.textContent.replace(/\s*\*\s*/g, "").trim();
+      clone.querySelectorAll('input, select, textarea').forEach((e) => e.remove());
+      const t = clone.textContent.replace(/\s*\*\s*/g, '').trim();
       if (t) return t;
     }
     // 3. 紧邻的前兄弟 <label>（.pl-field 模式）
-    const field = el.closest(".pl-field");
+    const field = el.closest('.pl-field');
     if (field) {
-      const lbl = field.querySelector("label");
+      const lbl = field.querySelector('label');
       if (lbl) {
         const clone = lbl.cloneNode(true);
-        clone.querySelectorAll(".pl-field-req, span, em").forEach((e) => {
+        clone.querySelectorAll('.pl-field-req, span, em').forEach((e) => {
           // 仅移除 req 标记（* 号），保留括号说明
-          if (e.classList.contains("pl-field-req")) e.remove();
+          if (e.classList.contains('pl-field-req')) e.remove();
         });
-        const t = clone.textContent.replace(/\s*\*\s*/g, "").trim();
+        const t = clone.textContent.replace(/\s*\*\s*/g, '').trim();
         if (t) return t;
       }
     }
-    return "";
+    return '';
   }
 
   /** 元素是否可见（z-index 判断 modal 时用） */
@@ -116,9 +116,9 @@
     if (!el) return false;
     const style = window.getComputedStyle(el);
     return (
-      style.display !== "none" &&
-      style.visibility !== "hidden" &&
-      style.opacity !== "0" &&
+      style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      style.opacity !== '0' &&
       el.offsetParent !== null
     );
   }
@@ -133,12 +133,13 @@
   function findModalContainers() {
     const raw = [];
     // task 119: 助手 panel / tweaks 不算 "modal" — 这是助手自己的 UI,不该被 LLM 操作
-    const _excluded = (el) => el.closest && el.closest(".cap-root, .tweaks-panel, [data-cap-exclude]");
+    const _excluded = (el) =>
+      el.closest && el.closest('.cap-root, .tweaks-panel, [data-cap-exclude]');
 
     // 优先：[role=dialog]
     document.querySelectorAll('[role="dialog"]').forEach((el) => {
       if (_excluded(el)) return;
-      if (isVisible(el) && el.querySelector("input, select, textarea")) raw.push(el);
+      if (isVisible(el) && el.querySelector('input, select, textarea')) raw.push(el);
     });
 
     // 次优：找有 header + form-body + footer 结构的容器（.pl-modal 模式）
@@ -150,13 +151,13 @@
       // 直接子元素的 class 检测
       const children = Array.from(el.children);
       const hasHead = children.some(
-        (c) => c.tagName === "HEADER" || (c.className && String(c.className).includes("head"))
+        (c) => c.tagName === 'HEADER' || (c.className && String(c.className).includes('head')),
       );
       const hasFoot = children.some(
-        (c) => c.tagName === "FOOTER" || (c.className && String(c.className).includes("foot"))
+        (c) => c.tagName === 'FOOTER' || (c.className && String(c.className).includes('foot')),
       );
       const hasForm = children.some(
-        (c) => c.querySelector && c.querySelector("input, select, textarea") !== null
+        (c) => c.querySelector && c.querySelector('input, select, textarea') !== null,
       );
       if (hasHead && hasFoot && hasForm) {
         raw.push(el);
@@ -165,16 +166,14 @@
       // 备选：极高 z-index（>=200）且有字段 + h2
       const z = parseInt(window.getComputedStyle(el).zIndex, 10);
       if (!isNaN(z) && z >= 200) {
-        if (el.querySelector("h2, h3") && el.querySelector("input, select, textarea")) {
+        if (el.querySelector('h2, h3') && el.querySelector('input, select, textarea')) {
           raw.push(el);
         }
       }
     }
 
     // 去重：保留最小的（去掉包含其他元素的祖先）
-    const deduped = raw.filter(
-      (el) => !raw.some((other) => other !== el && el.contains(other))
-    );
+    const deduped = raw.filter((el) => !raw.some((other) => other !== el && el.contains(other)));
     return deduped;
   }
 
@@ -182,90 +181,95 @@
   function inferFormId(container) {
     // 1. [data-form-id] 祖先/自身
     const withFormId =
-      container.getAttribute("data-form-id") ||
-      container.closest("[data-form-id]")?.getAttribute("data-form-id");
+      container.getAttribute('data-form-id') ||
+      container.closest('[data-form-id]')?.getAttribute('data-form-id');
     if (withFormId) return withFormId;
 
     // 2. modal 第一个 <h2> 文本 hash
-    const h2 = container.querySelector("h2");
+    const h2 = container.querySelector('h2');
     if (h2) {
       const t = h2.textContent.trim();
       if (t) {
         const slug = slugify(t).slice(0, 20);
-        return slug || "modal_" + simpleHash(t);
+        return slug || 'modal_' + simpleHash(t);
       }
     }
 
     // 3. class 后缀
     const cls = Array.from(container.classList).find(
-      (c) => c !== "pl-modal" && (c.includes("modal") || c.includes("Modal"))
+      (c) => c !== 'pl-modal' && (c.includes('modal') || c.includes('Modal')),
     );
-    if (cls) return slugify(cls).replace("modal", "").replace(/^_+|_+$/g, "") || "modal";
+    if (cls)
+      return (
+        slugify(cls)
+          .replace('modal', '')
+          .replace(/^_+|_+$/g, '') || 'modal'
+      );
 
     // 4. 生成 id
-    return "modal_" + simpleHash(container.className + container.tagName);
+    return 'modal_' + simpleHash(container.className + container.tagName);
   }
 
   /** 从 input 周围环境推断 form_id */
   function inferFieldFormId(el) {
     // 优先找 [data-form-id] 祖先
-    const ancestor = el.closest("[data-form-id]");
-    if (ancestor) return ancestor.getAttribute("data-form-id");
+    const ancestor = el.closest('[data-form-id]');
+    if (ancestor) return ancestor.getAttribute('data-form-id');
     // 找 modal 容器：向上走，找到第一个"有 h2 + button"的 [class*=modal] 容器
     // 这样 .pl-modal-form 会被跳过，直到找到 .pl-modal（有 h2）
     let cur = el.parentElement;
     while (cur && cur !== document.body) {
-      const cls = cur.className || "";
+      const cls = cur.className || '';
       if (
-        (typeof cls === "string" && (cls.includes("modal") || cls.includes("Modal"))) ||
-        cur.getAttribute("role") === "dialog"
+        (typeof cls === 'string' && (cls.includes('modal') || cls.includes('Modal'))) ||
+        cur.getAttribute('role') === 'dialog'
       ) {
-        const hasTitle = !!(cur.querySelector("h2, h3, .pl-modal-title, [class*=modal-title]"));
+        const hasTitle = !!cur.querySelector('h2, h3, .pl-modal-title, [class*=modal-title]');
         if (hasTitle) return inferFormId(cur);
       }
       cur = cur.parentElement;
     }
     // 找 [data-cap-anchor] 区块
-    const anchor = el.closest("[data-cap-anchor]");
-    if (anchor) return anchor.getAttribute("data-cap-anchor").replace(/\./g, "_");
-    return "page";
+    const anchor = el.closest('[data-cap-anchor]');
+    if (anchor) return anchor.getAttribute('data-cap-anchor').replace(/\./g, '_');
+    return 'page';
   }
 
   /** 提取单个交互字段信息 */
   function extractField(el) {
     const tag = el.tagName;
-    const capField = el.getAttribute("data-cap-field");
+    const capField = el.getAttribute('data-cap-field');
     const labelText = getLabelText(el);
-    const ariaLabel = el.getAttribute("aria-label") || "";
-    const nameAttr = el.getAttribute("name") || "";
+    const ariaLabel = el.getAttribute('aria-label') || '';
+    const nameAttr = el.getAttribute('name') || '';
 
     // key 优先级: data-cap-field > label文本 > aria-label > name
-    const key = capField || labelText || ariaLabel || nameAttr || el.type || "field";
+    const key = capField || labelText || ariaLabel || nameAttr || el.type || 'field';
 
     // type
-    let type = "text";
-    if (tag === "SELECT") type = "select";
-    else if (tag === "TEXTAREA") type = "textarea";
-    else if (tag === "INPUT") {
-      const t = (el.type || "text").toLowerCase();
-      type = ["checkbox", "radio", "number", "email", "password", "date", "range"].includes(t)
+    let type = 'text';
+    if (tag === 'SELECT') type = 'select';
+    else if (tag === 'TEXTAREA') type = 'textarea';
+    else if (tag === 'INPUT') {
+      const t = (el.type || 'text').toLowerCase();
+      type = ['checkbox', 'radio', 'number', 'email', 'password', 'date', 'range'].includes(t)
         ? t
-        : "text";
-    } else if (el.hasAttribute("contenteditable")) type = "contenteditable";
+        : 'text';
+    } else if (el.hasAttribute('contenteditable')) type = 'contenteditable';
 
     // value
-    let value = "";
-    if (type === "checkbox") value = el.checked ? "true" : "false";
-    else if (type === "radio") value = el.checked ? (el.value || "true") : "";
-    else if (type === "select") {
+    let value = '';
+    if (type === 'checkbox') value = el.checked ? 'true' : 'false';
+    else if (type === 'radio') value = el.checked ? el.value || 'true' : '';
+    else if (type === 'select') {
       const opt = el.options[el.selectedIndex];
-      value = opt ? (opt.text || opt.value) : "";
-    } else if (type === "contenteditable") value = el.textContent || "";
-    else value = el.value || "";
+      value = opt ? opt.text || opt.value : '';
+    } else if (type === 'contenteditable') value = el.textContent || '';
+    else value = el.value || '';
 
     // options (select 专属)
     let options = undefined;
-    if (tag === "SELECT") {
+    if (tag === 'SELECT') {
       options = Array.from(el.options).map((o) => ({
         value: o.value,
         label: o.text.trim(),
@@ -274,22 +278,22 @@
 
     // required
     const required =
-      el.hasAttribute("required") ||
-      !!el.closest(".pl-field")?.querySelector(".pl-field-req");
+      el.hasAttribute('required') || !!el.closest('.pl-field')?.querySelector('.pl-field-req');
 
     // hint
-    const hint = el.getAttribute("data-cap-hint") || "";
+    const hint = el.getAttribute('data-cap-hint') || '';
 
     // 敏感字段脱敏:password 类型 或 key/name/label 命中敏感词 → 绝不外传明文。
     // ui_atlas 会被塞进 LLM system prompt 发往模型提供商,明文 API key/SMTP/验证码密钥会泄露(CWE-200)。
-    const SENSITIVE_RE = /(pass|pwd|secret|token|api[\s_-]*key|apikey|credential|captcha|smtp|private[\s_-]*key|密码|密钥|令牌)/i;
+    const SENSITIVE_RE =
+      /(pass|pwd|secret|token|api[\s_-]*key|apikey|credential|captcha|smtp|private[\s_-]*key|密码|密钥|令牌)/i;
     const sensitive =
-      type === "password" ||
+      type === 'password' ||
       SENSITIVE_RE.test(key) ||
       SENSITIVE_RE.test(nameAttr) ||
       SENSITIVE_RE.test(labelText);
     let safeValue = value;
-    if (sensitive) safeValue = value ? "[REDACTED]" : "";
+    if (sensitive) safeValue = value ? '[REDACTED]' : '';
 
     return {
       form_id: inferFieldFormId(el),
@@ -309,25 +313,25 @@
     const actions = [];
     // footer 按钮
     const footers = scope.querySelectorAll(
-      "footer, .pl-modal-foot, [class*=modal-foot], [class*=modal-footer]"
+      'footer, .pl-modal-foot, [class*=modal-foot], [class*=modal-footer]',
     );
     const footerBtns = new Set();
     for (const footer of footers) {
-      footer.querySelectorAll("button, [role=button]").forEach((b) => footerBtns.add(b));
+      footer.querySelectorAll('button, [role=button]').forEach((b) => footerBtns.add(b));
     }
 
     // 也收集主体内 btn primary / btn danger（提交按钮）
     scope
-      .querySelectorAll("button.btn.primary, button.btn.danger, button[type=submit]")
+      .querySelectorAll('button.btn.primary, button.btn.danger, button[type=submit]')
       .forEach((b) => footerBtns.add(b));
 
     for (const btn of footerBtns) {
       if (!isVisible(btn)) continue;
       const label =
-        btn.getAttribute("aria-label") ||
-        btn.textContent.replace(/\s+/g, " ").trim() ||
-        btn.getAttribute("title") ||
-        "";
+        btn.getAttribute('aria-label') ||
+        btn.textContent.replace(/\s+/g, ' ').trim() ||
+        btn.getAttribute('title') ||
+        '';
       if (!label) continue;
       actions.push({
         form_id: formId,
@@ -343,21 +347,21 @@
   function extractGlobalActions() {
     const actions = [];
     const topbarBtns = document.querySelectorAll(
-      ".pl-topbar [data-tip], .gc-topbar [data-tip], header [data-tip], " +
-      ".pl-topbar button, .gc-topbar button"
+      '.pl-topbar [data-tip], .gc-topbar [data-tip], header [data-tip], ' +
+        '.pl-topbar button, .gc-topbar button',
     );
     for (const btn of topbarBtns) {
       if (!isVisible(btn)) continue;
       // task 119: 排除助手自己的按钮
-      if (btn.closest && btn.closest(".cap-root, .tweaks-panel, [data-cap-exclude]")) continue;
+      if (btn.closest && btn.closest('.cap-root, .tweaks-panel, [data-cap-exclude]')) continue;
       const label =
-        btn.getAttribute("data-tip") ||
-        btn.getAttribute("aria-label") ||
-        btn.textContent.replace(/\s+/g, " ").trim() ||
-        "";
+        btn.getAttribute('data-tip') ||
+        btn.getAttribute('aria-label') ||
+        btn.textContent.replace(/\s+/g, ' ').trim() ||
+        '';
       if (!label) continue;
       actions.push({
-        form_id: "global",
+        form_id: 'global',
         label,
         disabled: btn.disabled,
         selector: getSelector(btn),
@@ -371,31 +375,35 @@
     const t0 = performance.now();
 
     // 1. page 识别
-    const hash = location.hash.replace(/^#/, "") || "";
-    const titleText = document.title || "";
-    const screenLabel = document.body.getAttribute("data-screen-label") || "";
+    const hash = location.hash.replace(/^#/, '') || '';
+    const titleText = document.title || '';
+    const screenLabel = document.body.getAttribute('data-screen-label') || '';
     const pageId = hash
-      ? (screenLabel ? screenLabel.toLowerCase().replace(/\s+/g, "_") + "." + hash : hash)
-      : (screenLabel ? screenLabel.toLowerCase().replace(/\s+/g, "_") : "unknown");
-    const pageLabel = titleText + (hash ? " #" + hash : "");
+      ? screenLabel
+        ? screenLabel.toLowerCase().replace(/\s+/g, '_') + '.' + hash
+        : hash
+      : screenLabel
+        ? screenLabel.toLowerCase().replace(/\s+/g, '_')
+        : 'unknown';
+    const pageLabel = titleText + (hash ? ' #' + hash : '');
 
     // 2. open_modals
     const modalContainers = findModalContainers();
     const open_modals = modalContainers.map((m) => ({
       form_id: inferFormId(m),
-      title: (m.querySelector("h2, h3, .pl-modal-title")?.textContent || "").trim(),
+      title: (m.querySelector('h2, h3, .pl-modal-title')?.textContent || '').trim(),
       selector: getSelector(m),
     }));
 
     // 3. forms 抽取
     const INTERACTIVE_SEL =
       'input:not([type="hidden"]):not([type="submit"]):not([type="reset"]):not([type="button"])' +
-      ", select, textarea, [contenteditable]";
+      ', select, textarea, [contenteditable]';
 
     // task 119: 助手自己的 panel (.cap-root) 内的所有 DOM 不算 "页面表单"。
     // 否则 LLM 看到唯一 textarea 就是助手输入框 → 把用户请求填回自己 → 死循环。
     // 同样排除 Tweaks 调试面板。
-    const EXCLUDE_SELECTOR = ".cap-root, .tweaks-panel, [data-cap-exclude]";
+    const EXCLUDE_SELECTOR = '.cap-root, .tweaks-panel, [data-cap-exclude]';
     function isInExcludedZone(el) {
       return el.closest && el.closest(EXCLUDE_SELECTOR) !== null;
     }
@@ -404,7 +412,7 @@
     const scopes = [...modalContainers];
     // 页面主体（排除已在 modal 内的）
     const mainScopes = document.querySelectorAll(
-      ".pl-stack, .pl-main, .gc-main, main, [data-cap-anchor], #root > div"
+      '.pl-stack, .pl-main, .gc-main, main, [data-cap-anchor], #root > div',
     );
     for (const s of mainScopes) {
       // 跳过被 modal 包含的
@@ -421,7 +429,7 @@
       const els = scope.querySelectorAll(INTERACTIVE_SEL);
       for (const el of els) {
         if (!isVisible(el)) continue;
-        if (isInExcludedZone(el)) continue;  // task 119: 跳过助手自身 DOM
+        if (isInExcludedZone(el)) continue; // task 119: 跳过助手自身 DOM
         const field = extractField(el);
         if (!formMap.has(field.form_id)) {
           formMap.set(field.form_id, { form_id: field.form_id, fields: [], actions: [] });
@@ -445,7 +453,7 @@
         if (firstFieldEl) {
           const scope =
             firstFieldEl.closest('[role="dialog"], [class*="pl-modal"]') ||
-            firstFieldEl.closest("[data-cap-anchor]") ||
+            firstFieldEl.closest('[data-cap-anchor]') ||
             document.body;
           form.actions = extractActions(scope, fid);
         }
@@ -455,15 +463,12 @@
     const forms = Array.from(formMap.values());
 
     // 4. top_actions（全局 + 每个 form 的）
-    const top_actions = [
-      ...extractGlobalActions(),
-      ...forms.flatMap((f) => f.actions),
-    ];
+    const top_actions = [...extractGlobalActions(), ...forms.flatMap((f) => f.actions)];
 
     const elapsed = performance.now() - t0;
     // 性能警告（debug 用，不影响生产）
-    if (elapsed > 50 && typeof console !== "undefined") {
-      console.warn("[ui-atlas] scan took " + elapsed.toFixed(1) + "ms (> 50ms target)");
+    if (elapsed > 50 && typeof console !== 'undefined') {
+      console.warn('[ui-atlas] scan took ' + elapsed.toFixed(1) + 'ms (> 50ms target)');
     }
 
     return {
@@ -485,7 +490,9 @@
     // microtask，不阻塞当前 call stack
     Promise.resolve().then(() => {
       for (const cb of subscribers) {
-        try { cb(snapshot); } catch (_) {}
+        try {
+          cb(snapshot);
+        } catch (_) {}
       }
     });
   }
@@ -494,20 +501,18 @@
   function setReactInputValue(el, value) {
     const tag = el.tagName;
     const proto =
-      tag === "TEXTAREA"
+      tag === 'TEXTAREA'
         ? HTMLTextAreaElement.prototype
-        : tag === "SELECT"
-        ? HTMLSelectElement.prototype
-        : HTMLInputElement.prototype;
-    const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
+        : tag === 'SELECT'
+          ? HTMLSelectElement.prototype
+          : HTMLInputElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
     if (descriptor && descriptor.set) {
       descriptor.set.call(el, value);
     } else {
       el.value = value;
     }
-    el.dispatchEvent(
-      new Event(tag === "SELECT" ? "change" : "input", { bubbles: true })
-    );
+    el.dispatchEvent(new Event(tag === 'SELECT' ? 'change' : 'input', { bubbles: true }));
   }
 
   /** fuzzy 匹配：优先精确 value，再 fuzzy label */
@@ -521,9 +526,8 @@
     found = options.find((o) => String(o.label).toLowerCase() === q);
     if (found) return found;
     // 包含
-    found = options.find((o) =>
-      String(o.value).toLowerCase().includes(q) ||
-      String(o.label).toLowerCase().includes(q)
+    found = options.find(
+      (o) => String(o.value).toLowerCase().includes(q) || String(o.label).toLowerCase().includes(q),
     );
     return found || null;
   }
@@ -533,17 +537,15 @@
     // 找到 form
     const form = (snapshot.forms || []).find((f) => f.form_id === formId);
     if (!form) {
-      return { ok: false, error: "form_not_found", message: "找不到 form_id: " + formId };
+      return { ok: false, error: 'form_not_found', message: '找不到 form_id: ' + formId };
     }
     // 找到字段
     const fkLower = String(fieldKey).toLowerCase();
     const field = form.fields.find(
-      (f) =>
-        String(f.key).toLowerCase() === fkLower ||
-        String(f.label).toLowerCase() === fkLower
+      (f) => String(f.key).toLowerCase() === fkLower || String(f.label).toLowerCase() === fkLower,
     );
     if (!field) {
-      return { ok: false, error: "field_not_found", message: "找不到字段: " + fieldKey };
+      return { ok: false, error: 'field_not_found', message: '找不到字段: ' + fieldKey };
     }
     // 定位元素
     let el = null;
@@ -551,29 +553,32 @@
       el = document.querySelector(field.selector);
     } catch (_) {}
     if (!el) {
-      return { ok: false, error: "element_not_found", message: "selector 无法定位: " + field.selector };
+      return {
+        ok: false,
+        error: 'element_not_found',
+        message: 'selector 无法定位: ' + field.selector,
+      };
     }
 
     try {
-      if (field.type === "checkbox") {
-        const checked =
-          value === true || value === "true" || value === "1" || value === "checked";
+      if (field.type === 'checkbox') {
+        const checked = value === true || value === 'true' || value === '1' || value === 'checked';
         if (el.checked !== checked) {
           el.click(); // React checkbox 监听 click
         }
-      } else if (field.type === "radio") {
+      } else if (field.type === 'radio') {
         el.click();
-      } else if (field.type === "select") {
+      } else if (field.type === 'select') {
         // fuzzy 匹配 option
         const opts = Array.from(el.options).map((o) => ({ value: o.value, label: o.text }));
         const match = fuzzyMatchOption(opts, value);
         if (!match) {
-          return { ok: false, error: "option_not_found", message: "找不到 option: " + value };
+          return { ok: false, error: 'option_not_found', message: '找不到 option: ' + value };
         }
         setReactInputValue(el, match.value);
-      } else if (field.type === "contenteditable") {
+      } else if (field.type === 'contenteditable') {
         el.textContent = value;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event('input', { bubbles: true }));
       } else {
         setReactInputValue(el, String(value));
       }
@@ -582,7 +587,7 @@
       notifySubscribers(__UI_ATLAS.current);
       return { ok: true };
     } catch (e) {
-      return { ok: false, error: "set_error", message: e && e.message };
+      return { ok: false, error: 'set_error', message: e && e.message };
     }
   }
 
@@ -593,22 +598,20 @@
 
     // 找候选按钮（top_actions 里找，或直接用 selector）
     const candidates = (snapshot.top_actions || []).filter((a) => {
-      if (formId !== "global" && a.form_id !== formId) return false;
+      if (formId !== 'global' && a.form_id !== formId) return false;
       return String(a.label).toLowerCase().includes(lbl);
     });
 
     if (candidates.length === 0) {
-      return { ok: false, error: "action_not_found", message: "找不到 action: " + actionLabel };
+      return { ok: false, error: 'action_not_found', message: '找不到 action: ' + actionLabel };
     }
 
     // 优先精确匹配
-    const exact = candidates.find(
-      (a) => String(a.label).toLowerCase() === lbl
-    );
+    const exact = candidates.find((a) => String(a.label).toLowerCase() === lbl);
     const target = exact || candidates[0];
 
     if (target.disabled) {
-      return { ok: false, error: "button_disabled", message: "按钮已禁用: " + target.label };
+      return { ok: false, error: 'button_disabled', message: '按钮已禁用: ' + target.label };
     }
 
     let el = null;
@@ -616,13 +619,17 @@
       el = document.querySelector(target.selector);
     } catch (_) {}
     if (!el) {
-      return { ok: false, error: "element_not_found", message: "selector 无法定位: " + target.selector };
+      return {
+        ok: false,
+        error: 'element_not_found',
+        message: 'selector 无法定位: ' + target.selector,
+      };
     }
     try {
       el.click();
       return { ok: true };
     } catch (e) {
-      return { ok: false, error: "click_error", message: e && e.message };
+      return { ok: false, error: 'click_error', message: e && e.message };
     }
   }
 
@@ -643,10 +650,10 @@
   const observer = new MutationObserver(function (mutations) {
     // 粗过滤：只有涉及 childList 或 style/class/open 属性才触发 rescan
     const relevant = mutations.some((m) => {
-      if (m.type === "childList") return true;
-      if (m.type === "attributes") {
-        const attr = m.attributeName || "";
-        return ["class", "style", "open", "hidden", "disabled", "aria-hidden"].includes(attr);
+      if (m.type === 'childList') return true;
+      if (m.type === 'attributes') {
+        const attr = m.attributeName || '';
+        return ['class', 'style', 'open', 'hidden', 'disabled', 'aria-hidden'].includes(attr);
       }
       return false;
     });
@@ -681,7 +688,7 @@
       },
 
       subscribe(cb) {
-        if (typeof cb !== "function") return () => {};
+        if (typeof cb !== 'function') return () => {};
         subscribers.add(cb);
         return () => subscribers.delete(cb);
       },
@@ -694,27 +701,27 @@
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["class", "style", "open", "hidden", "disabled", "aria-hidden"],
+      attributeFilter: ['class', 'style', 'open', 'hidden', 'disabled', 'aria-hidden'],
     });
 
     // 全局 input/change
-    document.addEventListener("input", onInputChange, true);
-    document.addEventListener("change", onInputChange, true);
+    document.addEventListener('input', onInputChange, true);
+    document.addEventListener('change', onInputChange, true);
   }
 
   // DOM ready guard
   if (document.body) {
     init();
   } else {
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener('DOMContentLoaded', init);
   }
 
   // 临时占位（init 前的 window.__UI_ATLAS 访问兜底）
   window.__UI_ATLAS = window.__UI_ATLAS || {
     current: null,
-    rescan: () => ({ page: "not_ready" }),
-    setField: () => ({ ok: false, error: "not_ready" }),
-    click: () => ({ ok: false, error: "not_ready" }),
+    rescan: () => ({ page: 'not_ready' }),
+    setField: () => ({ ok: false, error: 'not_ready' }),
+    click: () => ({ ok: false, error: 'not_ready' }),
     subscribe: () => () => {},
   };
 })();

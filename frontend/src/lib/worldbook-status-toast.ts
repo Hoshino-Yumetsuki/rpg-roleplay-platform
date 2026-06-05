@@ -9,7 +9,7 @@
  * 不依赖 React, 兼容 Game Console / Platform 两个页面。
  */
 (function () {
-  "use strict";
+  'use strict';
   if (window.__rpg_wb_toast_inited__) return;
   window.__rpg_wb_toast_inited__ = true;
 
@@ -55,67 +55,75 @@
   function ensureDom() {
     if (el) return el;
     if (!document.body) return null;
-    if (!document.getElementById("rpg-wb-toast-css")) {
-      const style = document.createElement("style");
-      style.id = "rpg-wb-toast-css";
+    if (!document.getElementById('rpg-wb-toast-css')) {
+      const style = document.createElement('style');
+      style.id = 'rpg-wb-toast-css';
       style.textContent = CSS;
       document.head.appendChild(style);
     }
-    el = document.createElement("div");
-    el.className = "rpg-wb-toast";
-    el.setAttribute("role", "status");
-    el.setAttribute("aria-live", "polite");
+    el = document.createElement('div');
+    el.className = 'rpg-wb-toast';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
     el.innerHTML = '<span class="rpg-wb-spinner"></span><span class="rpg-wb-text"></span>';
     document.body.appendChild(el);
-    textEl = el.querySelector(".rpg-wb-text");
+    textEl = el.querySelector('.rpg-wb-text');
     // flush pending
     while (pending.length) handle(pending.shift());
     return el;
   }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", ensureDom, { once: true });
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', ensureDom, { once: true });
   } else {
     ensureDom();
   }
 
   function show(text) {
     if (!el && !ensureDom()) return;
-    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
     textEl.textContent = text;
-    el.classList.add("rpg-wb-show");
+    el.classList.add('rpg-wb-show');
   }
   function hideSoon(text, delay) {
     if (!el && !ensureDom()) return;
     textEl.textContent = text;
     if (hideTimer) clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => { el.classList.remove("rpg-wb-show"); }, delay || 600);
+    hideTimer = setTimeout(() => {
+      el.classList.remove('rpg-wb-show');
+    }, delay || 600);
   }
 
   function handle(d) {
-    if (d.state === "consulting") {
-      const q = (d.query || "").slice(0, 32);
-      const phase = (d.phase || "").slice(0, 28);
-      const parts = ["GM 正在翻阅设定"];
-      if (phase) parts.push(" · " + phase);
-      else if (q) parts.push(" · " + q);
-      show(parts.join(""));
-    } else if (d.state === "ready") {
-      const conf = typeof d.confidence === "number" ? d.confidence : null;
+    if (d.state === 'consulting') {
+      const q = (d.query || '').slice(0, 32);
+      const phase = (d.phase || '').slice(0, 28);
+      const parts = ['GM 正在翻阅设定'];
+      if (phase) parts.push(' · ' + phase);
+      else if (q) parts.push(' · ' + q);
+      show(parts.join(''));
+    } else if (d.state === 'ready') {
+      const conf = typeof d.confidence === 'number' ? d.confidence : null;
       let msg;
       if (conf !== null && conf < 0.4) {
-        msg = "翻阅未找到精确锚点 (GM 将谨慎处理)";
+        msg = '翻阅未找到精确锚点 (GM 将谨慎处理)';
       } else if (d.phase) {
-        msg = "已翻阅 · " + d.phase;
+        msg = '已翻阅 · ' + d.phase;
       } else {
-        msg = "翻阅完成";
+        msg = '翻阅完成';
       }
       hideSoon(msg, 1200);
     }
   }
 
-  window.addEventListener("rpg-worldbook-status", (ev) => {
+  window.addEventListener('rpg-worldbook-status', (ev) => {
     const d = (ev && ev.detail) || {};
-    if (!el) { pending.push(d); return; }
+    if (!el) {
+      pending.push(d);
+      return;
+    }
     handle(d);
   });
 })();

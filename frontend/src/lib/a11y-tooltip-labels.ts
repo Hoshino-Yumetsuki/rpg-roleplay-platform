@@ -8,43 +8,47 @@
 
 function _hasVisibleText(el) {
   // 有非空文本子节点(非纯 SVG/icon)就不补 — 阅读器已能读到
-  const txt = (el.textContent || "").replace(/\s+/g, " ").trim();
+  const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
   return txt.length > 0;
 }
 
 function _applyTo(el) {
   try {
-    const tip = el.getAttribute("data-tip");
+    const tip = el.getAttribute('data-tip');
     if (!tip) return;
-    if (el.getAttribute("aria-label")) return;        // 已有显式 label,尊重之
-    if (el.getAttribute("aria-labelledby")) return;
-    if (_hasVisibleText(el)) return;                  // 有可读文字,无需补
-    el.setAttribute("aria-label", tip);
-  } catch (_) { /* 防御:任何 DOM 异常都不影响页面 */ }
+    if (el.getAttribute('aria-label')) return; // 已有显式 label,尊重之
+    if (el.getAttribute('aria-labelledby')) return;
+    if (_hasVisibleText(el)) return; // 有可读文字,无需补
+    el.setAttribute('aria-label', tip);
+  } catch (_) {
+    /* 防御:任何 DOM 异常都不影响页面 */
+  }
 }
 
 function _closeLabel() {
   // 按页面语言给关闭按钮一个可访问名
-  const lang = (document.documentElement.getAttribute("lang") || "").toLowerCase();
-  return lang.startsWith("en") ? "Close" : "关闭";
+  const lang = (document.documentElement.getAttribute('lang') || '').toLowerCase();
+  return lang.startsWith('en') ? 'Close' : '关闭';
 }
 
 function _applyDismiss(el) {
   try {
-    if (el.getAttribute("aria-label") || el.getAttribute("aria-labelledby")) return;
-    if ((el.textContent || "").trim()) return;
-    el.setAttribute("aria-label", _closeLabel());
-  } catch (_) { /* 防御 */ }
+    if (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby')) return;
+    if ((el.textContent || '').trim()) return;
+    el.setAttribute('aria-label', _closeLabel());
+  } catch (_) {
+    /* 防御 */
+  }
 }
 
 function _scan(root) {
   if (!root || !root.querySelectorAll) return;
-  root.querySelectorAll("[data-tip]").forEach(_applyTo);
+  root.querySelectorAll('[data-tip]').forEach(_applyTo);
   // Cloudscape 模态关闭按钮(variant-modal-dismiss / dismiss-control)无可访问名 → 补"关闭"。
   // 用 [class*=] 匹配 hash 后的类名,跨 Cloudscape 版本稳健。
-  root.querySelectorAll(
-    'button[class*="dismiss-control"], button[class*="modal-dismiss"]'
-  ).forEach(_applyDismiss);
+  root
+    .querySelectorAll('button[class*="dismiss-control"], button[class*="modal-dismiss"]')
+    .forEach(_applyDismiss);
 }
 
 function _init() {
@@ -54,24 +58,28 @@ function _init() {
     const obs = new MutationObserver((muts) => {
       for (const m of muts) {
         for (const node of m.addedNodes) {
-          if (node.nodeType !== 1) continue;          // 只看 Element
-          if (node.hasAttribute && node.hasAttribute("data-tip")) _applyTo(node);
+          if (node.nodeType !== 1) continue; // 只看 Element
+          if (node.hasAttribute && node.hasAttribute('data-tip')) _applyTo(node);
           _scan(node);
         }
         // data-tip 属性后置变更也补一次
-        if (m.type === "attributes" && m.target.nodeType === 1) _applyTo(m.target);
+        if (m.type === 'attributes' && m.target.nodeType === 1) _applyTo(m.target);
       }
     });
     obs.observe(document.body, {
-      childList: true, subtree: true,
-      attributes: true, attributeFilter: ["data-tip"],
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-tip'],
     });
-  } catch (_) { /* MutationObserver 不可用时退化为仅首屏扫描 */ }
+  } catch (_) {
+    /* MutationObserver 不可用时退化为仅首屏扫描 */
+  }
 }
 
-if (typeof document !== "undefined") {
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", _init, { once: true });
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _init, { once: true });
   } else {
     _init();
   }

@@ -40,7 +40,11 @@ function _now() {
   // 不能用 Date.now() 形式数值化吗?可以,这里需要相对时间;
   // 用 performance.now() 拿到 page-load 起始的相对毫秒,避开"Date 不可用"约束
   // (我们不在 Workflow 沙箱里,普通 Date 可用,但 performance.now 更稳)
-  try { return Math.round(performance.now()); } catch (_) { return 0; }
+  try {
+    return Math.round(performance.now());
+  } catch (_) {
+    return 0;
+  }
 }
 
 // ── 错误源 1:console.error 拦截 ──────────────────────────────────────────────
@@ -51,15 +55,25 @@ function _now() {
       _push(_errors, MAX_ERRORS, {
         kind: 'console.error',
         t: _now(),
-        msg: _trunc(args.map(a => {
-          if (a instanceof Error) return a.stack || a.message;
-          if (typeof a === 'object') {
-            try { return JSON.stringify(a).slice(0, 300); } catch (_) { return '[unserializable object]'; }
-          }
-          return String(a);
-        }).join(' ')),
+        msg: _trunc(
+          args
+            .map((a) => {
+              if (a instanceof Error) return a.stack || a.message;
+              if (typeof a === 'object') {
+                try {
+                  return JSON.stringify(a).slice(0, 300);
+                } catch (_) {
+                  return '[unserializable object]';
+                }
+              }
+              return String(a);
+            })
+            .join(' '),
+        ),
       });
-    } catch (_) { /* 拦截器永不阻塞原 console */ }
+    } catch (_) {
+      /* 拦截器永不阻塞原 console */
+    }
     return orig.apply(console, args);
   };
 })();
@@ -121,7 +135,13 @@ window.__getRuntimeSnapshot = function (opts) {
     hash: location.hash,
     viewport: `${w}x${h}`,
     locale: navigator.language || '',
-    tz: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) { return ''; } })(),
+    tz: (() => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone;
+      } catch (_) {
+        return '';
+      }
+    })(),
     user: { uid: me.uid || '', role: me.role || '', authed: !!auth.authed },
     active: {
       save_id: state._raw && state._raw.save_id,
@@ -139,13 +159,13 @@ window.__getRuntimeSnapshot = function (opts) {
       // MOCK_STATE.history 只在 boot/refresh 灌一次,游戏进行中不更新 → 直接读会陈旧。
       // 调用方(FeedbackDrawer 提交前)现拉 /api/state 并通过 opts.recentDialog 传入最新对话;
       // 缺省才退回 MOCK_STATE.history。
-      const src = Array.isArray(opts.recentDialog) ? opts.recentDialog : (state.history || []);
+      const src = Array.isArray(opts.recentDialog) ? opts.recentDialog : state.history || [];
       const hist = src.slice(-6); // 最多 3 round = 6 message
       payload.recent_dialog = hist.map((m, i) => ({
         idx: i,
         role: m.role || m.author || 'unknown',
         turn: m.turn_index ?? m.turn ?? null,
-        text: _trunc((m.content || m.text || ''), 300),
+        text: _trunc(m.content || m.text || '', 300),
       }));
     } catch (_) {
       payload.recent_dialog = [];
@@ -158,5 +178,7 @@ window.__getRuntimeSnapshot = function (opts) {
 window.__getRuntimeSnapshotSize = function () {
   try {
     return JSON.stringify(window.__getRuntimeSnapshot()).length;
-  } catch (_) { return 0; }
+  } catch (_) {
+    return 0;
+  }
 };

@@ -69,7 +69,14 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
 
   /* new entity form */
   const [adding, setAdding] = React.useState(false);
-  const [newForm, setNewForm] = React.useState({ logical_key: '', name: '', type: 'character', entity_subtype: '', importance: '3', summary: '' });
+  const [newForm, setNewForm] = React.useState({
+    logical_key: '',
+    name: '',
+    type: 'character',
+    entity_subtype: '',
+    importance: '3',
+    summary: '',
+  });
 
   /* delete confirmation inline */
   const [confirmDelete, setConfirmDelete] = React.useState(null); // logical_key
@@ -87,10 +94,18 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     const url = `${window.__API_BASE || ''}/api/scripts/${scriptId}/canon-entities?${params}`;
     fetch(url, { credentials: 'include' })
       .then((r) => r.json())
-      .then((j) => { if (!cancelled) setItems(Array.isArray(j) ? j : (j?.items || [])); })
-      .catch(() => { if (!cancelled) setItems([]); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .then((j) => {
+        if (!cancelled) setItems(Array.isArray(j) ? j : j?.items || []);
+      })
+      .catch(() => {
+        if (!cancelled) setItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [scriptId, typeFilter, reloadTick]);
 
   /* ---- derived ---- */
@@ -98,10 +113,11 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     let list = items;
     if (query) {
       const q = query.toLowerCase();
-      list = list.filter((e) =>
-        (e.name || '').toLowerCase().includes(q) ||
-        (e.logical_key || '').toLowerCase().includes(q) ||
-        (e.entity_subtype || '').toLowerCase().includes(q)
+      list = list.filter(
+        (e) =>
+          (e.name || '').toLowerCase().includes(q) ||
+          (e.logical_key || '').toLowerCase().includes(q) ||
+          (e.entity_subtype || '').toLowerCase().includes(q),
       );
     }
     list = [...list].sort((a, b) => {
@@ -115,7 +131,9 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
   /* lookup parent name */
   const entityMap = React.useMemo(() => {
     const m = {};
-    items.forEach((e) => { m[e.logical_key] = e; });
+    items.forEach((e) => {
+      m[e.logical_key] = e;
+    });
     return m;
   }, [items]);
 
@@ -134,41 +152,54 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
   async function apiPut(logicalKey, body) {
     const r = await fetch(
       `${window.__API_BASE || ''}/api/scripts/${scriptId}/canon-entities/${encodeURIComponent(logicalKey)}`,
-      { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
     );
     const j = await r.json();
-    if (!r.ok || j.ok === false) throw new Error(j.error || j.detail || t('scripts.toast.save_fail'));
+    if (!r.ok || j.ok === false)
+      throw new Error(j.error || j.detail || t('scripts.toast.save_fail'));
     return j;
   }
 
   async function apiPost(body) {
-    const r = await fetch(
-      `${window.__API_BASE || ''}/api/scripts/${scriptId}/canon-entities`,
-      { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-    );
+    const r = await fetch(`${window.__API_BASE || ''}/api/scripts/${scriptId}/canon-entities`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
     const j = await r.json();
-    if (!r.ok || j.ok === false) throw new Error(j.error || j.detail || t('scripts.toast.save_fail'));
+    if (!r.ok || j.ok === false)
+      throw new Error(j.error || j.detail || t('scripts.toast.save_fail'));
     return j;
   }
 
   async function apiDelete(logicalKey) {
     const r = await fetch(
       `${window.__API_BASE || ''}/api/scripts/${scriptId}/canon-entities/${encodeURIComponent(logicalKey)}`,
-      { method: 'DELETE', credentials: 'include' }
+      { method: 'DELETE', credentials: 'include' },
     );
     const j = await r.json().catch(() => ({}));
-    if (!r.ok && j.ok !== true) throw new Error(j.error || j.detail || t('scripts.toast.delete_fail'));
+    if (!r.ok && j.ok !== true)
+      throw new Error(j.error || j.detail || t('scripts.toast.delete_fail'));
     return j;
   }
 
   /* ---- inline cell save ---- */
   async function saveCell(entity, field, value) {
     if (readonly) return;
-    const patch = { [field]: field === 'importance' ? (parseInt(value, 10) || null) : value };
+    const patch = { [field]: field === 'importance' ? parseInt(value, 10) || null : value };
     try {
       await apiPut(entity.logical_key, patch);
-      setItems((arr) => arr.map((e) => e.logical_key === entity.logical_key ? { ...e, ...patch } : e));
-      if (selected?.logical_key === entity.logical_key) setSelected((s) => s ? { ...s, ...patch } : s);
+      setItems((arr) =>
+        arr.map((e) => (e.logical_key === entity.logical_key ? { ...e, ...patch } : e)),
+      );
+      if (selected?.logical_key === entity.logical_key)
+        setSelected((s) => (s ? { ...s, ...patch } : s));
       window.__apiToast?.(t('scripts.toast.saved'), { kind: 'ok', duration: 1500 });
     } catch (e) {
       window.__apiToast?.(t('scripts.toast.save_fail'), { kind: 'danger', detail: e?.message });
@@ -187,7 +218,14 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     try {
       await apiPost(body);
       setAdding(false);
-      setNewForm({ logical_key: '', name: '', type: 'character', entity_subtype: '', importance: '3', summary: '' });
+      setNewForm({
+        logical_key: '',
+        name: '',
+        type: 'character',
+        entity_subtype: '',
+        importance: '3',
+        summary: '',
+      });
       setReloadTick((x) => x + 1);
       window.__apiToast?.(t('scripts.edit.canon.add_ok'), { kind: 'ok' });
     } catch (e) {
@@ -201,7 +239,10 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     try {
       await apiDelete(logicalKey);
       setItems((arr) => arr.filter((e) => e.logical_key !== logicalKey));
-      if (selected?.logical_key === logicalKey) { setSelected(null); setSplitOpen(false); }
+      if (selected?.logical_key === logicalKey) {
+        setSelected(null);
+        setSplitOpen(false);
+      }
       setConfirmDelete(null);
       window.__apiToast?.(t('scripts.edit.canon.deleted'), { kind: 'ok' });
     } catch (e) {
@@ -215,19 +256,24 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     const patch = { ...detailEdit };
     if ('importance' in patch) patch.importance = parseInt(patch.importance, 10) || null;
     if ('aliases' in patch && typeof patch.aliases === 'string') {
-      patch.aliases = patch.aliases.split(',').map((s) => s.trim()).filter(Boolean);
+      patch.aliases = patch.aliases
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
     setSavingDetail(true);
     try {
       await apiPut(selected.logical_key, patch);
       const updated = { ...selected, ...patch };
       setSelected(updated);
-      setItems((arr) => arr.map((e) => e.logical_key === selected.logical_key ? updated : e));
+      setItems((arr) => arr.map((e) => (e.logical_key === selected.logical_key ? updated : e)));
       setDetailEdit({});
       window.__apiToast?.(t('scripts.toast.saved'), { kind: 'ok' });
     } catch (e) {
       window.__apiToast?.(t('scripts.toast.save_fail'), { kind: 'danger', detail: e?.message });
-    } finally { setSavingDetail(false); }
+    } finally {
+      setSavingDetail(false);
+    }
   }
 
   /* ---- children lookup ---- */
@@ -271,8 +317,14 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     }
     return (
       <span
-        style={{ cursor: readonly ? 'default' : 'text', borderBottom: readonly ? 'none' : '1px dashed var(--color-border-divider-default, #ccc)' }}
-        onClick={() => !readonly && setEditCell({ key: entity.logical_key, field: 'name', value: entity.name || '' })}
+        style={{
+          cursor: readonly ? 'default' : 'text',
+          borderBottom: readonly ? 'none' : '1px dashed var(--color-border-divider-default, #ccc)',
+        }}
+        onClick={() =>
+          !readonly &&
+          setEditCell({ key: entity.logical_key, field: 'name', value: entity.name || '' })
+        }
       >
         {entity.name || '—'}
       </span>
@@ -285,7 +337,9 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     if (editing) {
       return (
         <CSSelect
-          selectedOption={IMPORTANCE_OPTIONS.find((o) => o.value === String(editCell.value)) || null}
+          selectedOption={
+            IMPORTANCE_OPTIONS.find((o) => o.value === String(editCell.value)) || null
+          }
           options={IMPORTANCE_OPTIONS}
           onChange={({ detail }) => saveCell(entity, 'importance', detail.selectedOption.value)}
           onBlur={() => setEditCell(null)}
@@ -294,8 +348,18 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     }
     return (
       <span
-        style={{ cursor: readonly ? 'default' : 'pointer', borderBottom: readonly ? 'none' : '1px dashed var(--color-border-divider-default, #ccc)' }}
-        onClick={() => !readonly && setEditCell({ key: entity.logical_key, field: 'importance', value: String(entity.importance ?? 3) })}
+        style={{
+          cursor: readonly ? 'default' : 'pointer',
+          borderBottom: readonly ? 'none' : '1px dashed var(--color-border-divider-default, #ccc)',
+        }}
+        onClick={() =>
+          !readonly &&
+          setEditCell({
+            key: entity.logical_key,
+            field: 'importance',
+            value: String(entity.importance ?? 3),
+          })
+        }
       >
         {entity.importance ?? '—'}
       </span>
@@ -304,23 +368,39 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
 
   /* inline editable cell — parent */
   function CellParent({ entity }) {
-    const editing = editCell?.key === entity.logical_key && editCell?.field === 'parent_logical_key';
-    const parentName = entity.parent_logical_key ? (entityMap[entity.parent_logical_key]?.name || entity.parent_logical_key) : '—';
+    const editing =
+      editCell?.key === entity.logical_key && editCell?.field === 'parent_logical_key';
+    const parentName = entity.parent_logical_key
+      ? entityMap[entity.parent_logical_key]?.name || entity.parent_logical_key
+      : '—';
     if (editing) {
-      const curOpt = parentOptions.find((o) => o.value === (editCell.value || '')) || parentOptions[0];
+      const curOpt =
+        parentOptions.find((o) => o.value === (editCell.value || '')) || parentOptions[0];
       return (
         <CSSelect
           selectedOption={curOpt}
           options={parentOptions}
-          onChange={({ detail }) => saveCell(entity, 'parent_logical_key', detail.selectedOption.value || null)}
+          onChange={({ detail }) =>
+            saveCell(entity, 'parent_logical_key', detail.selectedOption.value || null)
+          }
           onBlur={() => setEditCell(null)}
         />
       );
     }
     return (
       <span
-        style={{ cursor: readonly ? 'default' : 'pointer', borderBottom: readonly ? 'none' : '1px dashed var(--color-border-divider-default, #ccc)' }}
-        onClick={() => !readonly && setEditCell({ key: entity.logical_key, field: 'parent_logical_key', value: entity.parent_logical_key || '' })}
+        style={{
+          cursor: readonly ? 'default' : 'pointer',
+          borderBottom: readonly ? 'none' : '1px dashed var(--color-border-divider-default, #ccc)',
+        }}
+        onClick={() =>
+          !readonly &&
+          setEditCell({
+            key: entity.logical_key,
+            field: 'parent_logical_key',
+            value: entity.parent_logical_key || '',
+          })
+        }
       >
         {parentName}
       </span>
@@ -343,8 +423,14 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     }
     return (
       <CSSpaceBetween direction="horizontal" size="xs">
-        <CSStatusIndicator type="warning">{t('scripts.edit.canon.confirm_delete')}</CSStatusIndicator>
-        <CSButton variant="inline-link" iconName="check" onClick={() => doDelete(entity.logical_key)}>
+        <CSStatusIndicator type="warning">
+          {t('scripts.edit.canon.confirm_delete')}
+        </CSStatusIndicator>
+        <CSButton
+          variant="inline-link"
+          iconName="check"
+          onClick={() => doDelete(entity.logical_key)}
+        >
           {t('common.confirm')}
         </CSButton>
         <CSButton variant="inline-link" iconName="close" onClick={() => setConfirmDelete(null)}>
@@ -370,31 +456,67 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     return (
       <CSSpaceBetween size="m">
         {readonly && (
-          <CSAlert type="info" header={t('scripts.edit.readonly_title')}>{t('scripts.edit.readonly_body')}</CSAlert>
+          <CSAlert type="info" header={t('scripts.edit.readonly_title')}>
+            {t('scripts.edit.readonly_body')}
+          </CSAlert>
         )}
 
-        <CSKeyValuePairs columns={2} items={[
-          { label: t('scripts.edit.canon.field_logical_key'), value: <span className="mono">{entity.logical_key}</span> },
-          { label: t('scripts.edit.canon.field_type'), value: <CSBadge color={typeBadgeColor(entity.type)}>{t(`scripts.edit.canon.type_${entity.type}`) || entity.type}</CSBadge> },
-          { label: t('scripts.edit.canon.field_subtype'), value: entity.entity_subtype || '—' },
-          { label: t('scripts.edit.canon.field_importance'), value: entity.importance ?? '—' },
-          { label: t('scripts.edit.canon.field_first_chapter'), value: entity.first_revealed_chapter ?? '—' },
-        ]} />
+        <CSKeyValuePairs
+          columns={2}
+          items={[
+            {
+              label: t('scripts.edit.canon.field_logical_key'),
+              value: <span className="mono">{entity.logical_key}</span>,
+            },
+            {
+              label: t('scripts.edit.canon.field_type'),
+              value: (
+                <CSBadge color={typeBadgeColor(entity.type)}>
+                  {t(`scripts.edit.canon.type_${entity.type}`) || entity.type}
+                </CSBadge>
+              ),
+            },
+            { label: t('scripts.edit.canon.field_subtype'), value: entity.entity_subtype || '—' },
+            { label: t('scripts.edit.canon.field_importance'), value: entity.importance ?? '—' },
+            {
+              label: t('scripts.edit.canon.field_first_chapter'),
+              value: entity.first_revealed_chapter ?? '—',
+            },
+          ]}
+        />
 
         <CSFormField label={t('scripts.edit.canon.field_name')}>
-          <CSInput disabled={readonly} value={detailVal('name') || ''} onChange={({ detail }) => setDF('name', detail.value)} />
+          <CSInput
+            disabled={readonly}
+            value={detailVal('name') || ''}
+            onChange={({ detail }) => setDF('name', detail.value)}
+          />
         </CSFormField>
 
         <CSFormField label={t('scripts.edit.canon.field_identity')}>
-          <CSInput disabled={readonly} value={detailVal('identity') || ''} onChange={({ detail }) => setDF('identity', detail.value)} />
+          <CSInput
+            disabled={readonly}
+            value={detailVal('identity') || ''}
+            onChange={({ detail }) => setDF('identity', detail.value)}
+          />
         </CSFormField>
 
         <CSFormField label={t('scripts.edit.canon.field_summary')}>
-          <CSTextarea disabled={readonly} rows={3} value={detailVal('summary') || ''} onChange={({ detail }) => setDF('summary', detail.value)} />
+          <CSTextarea
+            disabled={readonly}
+            rows={3}
+            value={detailVal('summary') || ''}
+            onChange={({ detail }) => setDF('summary', detail.value)}
+          />
         </CSFormField>
 
         <CSFormField label={t('scripts.edit.canon.field_background')}>
-          <CSTextarea disabled={readonly} rows={4} value={detailVal('background') || ''} onChange={({ detail }) => setDF('background', detail.value)} />
+          <CSTextarea
+            disabled={readonly}
+            rows={4}
+            value={detailVal('background') || ''}
+            onChange={({ detail }) => setDF('background', detail.value)}
+          />
         </CSFormField>
 
         <CSFormField label={t('scripts.edit.canon.field_aliases')}>
@@ -402,7 +524,9 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
             readOnly={readonly}
             items={aliasTokens}
             onDismiss={({ detail }) => {
-              const updated = aliasTokens.filter((_, i) => i !== detail.itemIndex).map((t) => t.label);
+              const updated = aliasTokens
+                .filter((_, i) => i !== detail.itemIndex)
+                .map((t) => t.label);
               setDF('aliases', updated);
             }}
             i18nStrings={{ removeButtonAriaLabel: (t) => `Remove ${t.label}` }}
@@ -411,7 +535,11 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
             <div style={{ marginTop: 6 }}>
               <AddAliasInput
                 onAdd={(alias) => {
-                  const current = Array.isArray(detailVal('aliases')) ? detailVal('aliases') : (Array.isArray(entity.aliases) ? entity.aliases : []);
+                  const current = Array.isArray(detailVal('aliases'))
+                    ? detailVal('aliases')
+                    : Array.isArray(entity.aliases)
+                      ? entity.aliases
+                      : [];
                   if (alias && !current.includes(alias)) setDF('aliases', [...current, alias]);
                 }}
               />
@@ -425,12 +553,18 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
             {parent && (
               <div style={{ paddingLeft: 0 }}>
                 <CSBox fontSize="body-s" color="text-body-secondary">
-                  ↑ {t('scripts.edit.canon.parent')}: <strong>{parent.name || parent.logical_key}</strong>
+                  ↑ {t('scripts.edit.canon.parent')}:{' '}
+                  <strong>{parent.name || parent.logical_key}</strong>
                   {parent.entity_subtype ? ` (${parent.entity_subtype})` : ''}
                 </CSBox>
               </div>
             )}
-            <div style={{ paddingLeft: 16, borderLeft: '2px solid var(--color-border-divider-default, #ccc)' }}>
+            <div
+              style={{
+                paddingLeft: 16,
+                borderLeft: '2px solid var(--color-border-divider-default, #ccc)',
+              }}
+            >
               <CSBox fontWeight="bold">{entity.name || entity.logical_key}</CSBox>
               <CSBox fontSize="body-s" color="text-body-secondary">
                 {t(`scripts.edit.canon.type_${entity.type}`) || entity.type}
@@ -472,8 +606,18 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
   /* ---- new entity add row form ---- */
   function AddEntityForm() {
     return (
-      <div style={{ padding: '12px 16px', background: 'var(--color-background-container-content)', border: '1px solid var(--color-border-container-top)', borderRadius: 8, marginBottom: 8 }}>
-        <CSBox variant="h3" padding={{ bottom: 's' }}>{t('scripts.edit.canon.add_title')}</CSBox>
+      <div
+        style={{
+          padding: '12px 16px',
+          background: 'var(--color-background-container-content)',
+          border: '1px solid var(--color-border-container-top)',
+          borderRadius: 8,
+          marginBottom: 8,
+        }}
+      >
+        <CSBox variant="h3" padding={{ bottom: 's' }}>
+          {t('scripts.edit.canon.add_title')}
+        </CSBox>
         <CSSpaceBetween direction="horizontal" size="s">
           <CSFormField label={t('scripts.edit.canon.field_logical_key')}>
             <CSInput
@@ -491,9 +635,19 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
           </CSFormField>
           <CSFormField label={t('scripts.edit.canon.field_type')}>
             <CSSelect
-              selectedOption={ENTITY_TYPES.map((tp) => ({ value: tp, label: t(`scripts.edit.canon.type_${tp}`) })).find((o) => o.value === newForm.type) || null}
-              options={ENTITY_TYPES.map((tp) => ({ value: tp, label: t(`scripts.edit.canon.type_${tp}`) }))}
-              onChange={({ detail }) => setNewForm((f) => ({ ...f, type: detail.selectedOption.value }))}
+              selectedOption={
+                ENTITY_TYPES.map((tp) => ({
+                  value: tp,
+                  label: t(`scripts.edit.canon.type_${tp}`),
+                })).find((o) => o.value === newForm.type) || null
+              }
+              options={ENTITY_TYPES.map((tp) => ({
+                value: tp,
+                label: t(`scripts.edit.canon.type_${tp}`),
+              }))}
+              onChange={({ detail }) =>
+                setNewForm((f) => ({ ...f, type: detail.selectedOption.value }))
+              }
             />
           </CSFormField>
           <CSFormField label={t('scripts.edit.canon.field_subtype')}>
@@ -505,9 +659,14 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
           </CSFormField>
           <CSFormField label={t('scripts.edit.canon.field_importance')}>
             <CSSelect
-              selectedOption={IMPORTANCE_OPTIONS.find((o) => o.value === newForm.importance) || IMPORTANCE_OPTIONS[2]}
+              selectedOption={
+                IMPORTANCE_OPTIONS.find((o) => o.value === newForm.importance) ||
+                IMPORTANCE_OPTIONS[2]
+              }
               options={IMPORTANCE_OPTIONS}
-              onChange={({ detail }) => setNewForm((f) => ({ ...f, importance: detail.selectedOption.value }))}
+              onChange={({ detail }) =>
+                setNewForm((f) => ({ ...f, importance: detail.selectedOption.value }))
+              }
             />
           </CSFormField>
         </CSSpaceBetween>
@@ -520,8 +679,23 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
         </CSFormField>
         <div style={{ marginTop: 10 }}>
           <CSSpaceBetween direction="horizontal" size="xs">
-            <CSButton variant="primary" iconName="add-plus" onClick={submitAdd}>{t('scripts.edit.canon.add_confirm')}</CSButton>
-            <CSButton variant="link" onClick={() => { setAdding(false); setNewForm({ logical_key: '', name: '', type: 'character', entity_subtype: '', importance: '3', summary: '' }); }}>
+            <CSButton variant="primary" iconName="add-plus" onClick={submitAdd}>
+              {t('scripts.edit.canon.add_confirm')}
+            </CSButton>
+            <CSButton
+              variant="link"
+              onClick={() => {
+                setAdding(false);
+                setNewForm({
+                  logical_key: '',
+                  name: '',
+                  type: 'character',
+                  entity_subtype: '',
+                  importance: '3',
+                  summary: '',
+                });
+              }}
+            >
               {t('common.cancel')}
             </CSButton>
           </CSSpaceBetween>
@@ -541,7 +715,11 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     {
       id: 'type',
       header: t('scripts.edit.canon.col_type'),
-      cell: (e) => <CSBadge color={typeBadgeColor(e.type)}>{t(`scripts.edit.canon.type_${e.type}`) || e.type}</CSBadge>,
+      cell: (e) => (
+        <CSBadge color={typeBadgeColor(e.type)}>
+          {t(`scripts.edit.canon.type_${e.type}`) || e.type}
+        </CSBadge>
+      ),
     },
     {
       id: 'subtype',
@@ -561,7 +739,11 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
     {
       id: 'summary',
       header: t('scripts.edit.canon.col_summary'),
-      cell: (e) => <CSBox color="text-body-secondary" fontSize="body-s">{snippet(e.summary, 50)}</CSBox>,
+      cell: (e) => (
+        <CSBox color="text-body-secondary" fontSize="body-s">
+          {snippet(e.summary, 50)}
+        </CSBox>
+      ),
     },
     {
       id: 'actions',
@@ -571,7 +753,11 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
           <CSButton
             variant="inline-link"
             iconName="search"
-            onClick={() => { setSelected(e); setDetailEdit({}); setSplitOpen(true); }}
+            onClick={() => {
+              setSelected(e);
+              setDetailEdit({});
+              setSplitOpen(true);
+            }}
           >
             {t('scripts.edit.canon.view_detail')}
           </CSButton>
@@ -593,7 +779,11 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
       selectedItems={selected ? [selected] : []}
       onSelectionChange={({ detail }) => {
         const e = detail.selectedItems[0];
-        if (e) { setSelected(e); setDetailEdit({}); setSplitOpen(true); }
+        if (e) {
+          setSelected(e);
+          setDetailEdit({});
+          setSplitOpen(true);
+        }
       }}
       columnDefinitions={columns}
       header={
@@ -608,9 +798,18 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
                 ariaLabel={t('scripts.edit.canon.sort_importance')}
                 onClick={() => setSortDesc((v) => !v)}
               />
-              <CSButton iconName="refresh" variant="icon" ariaLabel={t('common.refresh')} onClick={() => setReloadTick((x) => x + 1)} />
+              <CSButton
+                iconName="refresh"
+                variant="icon"
+                ariaLabel={t('common.refresh')}
+                onClick={() => setReloadTick((x) => x + 1)}
+              />
               {!readonly && (
-                <CSButton iconName="add-plus" variant="primary" onClick={() => setAdding((v) => !v)}>
+                <CSButton
+                  iconName="add-plus"
+                  variant="primary"
+                  onClick={() => setAdding((v) => !v)}
+                >
                   {t('scripts.edit.canon.add_btn')}
                 </CSButton>
               )}
@@ -682,14 +881,22 @@ function AddAliasInput({ onAdd }) {
         placeholder={t('scripts.edit.canon.alias_ph')}
         value={val}
         onChange={({ detail }) => setVal(detail.value)}
-        onKeyDown={({ detail }) => { if (detail.key === 'Enter' && val.trim()) { onAdd(val.trim()); setVal(''); } }}
+        onKeyDown={({ detail }) => {
+          if (detail.key === 'Enter' && val.trim()) {
+            onAdd(val.trim());
+            setVal('');
+          }
+        }}
       />
       <CSButton
         iconName="add-plus"
         variant="icon"
         ariaLabel={t('scripts.edit.canon.alias_add')}
         disabled={!val.trim()}
-        onClick={() => { onAdd(val.trim()); setVal(''); }}
+        onClick={() => {
+          onAdd(val.trim());
+          setVal('');
+        }}
       />
     </CSSpaceBetween>
   );
@@ -700,12 +907,18 @@ function AddAliasInput({ onAdd }) {
 /* ------------------------------------------------------------------ */
 function typeBadgeColor(type) {
   switch (type) {
-    case 'character': return 'blue';
-    case 'faction':   return 'green';
-    case 'location':  return 'grey';
-    case 'item':      return 'red';
-    case 'concept':   return 'severity-neutral';
-    default:          return 'grey';
+    case 'character':
+      return 'blue';
+    case 'faction':
+      return 'green';
+    case 'location':
+      return 'grey';
+    case 'item':
+      return 'red';
+    case 'concept':
+      return 'severity-neutral';
+    default:
+      return 'grey';
   }
 }
 
@@ -737,7 +950,14 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
 
   /* add new */
   const [adding, setAdding] = React.useState(false);
-  const [newForm, setNewForm] = React.useState({ story_phase: '开端', story_time_label: '', chapter_min: '', chapter_max: '', confidence: '0.8', sample_summary: '' });
+  const [newForm, setNewForm] = React.useState({
+    story_phase: '开端',
+    story_time_label: '',
+    chapter_min: '',
+    chapter_max: '',
+    confidence: '0.8',
+    sample_summary: '',
+  });
 
   /* delete confirm inline */
   const [confirmDelete, setConfirmDelete] = React.useState(null); // anchor id
@@ -753,51 +973,69 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
     const url = `${window.__API_BASE || ''}/api/scripts/${scriptId}/anchors?${params}`;
     fetch(url, { credentials: 'include' })
       .then((r) => r.json())
-      .then((j) => { if (!cancelled) setItems(Array.isArray(j) ? j : (j?.items || j?.anchors || [])); })
-      .catch(() => { if (!cancelled) setItems([]); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .then((j) => {
+        if (!cancelled) setItems(Array.isArray(j) ? j : j?.items || j?.anchors || []);
+      })
+      .catch(() => {
+        if (!cancelled) setItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [scriptId, phaseFilter, chapterMin, chapterMax, reloadTick]);
 
   /* ---- API ---- */
   async function apiPut(anchorId, body) {
     const r = await fetch(
       `${window.__API_BASE || ''}/api/scripts/${scriptId}/anchors/${encodeURIComponent(anchorId)}`,
-      { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
     );
     const j = await r.json();
-    if (!r.ok || j.ok === false) throw new Error(j.error || j.detail || t('scripts.toast.save_fail'));
+    if (!r.ok || j.ok === false)
+      throw new Error(j.error || j.detail || t('scripts.toast.save_fail'));
     return j;
   }
 
   async function apiPost(body) {
-    const r = await fetch(
-      `${window.__API_BASE || ''}/api/scripts/${scriptId}/anchors`,
-      { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-    );
+    const r = await fetch(`${window.__API_BASE || ''}/api/scripts/${scriptId}/anchors`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
     const j = await r.json();
-    if (!r.ok || j.ok === false) throw new Error(j.error || j.detail || t('scripts.toast.save_fail'));
+    if (!r.ok || j.ok === false)
+      throw new Error(j.error || j.detail || t('scripts.toast.save_fail'));
     return j;
   }
 
   async function apiDelete(anchorId) {
     const r = await fetch(
       `${window.__API_BASE || ''}/api/scripts/${scriptId}/anchors/${encodeURIComponent(anchorId)}`,
-      { method: 'DELETE', credentials: 'include' }
+      { method: 'DELETE', credentials: 'include' },
     );
     const j = await r.json().catch(() => ({}));
-    if (!r.ok && j.ok !== true) throw new Error(j.error || j.detail || t('scripts.toast.delete_fail'));
+    if (!r.ok && j.ok !== true)
+      throw new Error(j.error || j.detail || t('scripts.toast.delete_fail'));
     return j;
   }
 
   /* ---- inline cell save ---- */
   async function saveCell(anchor, field, value) {
     if (readonly) return;
-    const patch = { [field]: field === 'confidence' ? (parseFloat(value) || null) : value };
+    const patch = { [field]: field === 'confidence' ? parseFloat(value) || null : value };
     try {
       await apiPut(anchor.id, patch);
-      setItems((arr) => arr.map((a) => a.id === anchor.id ? { ...a, ...patch } : a));
-      if (selected?.id === anchor.id) setSelected((s) => s ? { ...s, ...patch } : s);
+      setItems((arr) => arr.map((a) => (a.id === anchor.id ? { ...a, ...patch } : a)));
+      if (selected?.id === anchor.id) setSelected((s) => (s ? { ...s, ...patch } : s));
       window.__apiToast?.(t('scripts.toast.saved'), { kind: 'ok', duration: 1500 });
     } catch (e) {
       window.__apiToast?.(t('scripts.toast.save_fail'), { kind: 'danger', detail: e?.message });
@@ -817,7 +1055,14 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
     try {
       await apiPost(body);
       setAdding(false);
-      setNewForm({ story_phase: '开端', story_time_label: '', chapter_min: '', chapter_max: '', confidence: '0.8', sample_summary: '' });
+      setNewForm({
+        story_phase: '开端',
+        story_time_label: '',
+        chapter_min: '',
+        chapter_max: '',
+        confidence: '0.8',
+        sample_summary: '',
+      });
       setReloadTick((x) => x + 1);
       window.__apiToast?.(t('scripts.edit.anchors.add_ok'), { kind: 'ok' });
     } catch (e) {
@@ -831,7 +1076,10 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
     try {
       await apiDelete(anchorId);
       setItems((arr) => arr.filter((a) => a.id !== anchorId));
-      if (selected?.id === anchorId) { setSelected(null); setSplitOpen(false); }
+      if (selected?.id === anchorId) {
+        setSelected(null);
+        setSplitOpen(false);
+      }
       setConfirmDelete(null);
       window.__apiToast?.(t('scripts.edit.anchors.deleted'), { kind: 'ok' });
     } catch (e) {
@@ -849,12 +1097,14 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
       await apiPut(selected.id, patch);
       const updated = { ...selected, ...patch };
       setSelected(updated);
-      setItems((arr) => arr.map((a) => a.id === selected.id ? updated : a));
+      setItems((arr) => arr.map((a) => (a.id === selected.id ? updated : a)));
       setDetailEdit({});
       window.__apiToast?.(t('scripts.toast.saved'), { kind: 'ok' });
     } catch (e) {
       window.__apiToast?.(t('scripts.toast.save_fail'), { kind: 'danger', detail: e?.message });
-    } finally { setSavingDetail(false); }
+    } finally {
+      setSavingDetail(false);
+    }
   }
 
   /* ---- phase segment options ---- */
@@ -869,7 +1119,11 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
     if (editing) {
       return (
         <CSSelect
-          selectedOption={STORY_PHASES.map((p) => ({ value: p, label: p })).find((o) => o.value === editCell.value) || null}
+          selectedOption={
+            STORY_PHASES.map((p) => ({ value: p, label: p })).find(
+              (o) => o.value === editCell.value,
+            ) || null
+          }
           options={STORY_PHASES.map((p) => ({ value: p, label: p }))}
           onChange={({ detail }) => saveCell(anchor, 'story_phase', detail.selectedOption.value)}
           onBlur={() => setEditCell(null)}
@@ -878,8 +1132,14 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
     }
     return (
       <span
-        style={{ cursor: readonly ? 'default' : 'pointer', borderBottom: readonly ? 'none' : '1px dashed var(--color-border-divider-default, #ccc)' }}
-        onClick={() => !readonly && setEditCell({ id: anchor.id, field: 'story_phase', value: anchor.story_phase || '' })}
+        style={{
+          cursor: readonly ? 'default' : 'pointer',
+          borderBottom: readonly ? 'none' : '1px dashed var(--color-border-divider-default, #ccc)',
+        }}
+        onClick={() =>
+          !readonly &&
+          setEditCell({ id: anchor.id, field: 'story_phase', value: anchor.story_phase || '' })
+        }
       >
         {anchor.story_phase || '—'}
       </span>
@@ -905,11 +1165,28 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
       );
     }
     const pct = anchor.confidence != null ? `${Math.round(anchor.confidence * 100)}%` : '—';
-    const color = anchor.confidence >= 0.85 ? 'var(--color-text-status-success, #1d7649)' : anchor.confidence >= 0.7 ? 'var(--color-text-status-warning, #b55a00)' : 'var(--color-text-status-error, #d63f38)';
+    const color =
+      anchor.confidence >= 0.85
+        ? 'var(--color-text-status-success, #1d7649)'
+        : anchor.confidence >= 0.7
+          ? 'var(--color-text-status-warning, #b55a00)'
+          : 'var(--color-text-status-error, #d63f38)';
     return (
       <span
-        style={{ cursor: readonly ? 'default' : 'pointer', borderBottom: readonly ? 'none' : '1px dashed var(--color-border-divider-default, #ccc)', color, fontVariantNumeric: 'tabular-nums' }}
-        onClick={() => !readonly && setEditCell({ id: anchor.id, field: 'confidence', value: String(anchor.confidence ?? 0.8) })}
+        style={{
+          cursor: readonly ? 'default' : 'pointer',
+          borderBottom: readonly ? 'none' : '1px dashed var(--color-border-divider-default, #ccc)',
+          color,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+        onClick={() =>
+          !readonly &&
+          setEditCell({
+            id: anchor.id,
+            field: 'confidence',
+            value: String(anchor.confidence ?? 0.8),
+          })
+        }
       >
         {pct}
       </span>
@@ -919,16 +1196,27 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
   function DeleteConfirmRow({ anchor }) {
     if (confirmDelete !== anchor.id) {
       return (
-        <CSButton variant="inline-link" iconName="remove" disabled={readonly} onClick={() => setConfirmDelete(anchor.id)}>
+        <CSButton
+          variant="inline-link"
+          iconName="remove"
+          disabled={readonly}
+          onClick={() => setConfirmDelete(anchor.id)}
+        >
           {t('common.delete')}
         </CSButton>
       );
     }
     return (
       <CSSpaceBetween direction="horizontal" size="xs">
-        <CSStatusIndicator type="warning">{t('scripts.edit.anchors.confirm_delete')}</CSStatusIndicator>
-        <CSButton variant="inline-link" iconName="check" onClick={() => doDelete(anchor.id)}>{t('common.confirm')}</CSButton>
-        <CSButton variant="inline-link" iconName="close" onClick={() => setConfirmDelete(null)}>{t('common.cancel')}</CSButton>
+        <CSStatusIndicator type="warning">
+          {t('scripts.edit.anchors.confirm_delete')}
+        </CSStatusIndicator>
+        <CSButton variant="inline-link" iconName="check" onClick={() => doDelete(anchor.id)}>
+          {t('common.confirm')}
+        </CSButton>
+        <CSButton variant="inline-link" iconName="close" onClick={() => setConfirmDelete(null)}>
+          {t('common.cancel')}
+        </CSButton>
       </CSSpaceBetween>
     );
   }
@@ -948,16 +1236,33 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
     return (
       <CSSpaceBetween size="m">
         {readonly && (
-          <CSAlert type="info" header={t('scripts.edit.readonly_title')}>{t('scripts.edit.readonly_body')}</CSAlert>
+          <CSAlert type="info" header={t('scripts.edit.readonly_title')}>
+            {t('scripts.edit.readonly_body')}
+          </CSAlert>
         )}
 
-        <CSKeyValuePairs columns={2} items={[
-          { label: t('scripts.edit.anchors.field_id'), value: <span className="mono">{anchor.id}</span> },
-          { label: t('scripts.edit.anchors.field_phase'), value: anchor.story_phase || '—' },
-          { label: t('scripts.edit.anchors.field_time_label'), value: anchor.story_time_label || '—' },
-          { label: t('scripts.edit.anchors.field_chapter_range'), value: `${anchor.chapter_min ?? '?'} – ${anchor.chapter_max ?? '?'}` },
-          { label: t('scripts.edit.anchors.field_confidence'), value: anchor.confidence != null ? `${Math.round(anchor.confidence * 100)}%` : '—' },
-        ]} />
+        <CSKeyValuePairs
+          columns={2}
+          items={[
+            {
+              label: t('scripts.edit.anchors.field_id'),
+              value: <span className="mono">{anchor.id}</span>,
+            },
+            { label: t('scripts.edit.anchors.field_phase'), value: anchor.story_phase || '—' },
+            {
+              label: t('scripts.edit.anchors.field_time_label'),
+              value: anchor.story_time_label || '—',
+            },
+            {
+              label: t('scripts.edit.anchors.field_chapter_range'),
+              value: `${anchor.chapter_min ?? '?'} – ${anchor.chapter_max ?? '?'}`,
+            },
+            {
+              label: t('scripts.edit.anchors.field_confidence'),
+              value: anchor.confidence != null ? `${Math.round(anchor.confidence * 100)}%` : '—',
+            },
+          ]}
+        />
 
         <CSFormField label={t('scripts.edit.anchors.field_sample_summary')}>
           <CSTextarea
@@ -968,14 +1273,25 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
           />
         </CSFormField>
 
-        <CSExpandableSection headerText={t('scripts.edit.anchors.field_metadata')} defaultExpanded={false}>
-          <pre style={{
-            margin: 0, padding: '10px 12px',
-            background: 'var(--color-background-container-content)',
-            border: '1px solid var(--color-border-divider-default)',
-            borderRadius: 6, fontSize: 12, lineHeight: 1.6, overflow: 'auto', maxHeight: 200,
-            fontFamily: 'var(--font-family-monospace, monospace)', whiteSpace: 'pre-wrap',
-          }}>
+        <CSExpandableSection
+          headerText={t('scripts.edit.anchors.field_metadata')}
+          defaultExpanded={false}
+        >
+          <pre
+            style={{
+              margin: 0,
+              padding: '10px 12px',
+              background: 'var(--color-background-container-content)',
+              border: '1px solid var(--color-border-divider-default)',
+              borderRadius: 6,
+              fontSize: 12,
+              lineHeight: 1.6,
+              overflow: 'auto',
+              maxHeight: 200,
+              fontFamily: 'var(--font-family-monospace, monospace)',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
             {metaDisplay}
           </pre>
         </CSExpandableSection>
@@ -997,21 +1313,39 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
   /* ---- add form ---- */
   function AddAnchorForm() {
     return (
-      <div style={{ padding: '12px 16px', background: 'var(--color-background-container-content)', border: '1px solid var(--color-border-container-top)', borderRadius: 8, marginBottom: 8 }}>
-        <CSBox variant="h3" padding={{ bottom: 's' }}>{t('scripts.edit.anchors.add_title')}</CSBox>
+      <div
+        style={{
+          padding: '12px 16px',
+          background: 'var(--color-background-container-content)',
+          border: '1px solid var(--color-border-container-top)',
+          borderRadius: 8,
+          marginBottom: 8,
+        }}
+      >
+        <CSBox variant="h3" padding={{ bottom: 's' }}>
+          {t('scripts.edit.anchors.add_title')}
+        </CSBox>
         <CSSpaceBetween direction="horizontal" size="s">
           <CSFormField label={t('scripts.edit.anchors.field_phase')}>
             <CSSelect
-              selectedOption={STORY_PHASES.map((p) => ({ value: p, label: p })).find((o) => o.value === newForm.story_phase) || null}
+              selectedOption={
+                STORY_PHASES.map((p) => ({ value: p, label: p })).find(
+                  (o) => o.value === newForm.story_phase,
+                ) || null
+              }
               options={STORY_PHASES.map((p) => ({ value: p, label: p }))}
-              onChange={({ detail }) => setNewForm((f) => ({ ...f, story_phase: detail.selectedOption.value }))}
+              onChange={({ detail }) =>
+                setNewForm((f) => ({ ...f, story_phase: detail.selectedOption.value }))
+              }
             />
           </CSFormField>
           <CSFormField label={t('scripts.edit.anchors.field_time_label')}>
             <CSInput
               placeholder={t('scripts.edit.anchors.time_label_ph')}
               value={newForm.story_time_label}
-              onChange={({ detail }) => setNewForm((f) => ({ ...f, story_time_label: detail.value }))}
+              onChange={({ detail }) =>
+                setNewForm((f) => ({ ...f, story_time_label: detail.value }))
+              }
             />
           </CSFormField>
           <CSFormField label={t('scripts.edit.anchors.field_chapter_min')}>
@@ -1046,8 +1380,12 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
         </CSFormField>
         <div style={{ marginTop: 10 }}>
           <CSSpaceBetween direction="horizontal" size="xs">
-            <CSButton variant="primary" iconName="add-plus" onClick={submitAdd}>{t('scripts.edit.anchors.add_confirm')}</CSButton>
-            <CSButton variant="link" onClick={() => setAdding(false)}>{t('common.cancel')}</CSButton>
+            <CSButton variant="primary" iconName="add-plus" onClick={submitAdd}>
+              {t('scripts.edit.anchors.add_confirm')}
+            </CSButton>
+            <CSButton variant="link" onClick={() => setAdding(false)}>
+              {t('common.cancel')}
+            </CSButton>
           </CSSpaceBetween>
         </div>
       </div>
@@ -1078,7 +1416,11 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
     {
       id: 'summary',
       header: t('scripts.edit.anchors.col_summary'),
-      cell: (a) => <CSBox color="text-body-secondary" fontSize="body-s">{snippet(a.sample_summary, 60)}</CSBox>,
+      cell: (a) => (
+        <CSBox color="text-body-secondary" fontSize="body-s">
+          {snippet(a.sample_summary, 60)}
+        </CSBox>
+      ),
     },
     {
       id: 'confidence',
@@ -1090,7 +1432,15 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
       header: '',
       cell: (a) => (
         <CSSpaceBetween direction="horizontal" size="xxs">
-          <CSButton variant="inline-link" iconName="search" onClick={() => { setSelected(a); setDetailEdit({}); setSplitOpen(true); }}>
+          <CSButton
+            variant="inline-link"
+            iconName="search"
+            onClick={() => {
+              setSelected(a);
+              setDetailEdit({});
+              setSplitOpen(true);
+            }}
+          >
             {t('scripts.edit.anchors.view_detail')}
           </CSButton>
           <DeleteConfirmRow anchor={a} />
@@ -1111,7 +1461,11 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
       selectedItems={selected ? [selected] : []}
       onSelectionChange={({ detail }) => {
         const a = detail.selectedItems[0];
-        if (a) { setSelected(a); setDetailEdit({}); setSplitOpen(true); }
+        if (a) {
+          setSelected(a);
+          setDetailEdit({});
+          setSplitOpen(true);
+        }
       }}
       columnDefinitions={columns}
       header={
@@ -1120,9 +1474,18 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
           counter={`(${items.length})`}
           actions={
             <CSSpaceBetween direction="horizontal" size="xs">
-              <CSButton iconName="refresh" variant="icon" ariaLabel={t('common.refresh')} onClick={() => setReloadTick((x) => x + 1)} />
+              <CSButton
+                iconName="refresh"
+                variant="icon"
+                ariaLabel={t('common.refresh')}
+                onClick={() => setReloadTick((x) => x + 1)}
+              />
               {!readonly && (
-                <CSButton iconName="add-plus" variant="primary" onClick={() => setAdding((v) => !v)}>
+                <CSButton
+                  iconName="add-plus"
+                  variant="primary"
+                  onClick={() => setAdding((v) => !v)}
+                >
                   {t('scripts.edit.anchors.add_btn')}
                 </CSButton>
               )}

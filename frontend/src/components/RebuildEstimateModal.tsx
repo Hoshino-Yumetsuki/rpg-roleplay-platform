@@ -11,18 +11,26 @@ import CSButton from '@cloudscape-design/components/button';
 import CSSpaceBetween from '@cloudscape-design/components/space-between';
 import s from './editorial.module.css';
 
-export function RebuildEstimateModal({ open, module, scriptId, estimate, loading, onClose, onConfirm }) {
+export function RebuildEstimateModal({
+  open,
+  module,
+  scriptId,
+  estimate,
+  loading,
+  onClose,
+  onConfirm,
+}) {
   const { t } = useTranslation();
   if (!open) return null;
 
-  const ok              = estimate && estimate.ok !== false;
-  const tokens          = estimate?.tokens_est ?? estimate?.est_input_tokens;
-  const cost            = estimate?.cost_est ?? estimate?.est_usd;
-  const model           = estimate?.model;
-  const affects         = Array.isArray(estimate?.affects) ? estimate.affects : [];
-  const prereqs         = Array.isArray(estimate?.prereqs) ? estimate.prereqs : [];
-  const hasBlockingPrereq = prereqs.some(p => p && p.ok === false);
-  const isZeroLlm       = (tokens === 0 || tokens == null) && (cost === 0 || cost == null);
+  const ok = estimate && estimate.ok !== false;
+  const tokens = estimate?.tokens_est ?? estimate?.est_input_tokens;
+  const cost = estimate?.cost_est ?? estimate?.est_usd;
+  const model = estimate?.model;
+  const affects = Array.isArray(estimate?.affects) ? estimate.affects : [];
+  const prereqs = Array.isArray(estimate?.prereqs) ? estimate.prereqs : [];
+  const hasBlockingPrereq = prereqs.some((p) => p && p.ok === false);
+  const isZeroLlm = (tokens === 0 || tokens == null) && (cost === 0 || cost == null);
 
   const moduleName = t(`modules.${module}.title`, { defaultValue: module });
 
@@ -48,7 +56,7 @@ export function RebuildEstimateModal({ open, module, scriptId, estimate, loading
           >
             {isZeroLlm
               ? t('modules.estimate.confirm_zero', { defaultValue: '确认重做（免费）' })
-              : t('modules.estimate.confirm_llm',  { defaultValue: '确认重做（消耗 LLM）' })}
+              : t('modules.estimate.confirm_llm', { defaultValue: '确认重做（消耗 LLM）' })}
           </CSButton>
         </CSSpaceBetween>
       }
@@ -64,7 +72,9 @@ export function RebuildEstimateModal({ open, module, scriptId, estimate, loading
         {/* Error state */}
         {!loading && estimate && estimate.ok === false && (
           <div className={s.estimateErrorBanner}>
-            {estimate.error || estimate.note || t('modules.estimate.fail', { defaultValue: '无法估算' })}
+            {estimate.error ||
+              estimate.note ||
+              t('modules.estimate.fail', { defaultValue: '无法估算' })}
           </div>
         )}
 
@@ -93,7 +103,10 @@ export function RebuildEstimateModal({ open, module, scriptId, estimate, loading
                 <span className={s.estimateKVLabel}>
                   {t('modules.estimate.model', { defaultValue: '模型' })}
                 </span>
-                <span className={`${s.estimateKVValue}`} style={{ fontSize: 13, color: 'var(--muted)' }}>
+                <span
+                  className={`${s.estimateKVValue}`}
+                  style={{ fontSize: 13, color: 'var(--muted)' }}
+                >
                   {model || (isZeroLlm ? '—' : '—')}
                 </span>
               </div>
@@ -107,7 +120,9 @@ export function RebuildEstimateModal({ open, module, scriptId, estimate, loading
                 </div>
                 <div className={s.estimateTagRow}>
                   {affects.map((a) => (
-                    <span key={a} className={s.estimateTag}>{a}</span>
+                    <span key={a} className={s.estimateTag}>
+                      {a}
+                    </span>
                   ))}
                 </div>
               </div>
@@ -122,9 +137,7 @@ export function RebuildEstimateModal({ open, module, scriptId, estimate, loading
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
                   {prereqs.map((p, i) => (
                     <div key={i} className={s.estimatePrereqRow}>
-                      <span className={p.ok ? s.prereqOk : s.prereqWarn}>
-                        {p.ok ? '✓' : '△'}
-                      </span>
+                      <span className={p.ok ? s.prereqOk : s.prereqWarn}>{p.ok ? '✓' : '△'}</span>
                       <span>
                         {p.label || p.key}
                         {p.total != null ? ` ${p.count || 0} / ${p.total}` : ''}
@@ -137,9 +150,14 @@ export function RebuildEstimateModal({ open, module, scriptId, estimate, loading
                 </div>
                 {hasBlockingPrereq && (
                   <div className={s.estimateBlockAlert} style={{ marginTop: 8 }}>
-                    △ {t('modules.estimate.prereq_block_header', { defaultValue: '前置条件未满足' })}
-                    <div style={{ fontWeight: 400, marginTop: 2, fontSize: 11, color: 'var(--muted)' }}>
-                      {t('modules.estimate.prereq_block_body', { defaultValue: '请先重做上面缺失的模块。' })}
+                    △{' '}
+                    {t('modules.estimate.prereq_block_header', { defaultValue: '前置条件未满足' })}
+                    <div
+                      style={{ fontWeight: 400, marginTop: 2, fontSize: 11, color: 'var(--muted)' }}
+                    >
+                      {t('modules.estimate.prereq_block_body', {
+                        defaultValue: '请先重做上面缺失的模块。',
+                      })}
                     </div>
                   </div>
                 )}
@@ -147,9 +165,7 @@ export function RebuildEstimateModal({ open, module, scriptId, estimate, loading
             )}
 
             {/* Note */}
-            {estimate.note && (
-              <div className={s.estimateNote}>{estimate.note}</div>
-            )}
+            {estimate.note && <div className={s.estimateNote}>{estimate.note}</div>}
           </>
         )}
       </div>

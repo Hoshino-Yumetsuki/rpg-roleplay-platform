@@ -14,12 +14,26 @@ import { LoginApp } from '../LoginApp';
 const MOCK_SCHEMA = {
   login: [
     { key: 'username', label: 'Username', type: 'text', required: true, autocomplete: 'username' },
-    { key: 'password', label: 'Password', type: 'password', required: true, autocomplete: 'current-password', min_length: 8 },
+    {
+      key: 'password',
+      label: 'Password',
+      type: 'password',
+      required: true,
+      autocomplete: 'current-password',
+      min_length: 8,
+    },
   ],
   register: [
     { key: 'username', label: 'Username', type: 'text', required: true, autocomplete: 'username' },
     { key: 'display_name', label: 'Display Name', type: 'text', required: false },
-    { key: 'password', label: 'Password', type: 'password', required: true, autocomplete: 'new-password', min_length: 8 },
+    {
+      key: 'password',
+      label: 'Password',
+      type: 'password',
+      required: true,
+      autocomplete: 'new-password',
+      min_length: 8,
+    },
   ],
   notes: {
     min_password_length: 8,

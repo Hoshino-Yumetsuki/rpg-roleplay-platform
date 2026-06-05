@@ -31,42 +31,47 @@
 import React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-
 // ── 断点 ─────────────────────────────────────────────────
 const BREAKPOINTS = { xs: 0, sm: 480, md: 768, lg: 1024, xl: 1280 };
 
 function _bpName(w) {
-  if (w < BREAKPOINTS.sm) return "xs";
-  if (w < BREAKPOINTS.md) return "sm";
-  if (w < BREAKPOINTS.lg) return "md";
-  if (w < BREAKPOINTS.xl) return "lg";
-  return "xl";
+  if (w < BREAKPOINTS.sm) return 'xs';
+  if (w < BREAKPOINTS.md) return 'sm';
+  if (w < BREAKPOINTS.lg) return 'md';
+  if (w < BREAKPOINTS.xl) return 'lg';
+  return 'xl';
 }
 
 function useBreakpoint() {
   const [width, setWidth] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth : 1280
+    typeof window !== 'undefined' ? window.innerWidth : 1280,
   );
   useEffect(() => {
     const onR = () => setWidth(window.innerWidth);
-    window.addEventListener("resize", onR);
-    return () => window.removeEventListener("resize", onR);
+    window.addEventListener('resize', onR);
+    return () => window.removeEventListener('resize', onR);
   }, []);
   const bp = _bpName(width);
-  const order = ["xs", "sm", "md", "lg", "xl"];
+  const order = ['xs', 'sm', 'md', 'lg', 'xl'];
   const idx = order.indexOf(bp);
   return {
     width,
     bp,
     is: {
-      xs: bp === "xs",
-      sm: bp === "sm",
-      md: bp === "md",
-      lg: bp === "lg",
-      xl: bp === "xl",
+      xs: bp === 'xs',
+      sm: bp === 'sm',
+      md: bp === 'md',
+      lg: bp === 'lg',
+      xl: bp === 'xl',
       // 便捷比较: lt = less than
-      ltSm: idx < 1, ltMd: idx < 2, ltLg: idx < 3, ltXl: idx < 4,
-      gteSm: idx >= 1, gteMd: idx >= 2, gteLg: idx >= 3, gteXl: idx >= 4,
+      ltSm: idx < 1,
+      ltMd: idx < 2,
+      ltLg: idx < 3,
+      ltXl: idx < 4,
+      gteSm: idx >= 1,
+      gteMd: idx >= 2,
+      gteLg: idx >= 3,
+      gteXl: idx >= 4,
     },
   };
 }
@@ -88,85 +93,100 @@ function useResizable({
   defaultSize = 244,
   min = 64,
   max = 600,
-  side = "left",
+  side = 'left',
   cssVar,
 } = {}) {
   const [size, setSize] = useState(() => {
     try {
       if (storageKey) {
-        const v = parseInt(localStorage.getItem(storageKey) || "", 10);
+        const v = parseInt(localStorage.getItem(storageKey) || '', 10);
         if (Number.isFinite(v) && v >= min && v <= max) return v;
       }
     } catch (_) {}
     return defaultSize;
   });
   const sizeRef = useRef(size);
-  useEffect(() => { sizeRef.current = size; }, [size]);
+  useEffect(() => {
+    sizeRef.current = size;
+  }, [size]);
 
   // 统一鼠标 + 触摸:触屏平板(pointer:coarse)上拖拽手柄可见(CSS 加宽到 12px),
   // 但原实现只监听 mouse 事件 → 触屏拖不动。这里抽出共用逻辑,鼠标走 mouse* 事件,
   // 触摸走 touch* 事件,从 e.clientX 或 e.touches[0].clientX 统一取坐标。
-  const _startDrag = useCallback((e, startX, isTouch) => {
-    const target = e.currentTarget.parentElement;
-    if (!target) return;
-    const startSize = sizeRef.current;
-    let pending = startSize;
-    if (!isTouch) {
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    }
-
-    const apply = (clientX) => {
-      const dx = clientX - startX;
-      let next = side === "left" ? startSize + dx : startSize - dx;
-      next = Math.max(min, Math.min(max, next));
-      if (next === pending) return;
-      pending = next;
-      if (cssVar) target.style.setProperty(cssVar, next + "px");
-      else target.style.width = next + "px";
-    };
-    const onMouseMove = (ev) => apply(ev.clientX);
-    const onTouchMove = (ev) => {
-      if (ev.touches && ev.touches.length) {
-        ev.preventDefault();  // 阻止拖拽时页面滚动
-        apply(ev.touches[0].clientX);
+  const _startDrag = useCallback(
+    (e, startX, isTouch) => {
+      const target = e.currentTarget.parentElement;
+      if (!target) return;
+      const startSize = sizeRef.current;
+      let pending = startSize;
+      if (!isTouch) {
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
       }
-    };
-    const onEnd = () => {
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onEnd);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onEnd);
-      window.removeEventListener("touchcancel", onEnd);
-      setSize(pending);
-      try { if (storageKey) localStorage.setItem(storageKey, String(pending)); } catch (_) {}
-    };
-    if (isTouch) {
-      window.addEventListener("touchmove", onTouchMove, { passive: false });
-      window.addEventListener("touchend", onEnd);
-      window.addEventListener("touchcancel", onEnd);
-    } else {
-      window.addEventListener("mousemove", onMouseMove);
-      window.addEventListener("mouseup", onEnd);
-    }
-  }, [side, min, max, cssVar, storageKey]);
 
-  const onMouseDown = useCallback((e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    _startDrag(e, e.clientX, false);
-  }, [_startDrag]);
+      const apply = (clientX) => {
+        const dx = clientX - startX;
+        let next = side === 'left' ? startSize + dx : startSize - dx;
+        next = Math.max(min, Math.min(max, next));
+        if (next === pending) return;
+        pending = next;
+        if (cssVar) target.style.setProperty(cssVar, next + 'px');
+        else target.style.width = next + 'px';
+      };
+      const onMouseMove = (ev) => apply(ev.clientX);
+      const onTouchMove = (ev) => {
+        if (ev.touches && ev.touches.length) {
+          ev.preventDefault(); // 阻止拖拽时页面滚动
+          apply(ev.touches[0].clientX);
+        }
+      };
+      const onEnd = () => {
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onEnd);
+        window.removeEventListener('touchmove', onTouchMove);
+        window.removeEventListener('touchend', onEnd);
+        window.removeEventListener('touchcancel', onEnd);
+        setSize(pending);
+        try {
+          if (storageKey) localStorage.setItem(storageKey, String(pending));
+        } catch (_) {}
+      };
+      if (isTouch) {
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
+        window.addEventListener('touchend', onEnd);
+        window.addEventListener('touchcancel', onEnd);
+      } else {
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onEnd);
+      }
+    },
+    [side, min, max, cssVar, storageKey],
+  );
 
-  const onTouchStart = useCallback((e) => {
-    if (!e.touches || !e.touches.length) return;
-    _startDrag(e, e.touches[0].clientX, true);
-  }, [_startDrag]);
+  const onMouseDown = useCallback(
+    (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      _startDrag(e, e.clientX, false);
+    },
+    [_startDrag],
+  );
+
+  const onTouchStart = useCallback(
+    (e) => {
+      if (!e.touches || !e.touches.length) return;
+      _startDrag(e, e.touches[0].clientX, true);
+    },
+    [_startDrag],
+  );
 
   const onDoubleClick = useCallback(() => {
     setSize(defaultSize);
-    try { if (storageKey) localStorage.setItem(storageKey, String(defaultSize)); } catch (_) {}
+    try {
+      if (storageKey) localStorage.setItem(storageKey, String(defaultSize));
+    } catch (_) {}
   }, [defaultSize, storageKey]);
 
   return {
@@ -176,15 +196,15 @@ function useResizable({
       onMouseDown,
       onTouchStart,
       onDoubleClick,
-      role: "separator",
-      "aria-orientation": "vertical",
+      role: 'separator',
+      'aria-orientation': 'vertical',
       tabIndex: 0,
     },
   };
 }
 
 // ── ResizeHandle ─────────────────────────────────────────
-function ResizeHandle({ side = "left", ...rest }) {
+function ResizeHandle({ side = 'left', ...rest }) {
   // side='left' → 手柄出现在被拖元素的右边缘
   // side='right' → 手柄出现在被拖元素的左边缘
   return (
@@ -210,11 +230,11 @@ function chatComposerKey(e, onSend, options = {}) {
   // IME composing 检测 (3 种 fallback)
   if (e.nativeEvent && e.nativeEvent.isComposing) return;
   if (e.isComposing) return;
-  if (e.keyCode === 229) return;  // 老浏览器 IME 兼容码
-  if (e.key !== "Enter") return;
+  if (e.keyCode === 229) return; // 老浏览器 IME 兼容码
+  if (e.key !== 'Enter') return;
   if (e.metaKey || e.ctrlKey) {
     e.preventDefault();
-    if (typeof onSend === "function") onSend();
+    if (typeof onSend === 'function') onSend();
     return;
   }
   // Shift+Enter: 让默认行为生效 (换行)
@@ -222,7 +242,13 @@ function chatComposerKey(e, onSend, options = {}) {
   if (!enterToSend) return;
   // Enter → 发送
   e.preventDefault();
-  if (typeof onSend === "function") onSend();
+  if (typeof onSend === 'function') onSend();
 }
 
-export { useBreakpoint, useResizable, chatComposerKey, ResizeHandle, BREAKPOINTS as PL_BREAKPOINTS };
+export {
+  useBreakpoint,
+  useResizable,
+  chatComposerKey,
+  ResizeHandle,
+  BREAKPOINTS as PL_BREAKPOINTS,
+};
