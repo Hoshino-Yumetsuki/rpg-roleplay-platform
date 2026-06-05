@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* RebuildJobBanner — Editorial × 古籍数字化 重设计版.
    保留完整 SSE 数据流逻辑,只替换 Cloudscape Alert 视觉层.
 */

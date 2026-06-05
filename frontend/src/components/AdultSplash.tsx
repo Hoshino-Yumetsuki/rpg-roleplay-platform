@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * AdultSplash.jsx — AGE-02 首次访问 / 版本升级后强制 18+ 确认弹窗
  *

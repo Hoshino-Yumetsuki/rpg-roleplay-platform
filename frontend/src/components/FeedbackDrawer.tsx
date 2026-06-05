@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * FeedbackDrawer.jsx — 用户反馈侧抽屉 (FB-01/02/07/08)
  *

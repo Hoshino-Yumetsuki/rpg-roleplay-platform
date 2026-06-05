@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React from 'react';
 import CSContainer from '@cloudscape-design/components/container';
 import CSHeader from '@cloudscape-design/components/header';

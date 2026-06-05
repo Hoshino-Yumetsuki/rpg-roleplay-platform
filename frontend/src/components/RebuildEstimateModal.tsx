@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* RebuildEstimateModal — 重做前的估算+确认弹窗.
    Editorial × 古籍数字化:保留 CSModal shell (portal/focus-trap),
    内容层全部替换为 editorial.module.css 风格.

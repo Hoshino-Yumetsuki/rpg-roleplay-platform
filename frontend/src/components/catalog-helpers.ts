@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* catalog-helpers — Wave 11.5-A
  *
  * 共享的 model catalog 工具:

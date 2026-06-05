@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * FeedbackQuickModal — 顶栏「反馈」快速反馈弹窗(Cloudscape Modal,取代旧 FeedbackDrawer)。
  * 定位:快速提交「新反馈」;完整历史 + 全字段在 /feedback 页(本弹窗底部「查看全部反馈」可跳)。

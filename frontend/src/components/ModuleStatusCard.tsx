@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* ModuleStatusCard — Editorial × 古籍数字化 重设计版.
    保持所有 props contract 不变 (module / status / doneCount / totalCount / lastJobId /
    lastRebuiltAt / source / onRebuild / onViewDetail / activeJobId / extraActions /

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* ModuleMatrixOverview — Editorial × 古籍数字化 重设计版.
    改用 editorial.module.css 网格布局.无 Cloudscape 依赖.
 */

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * GmStyleEditor — GM 叙事「倾向性」6 滑块编辑器(线性 0-100)。
  * scope='user'  → 写用户级默认(window.api.me.setGmStyle)

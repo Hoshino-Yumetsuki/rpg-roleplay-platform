@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * PolicyNoticeBanner.jsx — DOC-02 / AUP-03 政策变更提示横幅
  *

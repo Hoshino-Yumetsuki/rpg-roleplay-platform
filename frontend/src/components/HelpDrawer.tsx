@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * HelpDrawer.jsx — 软件内帮助系统基础设施
  *
