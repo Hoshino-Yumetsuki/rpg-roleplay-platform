@@ -79,9 +79,9 @@ rpg/claude_design_upload/
 #  前端构建产物 / 用户上传图
 # 用户上传图片（私人 / 体积大）
 frontend/uploads/
-frontend/node_modules/
-frontend/dist/
-frontend/.next/
+node_modules/
+dist/
+.next/
 # 截图素材（体积变化大）
 frontend/screenshots/
 
