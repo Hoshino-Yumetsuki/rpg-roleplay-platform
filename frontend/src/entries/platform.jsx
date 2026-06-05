@@ -1,6 +1,6 @@
 // Platform 页面入口 — Vite ESM 版
 import '../web-vitals-rum.js';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 // 基础设施 side-effect 模块(设置 window.api / window.MOCK_* / SSE bridge 等)
 import '../mock-data.js';
