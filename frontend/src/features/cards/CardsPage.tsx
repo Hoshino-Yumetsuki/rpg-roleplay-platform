@@ -8,9 +8,9 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL, useCallback as useCallbackPL } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Icon } from '../game-icons.jsx';
-import { fmtBytes, ResizableSplit } from '../platform-app.jsx';
-import AgentModelPicker from '../components/AgentModelPicker.jsx';
+import { Icon } from '../console/GameIcons';
+import { fmtBytes, ResizableSplit } from '../platform/PlatformApp';
+import AgentModelPicker from '../../components/AgentModelPicker';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSHeader from '@cloudscape-design/components/header';
 import CSCards from '@cloudscape-design/components/cards';

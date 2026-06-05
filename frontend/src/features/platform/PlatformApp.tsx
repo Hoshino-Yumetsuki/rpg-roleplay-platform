@@ -5,14 +5,14 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL, useCallback as useCallbackPL } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Icon } from './game-icons.jsx';
-import { useResizable, ResizeHandle } from './responsive.jsx';
-import { plNavigate, appNavigate, plHardNavigate } from './router.js';
-import { MODELS_DATA } from './pages/settings.jsx';
+import { Icon } from '../console/GameIcons';
+import { useResizable, ResizeHandle } from '../../hooks/useResponsive';
+import { plNavigate, appNavigate, plHardNavigate } from '../../app/router';
+import { MODELS_DATA } from '../settings/SettingsPage';
 // ESM 重构遗漏修复:ContinuePicker / NewGameModal 的真实现在 pages/saves.jsx,
 // platform-app 之前留了返回 null 的 stub 遮蔽它们 → "继续游戏"/"新建存档" 全失效。
 // PlatformShell(本文件)直接渲染这两个组件,必须从真实现 import,不能用 stub。
-import { ContinuePicker, NewGameModal } from './pages/saves.jsx';
+import { ContinuePicker, NewGameModal } from '../saves/SavesPage';
 import {
   AdminUsersPage,
   AdminGlobalUsagePage,
@@ -28,10 +28,10 @@ import {
   AdminAupActionsPage,
   AdminFeedbackPage,
   AdminAchievementsPage,
-} from './pages/admin.jsx';
-import PolicyNoticeBanner from './components/PolicyNoticeBanner.jsx';
-import { FeedbackQuickModal } from './components/FeedbackQuickModal.jsx';
-import HelpDrawerRoot from './components/HelpDrawer.jsx';
+} from '../admin/AdminPage';
+import PolicyNoticeBanner from '../../components/PolicyNoticeBanner';
+import { FeedbackQuickModal } from '../../components/FeedbackQuickModal';
+import HelpDrawerRoot from '../../components/HelpDrawer';
 // Cloudscape shell(AWS 控制台架构 + 暖色主题)
 import CSTopNavigation from '@cloudscape-design/components/top-navigation';
 import CSAppLayout from '@cloudscape-design/components/app-layout';

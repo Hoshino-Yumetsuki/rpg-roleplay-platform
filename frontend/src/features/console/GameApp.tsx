@@ -5,11 +5,11 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { useState as useStateA, useEffect as useEffectA, useRef as useRefA, useMemo as useMemoA, useCallback as useCallbackA } from 'react';
-import { Icon } from './game-icons.jsx';
-import { RpgMarkdown } from './markdown-render.jsx';
-import { BranchGraph } from './branch-graph.jsx';
-import { useBreakpoint, useResizable, ResizeHandle } from './responsive.jsx';
-import { stripNarrativeOps } from './narrative-strip.js';
+import { Icon } from './GameIcons';
+import { RpgMarkdown } from './MarkdownRender';
+import { BranchGraph } from './BranchGraph';
+import { useBreakpoint, useResizable, ResizeHandle } from '../../hooks/useResponsive';
+import { stripNarrativeOps } from './NarrativeStrip';
 
 // ----------------------------- LEFT RAIL ---------------------------------
 function LeftRail({ collapsed, onToggle, state, runState, onNew, onSave, onSwitchSave, onMemoryMode, currentSaveId, saves, resizeHandle, mobileOpen }) {

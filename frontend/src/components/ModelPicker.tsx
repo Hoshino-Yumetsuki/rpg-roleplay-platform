@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { getCaps, normalizeProviderId } from './catalog-helpers.js';
+import { getCaps, normalizeProviderId } from './catalog-helpers';
 
 /**
  * ModelPicker — Wave 11-D

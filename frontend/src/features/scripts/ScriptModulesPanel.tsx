@@ -26,10 +26,10 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import CSSpaceBetween from '@cloudscape-design/components/space-between';
 
-import { ModuleStatusCard } from '../components/ModuleStatusCard.jsx';
-import { ModuleMatrixOverview } from '../components/ModuleMatrixOverview.jsx';
-import { RebuildJobBanner } from '../components/RebuildJobBanner.jsx';
-import { RebuildEstimateModal } from '../components/RebuildEstimateModal.jsx';
+import { ModuleStatusCard } from '../../components/ModuleStatusCard';
+import { ModuleMatrixOverview } from '../../components/ModuleMatrixOverview';
+import { RebuildJobBanner } from '../../components/RebuildJobBanner';
+import { RebuildEstimateModal } from '../../components/RebuildEstimateModal';
 
 export function useScriptRebuild(scriptId) {
   const { t } = useTranslation();

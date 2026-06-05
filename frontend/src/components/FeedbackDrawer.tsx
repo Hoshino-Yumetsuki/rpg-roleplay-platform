@@ -24,7 +24,7 @@ import CSFormField    from '@cloudscape-design/components/form-field';
 import CSContainer    from '@cloudscape-design/components/container';
 import CSHeader       from '@cloudscape-design/components/header';
 import CSExpandableSection from '@cloudscape-design/components/expandable-section';
-import { sha256hex } from '../lib/crypto-safe.js';
+import { sha256hex } from '../lib/crypto-safe';
 
 // ── 常量 ─────────────────────────────────────────────────────────────────────
 

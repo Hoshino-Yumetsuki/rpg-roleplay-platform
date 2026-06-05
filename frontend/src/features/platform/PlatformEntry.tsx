@@ -18,7 +18,7 @@ import '../i18n/index.js';   // 初始化 i18next + 接 interfaceLang
 
 // Cloudscape 设计系统 + 暖色主题(UI 底座)
 import '@cloudscape-design/global-styles/index.css';
-import { installWarmTheme } from '../cloudscape-theme.js';
+import { installWarmTheme } from '../../lib/cloudscape-theme';
 installWarmTheme();
 
 // 组件模块 — named import(ESM 自动拉入传递依赖)
@@ -27,17 +27,17 @@ import { PlatformShellCS, ProfilePage, MePage, ModulesPage, LibraryPage, UsagePa
   AdminLogsPage, AdminRegistrationPage, AdminSecurityPage, AdminMaintenancePage,
   AdminDmcaTakedownsPage, AdminDmcaStrikesPage, AdminCsamReportsPage, AdminAupActionsPage,
   AdminFeedbackPage, AdminAchievementsPage, PublicAchievementsPage,
-} from '../platform-app.jsx';
-import { SavesPage } from '../pages/saves.jsx';
-import { ScriptsPage } from '../pages/scripts.jsx';
-import { CardsPage } from '../pages/cards.jsx';
-import { SettingsPage } from '../pages/settings.jsx';
-import { FeedbackPage } from '../pages/feedback.jsx';
-import { plPathToPage, plNavigate, plPageToPath } from '../router.js';
+} from './PlatformApp';
+import { SavesPage } from '../saves/SavesPage';
+import { ScriptsPage } from '../scripts/ScriptsPage';
+import { CardsPage } from '../cards/CardsPage';
+import { SettingsPage } from '../settings/SettingsPage';
+import { FeedbackPage } from './FeedbackPage';
+import { plPathToPage, plNavigate, plPageToPath } from '../../app/router';
 
 // AGE-02: splash gate
-import AdultSplash from '../components/AdultSplash.jsx';
-import { ErrorBoundary } from '../components/ErrorBoundary.jsx';
+import AdultSplash from '../../components/AdultSplash';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 const SPLASH_VERSION = 'v1.0-2026-05-31';
 
 // ── 挂载 ──

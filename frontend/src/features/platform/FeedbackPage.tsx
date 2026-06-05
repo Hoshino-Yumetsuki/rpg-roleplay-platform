@@ -21,7 +21,7 @@ import CSHeader from '@cloudscape-design/components/header';
 import CSBadge from '@cloudscape-design/components/badge';
 import CSColumnLayout from '@cloudscape-design/components/column-layout';
 import CSSegmentedControl from '@cloudscape-design/components/segmented-control';
-import { sha256hex } from '../lib/crypto-safe.js';
+import { sha256hex } from '../../lib/crypto-safe';
 
 const CONSENT_TEXT = '我已阅读 AUP §2.J,理解不得包含成人主题节选,同意(此操作记录我的同意)';
 const AUP_LINK = 'https://play.stellatrix.icu/legal/aup#2J';

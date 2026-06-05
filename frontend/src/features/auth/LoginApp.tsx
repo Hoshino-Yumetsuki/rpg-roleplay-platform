@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 // login-app.jsx — 独立 Login 页主组件
 //
 // 设计基线:

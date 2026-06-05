@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ModuleStatusCard } from './ModuleStatusCard.jsx';
+import { ModuleStatusCard } from './ModuleStatusCard';
 import s from './editorial.module.css';
 
 const MODULE_ORDER = ['chunks', 'chapter_facts', 'canon', 'cards', 'worldbook', 'anchors', 'embeddings'];

@@ -7,12 +7,12 @@
 import React from 'react';
 import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL, useCallback as useCallbackPL } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Icon } from '../game-icons.jsx';
-import { ConfirmModal, SettingsToggle, useAutoSave, usePlatformData, useReactiveUser, publishUser, fmtN, ResizableSplit } from '../platform-app.jsx';
-import AgentModelPicker from '../components/AgentModelPicker.jsx';
-import GmStyleEditor from '../components/GmStyleEditor.jsx';
-import { getCaps as _getCapsImported } from '../components/catalog-helpers.js';
-import { plNavigate } from '../router.js';
+import { Icon } from '../console/GameIcons';
+import { ConfirmModal, SettingsToggle, useAutoSave, usePlatformData, useReactiveUser, publishUser, fmtN, ResizableSplit } from '../platform/PlatformApp';
+import AgentModelPicker from '../../components/AgentModelPicker';
+import GmStyleEditor from '../../components/GmStyleEditor';
+import { getCaps as _getCapsImported } from '../../components/catalog-helpers';
+import { plNavigate } from '../../app/router';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSContainer from '@cloudscape-design/components/container';
 import CSHeader from '@cloudscape-design/components/header';
@@ -198,7 +198,7 @@ function PrefSection() {
             { value: 'zh-TW', label: '繁體中文' },
             { value: 'en', label: 'English (Beta)' },
           ]}
-          onChange={(v) => { setInterfaceLang(v); save("ui_language", v); import('../i18n/index.js').then(m => m.changeLanguage(v)); }} />
+          onChange={(v) => { setInterfaceLang(v); save("ui_language", v); import('../../i18n/index').then(m => m.changeLanguage(v)); }} />
       </SetRow>
       <SetRow label={t('settings.preferences.serif_font')} description={t('settings.preferences.serif_font_desc')}>
         <CSToggle checked={serif} onChange={({ detail }) => { setSerif(detail.checked); save("serif", detail.checked); }}>

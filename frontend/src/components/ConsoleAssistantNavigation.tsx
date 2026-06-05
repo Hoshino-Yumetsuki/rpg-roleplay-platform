@@ -28,7 +28,7 @@
 window.__cap_navigation_installed = true;
 
 // ---------- 路由桥 ----------
-import { plNavigate, appNavigate, plPageToPath } from "./router.js";
+import { plNavigate, appNavigate, plPageToPath } from "../app/router";
 
 // ---------- 全局 dirty 表 ----------
 if (!(window.__cap_dirty_pages instanceof Map)) {

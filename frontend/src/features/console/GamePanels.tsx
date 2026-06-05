@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { useState, useMemo } from 'react';
-import { Icon } from './game-icons.jsx';
+import { Icon } from './GameIcons';
 import { useTranslation } from 'react-i18next';
 
 const PANEL_TABS = [

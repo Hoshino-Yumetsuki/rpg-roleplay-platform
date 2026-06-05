@@ -2,23 +2,23 @@
 // main.jsx — 全站唯一 ESM 入口。
 // 单 index.html + React Router:按路径懒加载 login / platform / console 三个路由块。
 // 取代原先 Login.html / Platform.html / Game Console.html 各自的 createRoot 入口。
-import './web-vitals-rum.js';
+import '../lib/web-vitals-rum';
 import React, { Suspense, lazy, useEffect } from 'react';
 import * as ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 
 // 全站共享基础设施(三区都用):API 客户端 / i18n / a11y 镜像。
-import './api-client.js';
-import './a11y-tooltip-labels.js';
-import './i18n/index.js';
+import '../lib/api-client';
+import '../lib/a11y-tooltip-labels';
+import '../i18n/index';
 
-import { ErrorBoundary } from './components/ErrorBoundary.jsx';
-import { setRouterNavigate } from './router.js';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { setRouterNavigate } from './router';
 
 // 区级懒加载:login / platform / console 各自独立 chunk(含各自的 side-effect 模块)。
-const LoginRoute = lazy(() => import('./entries/login.jsx'));
-const PlatformRoute = lazy(() => import('./entries/platform.jsx'));
-const ConsoleRoute = lazy(() => import('./entries/game-console.jsx'));
+const LoginRoute = lazy(() => import('../features/auth/LoginEntry'));
+const PlatformRoute = lazy(() => import('../features/platform/PlatformEntry'));
+const ConsoleRoute = lazy(() => import('../features/console/ConsoleEntry'));
 
 // React Router 的 navigate 注入 router.js,使非组件代码(plNavigate/appNavigate)可触发切区。
 function NavigationBridge() {

@@ -7,7 +7,7 @@
 //   或直接:  标题文本 <InfoHint text="说明…" label="上下文上限" />
 import React from 'react';
 import CSPopover from '@cloudscape-design/components/popover';
-import { Icon } from '../game-icons.jsx';
+import { Icon } from '../features/console/GameIcons';
 
 export default function InfoHint({ text, label }) {
   if (!text) return null;

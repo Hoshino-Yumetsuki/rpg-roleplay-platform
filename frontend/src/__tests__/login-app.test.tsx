@@ -8,7 +8,7 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import { LoginApp } from '../login-app.jsx';
+import { LoginApp } from '../features/auth/LoginApp';
 
 // Mock schema response matching the backend auth.rs format
 const MOCK_SCHEMA = {

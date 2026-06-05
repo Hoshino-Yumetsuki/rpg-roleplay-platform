@@ -27,7 +27,7 @@
 
 import React from 'react';
 import { useMemo as useMemoB, useState as useStateB, useEffect as useEffectB } from 'react';
-import { Icon } from './game-icons.jsx';
+import { Icon } from './GameIcons';
 
 // 颜色调色板:column index → CSS 变量。循环复用。
 // VSCode Git Graph 默认 8 色,我们对齐主题用 6 色。

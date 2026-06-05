@@ -20,7 +20,7 @@ import React from 'react';
 import CSModal  from '@cloudscape-design/components/modal';
 import Box      from '@cloudscape-design/components/box';
 import Button   from '@cloudscape-design/components/button';
-import { RpgMarkdown } from '../markdown-render.jsx';
+import { RpgMarkdown } from '../features/console/MarkdownRender';
 import INDEX from '../../help/__index.json';
 
 // ── 静态收录所有帮助 md(相对于本文件: src/components → ../../help/) ─────────

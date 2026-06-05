@@ -13,8 +13,8 @@ import CSSpaceBetween from '@cloudscape-design/components/space-between';
 import CSTextarea from '@cloudscape-design/components/textarea';
 import CSCheckbox from '@cloudscape-design/components/checkbox';
 import CSFormField from '@cloudscape-design/components/form-field';
-import { sha256hex } from '../lib/crypto-safe.js';
-import { plNavigate } from '../router.js';
+import { sha256hex } from '../lib/crypto-safe';
+import { plNavigate } from '../app/router';
 
 const CONSENT_TEXT = '我已阅读 AUP §2.J,理解不得包含成人主题节选,同意(此操作记录我的同意)';
 const AUP_LINK = 'https://play.stellatrix.icu/legal/aup#2J';

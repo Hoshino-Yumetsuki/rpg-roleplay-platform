@@ -12,7 +12,7 @@
 import React from 'react';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { usePlatformData } from '../platform-app.jsx';
+import { usePlatformData } from '../platform/PlatformApp';
 
 import CSHeader from '@cloudscape-design/components/header';
 import CSTable from '@cloudscape-design/components/table';

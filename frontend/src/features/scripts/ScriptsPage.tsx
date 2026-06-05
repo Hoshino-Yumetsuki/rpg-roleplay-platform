@@ -8,21 +8,21 @@
 import React from 'react';
 import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL, useCallback as useCallbackPL } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Icon } from '../game-icons.jsx';
-import { plNavigate } from '../router.js';
-import { PromptModal, usePlatformData, fmtBytes, fmtN, ResizableSplit } from '../platform-app.jsx';
-import { CardEditModal, cardSnippet } from './cards.jsx';
-import { NewGameModal } from './saves.jsx';
-import { ScriptReview } from './script-review.jsx';
-import { WorldbookEditorView } from './script-edit-worldbook.jsx';
+import { Icon } from '../console/GameIcons';
+import { plNavigate } from '../../app/router';
+import { PromptModal, usePlatformData, fmtBytes, fmtN, ResizableSplit } from '../platform/PlatformApp';
+import { CardEditModal, cardSnippet } from '../cards/CardsPage';
+import { NewGameModal } from '../saves/SavesPage';
+import { ScriptReview } from './ScriptReview';
+import { WorldbookEditorView } from './ScriptEditWorldbook';
 // phase_rebuild_panel: 模块矩阵重做面板
-import { useScriptRebuild, ModuleRebuildPanel } from './script-modules-panel.jsx';
-import AgentModelPicker from '../components/AgentModelPicker.jsx';
-import GmStyleEditor from '../components/GmStyleEditor.jsx';
-import { ModuleStatusCard } from '../components/ModuleStatusCard.jsx';
-import { ModuleMatrixOverview } from '../components/ModuleMatrixOverview.jsx';
-import { RebuildJobBanner } from '../components/RebuildJobBanner.jsx';
-import { RebuildEstimateModal } from '../components/RebuildEstimateModal.jsx';
+import { useScriptRebuild, ModuleRebuildPanel } from './ScriptModulesPanel';
+import AgentModelPicker from '../../components/AgentModelPicker';
+import GmStyleEditor from '../../components/GmStyleEditor';
+import { ModuleStatusCard } from '../../components/ModuleStatusCard';
+import { ModuleMatrixOverview } from '../../components/ModuleMatrixOverview';
+import { RebuildJobBanner } from '../../components/RebuildJobBanner';
+import { RebuildEstimateModal } from '../../components/RebuildEstimateModal';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSHeader from '@cloudscape-design/components/header';
 import CSTable from '@cloudscape-design/components/table';

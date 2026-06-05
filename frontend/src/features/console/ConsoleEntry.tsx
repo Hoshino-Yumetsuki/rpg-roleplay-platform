@@ -17,21 +17,21 @@ import '../console-assistant-navigation.jsx';
 
 // 反馈抽屉使用 Cloudscape 组件；游戏页也必须加载同一套暗色主题。
 import '@cloudscape-design/global-styles/index.css';
-import { installWarmTheme } from '../cloudscape-theme.js';
+import { installWarmTheme } from '../../lib/cloudscape-theme';
 installWarmTheme();
 
 // 组件模块 — named import
-import { useResizable } from '../responsive.jsx';
-import { safeUUID } from '../lib/crypto-safe.js';
-import { LeftRail, TopBar, ChatArea, HistoryDrawer, SearchDrawer, GameToastStack, RunSteps, GameSettingsModal } from '../game-app.jsx';
-import { Composer, ConfirmStrip } from '../game-composer.jsx';
-import { RightPanel, PANEL_TABS } from '../game-panels.jsx';
-import ModelPicker from '../components/ModelPicker.jsx';
+import { useResizable } from '../../hooks/useResponsive';
+import { safeUUID } from '../../lib/crypto-safe';
+import { LeftRail, TopBar, ChatArea, HistoryDrawer, SearchDrawer, GameToastStack, RunSteps, GameSettingsModal } from './GameApp';
+import { Composer, ConfirmStrip } from './GameComposer';
+import { RightPanel, PANEL_TABS } from './GamePanels';
+import ModelPicker from '../../components/ModelPicker';
 // AGE-02: splash gate
-import AdultSplash from '../components/AdultSplash.jsx';
-import { ErrorBoundary } from '../components/ErrorBoundary.jsx';
-import { FeedbackDrawerRoot } from '../components/FeedbackDrawer.jsx';
-import { appNavigate } from '../router.js';
+import AdultSplash from '../../components/AdultSplash';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { FeedbackDrawerRoot } from '../../components/FeedbackDrawer';
+import { appNavigate } from '../../app/router';
 const SPLASH_VERSION = 'v1.0-2026-05-31';
 
 // density preset + narrative font init（等价原 HTML 非 babel inline script）

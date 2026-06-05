@@ -9,17 +9,17 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL, useCallback as useCallbackPL } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Icon } from '../game-icons.jsx';
-import { plNavigate } from '../router.js';
-import { ConfirmModal, useShellChrome, ResizableSplit } from '../platform-app.jsx';
-import { BranchGraph } from '../branch-graph.jsx';
-import { NewGameWizard } from './new-game-wizard.jsx';
-import { CardSheet, CardEditFields, cardFormInit, cardFormPayload } from './cards.jsx';
+import { Icon } from '../console/GameIcons';
+import { plNavigate } from '../../app/router';
+import { ConfirmModal, useShellChrome, ResizableSplit } from '../platform/PlatformApp';
+import { BranchGraph } from '../console/BranchGraph';
+import { NewGameWizard } from '../console/NewGameWizard';
+import { CardSheet, CardEditFields, cardFormInit, cardFormPayload } from '../cards/CardsPage';
 import {
   PageHeader, SplitLayout, ResourceList, Tabs, FormSection,
   Btn, Badge, KeyValue, StatusIndicator, ConfirmDialog, Flashbar, useFlash,
   Field as UiField, Select as UiSelect, TextInput as UiInput,
-} from '../ui/kit.jsx';
+} from '../../lib/kit';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSHeader from '@cloudscape-design/components/header';
 import CSTable from '@cloudscape-design/components/table';

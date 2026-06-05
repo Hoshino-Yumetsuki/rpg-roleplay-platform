@@ -5,8 +5,8 @@
 
 import React from 'react';
 import { useState as useStateC, useRef as useRefC, useEffect as useEffectC } from 'react';
-import { Icon } from './game-icons.jsx';
-import { chatComposerKey } from './responsive.jsx';
+import { Icon } from './GameIcons';
+import { chatComposerKey } from '../../hooks/useResponsive';
 import { useTranslation } from 'react-i18next';
 
 const SLASH_COMMANDS = [
