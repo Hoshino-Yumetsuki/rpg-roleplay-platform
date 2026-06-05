@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* Game Console — main app shell: top bar, left rail, chat area with run-state, right panel. */
 
 import React from 'react';

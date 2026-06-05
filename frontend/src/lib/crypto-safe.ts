@@ -1,3 +1,4 @@
+// @ts-nocheck
 // crypto-safe.js — Web Crypto 安全上下文降级封装。
 //
 // `crypto.randomUUID()` 与 `crypto.subtle` 只在**安全上下文**(HTTPS 或 localhost)

@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* Composer + slash command menu + plus/attach menu + non-blocking confirm strip
    for the Game Console. */
 

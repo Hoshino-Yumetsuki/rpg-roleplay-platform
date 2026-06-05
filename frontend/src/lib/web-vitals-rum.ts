@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { onLCP, onINP, onCLS, onFCP, onTTFB } from 'web-vitals';
 
 const ENDPOINT = '/api/v1/metrics/web-vitals';

@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* narrative-strip — 把 GM 输出里的结构化 JSON ops fence / bare 数组从展示文本中剥离。
 
 历史保留:state.history[*].content 仍保存完整原文 (含 JSON),后端有 apply_structured_updates

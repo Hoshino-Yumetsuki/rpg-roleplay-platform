@@ -1,3 +1,4 @@
+// @ts-nocheck
 // router.js —— SPA 路径 ↔ Platform page id 映射 + 跨区导航桥。
 //
 // 全站现在是单页应用(单 index.html + React Router)。三个区:

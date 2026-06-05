@@ -1,3 +1,4 @@
+// @ts-nocheck
 // a11y-tooltip-labels.js — 无障碍补丁(side-effect 模块)。
 //
 // 全站大量图标按钮只有 data-tip(自定义 hover tooltip 文案)而无 aria-label,

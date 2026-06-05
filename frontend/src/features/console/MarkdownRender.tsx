@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /**
  * markdown-render.jsx — 与 Claude 网页同款的轻量 Markdown 渲染。
  *

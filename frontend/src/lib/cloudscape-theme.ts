@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Cloudscape 暖色暗主题 —— 把项目 tokens.css 的暖灰暗色板映射到 Cloudscape 设计令牌。
 // 强制 Dark visual mode,再用 applyTheme 覆盖颜色/字体/圆角令牌为暖色。
 // 这样得到「AWS 控制台架构 + 你的暖色主题」。

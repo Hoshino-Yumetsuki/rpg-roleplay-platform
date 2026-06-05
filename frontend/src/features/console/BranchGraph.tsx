@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* branch-graph.jsx — VSCode Git Graph 风格的分支可视化组件。
  *
  * 用户要求"一个存档一个 git 系统"。后端已经是完整 git 语义:

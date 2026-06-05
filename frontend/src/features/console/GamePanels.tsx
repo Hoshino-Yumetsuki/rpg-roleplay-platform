@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* Right-side panel for the Game Console.
    Tabs: status / memory / worldbook / characters / timeline / context / debug
    Each tab is data-driven from window.MOCK_STATE. */

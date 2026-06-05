@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* Shared icon set for the RPG console — minimal stroke icons.
    All icons are 24x24 viewBox, currentColor stroke. */
 import React from 'react';

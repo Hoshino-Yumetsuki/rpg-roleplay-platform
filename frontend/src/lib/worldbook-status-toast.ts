@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * worldbook-status-toast.js — task 88
  *

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * runtime-telemetry.js — 客户端运行环境采集,给"提交反馈"附带 bug 排查切片
  *

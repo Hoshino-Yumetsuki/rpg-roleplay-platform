@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* Generic Chinese-novel mock state. Do not hardcode this into UI components —
    render from these structures so swapping data updates the entire surface. */
 

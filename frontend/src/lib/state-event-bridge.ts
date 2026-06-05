@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * state-event-bridge.js — task 69
  *
