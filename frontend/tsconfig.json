@@ -1,11 +1,4 @@
 {
-  // 渐进式 TypeScript 迁移配置
-  // checkJs=false 初始设置:现有 .jsx/.js 文件有大量 window.* 动态属性和 React global 用法,
-  // 强制 checkJs 会产生 1000+ 错误。初期只让新建 .ts/.tsx 文件受检查。
-  // 迁移路线:
-  //   1. 新功能用 .ts/.tsx 编写,享受完整类型检查
-  //   2. 逐步把 .jsx 改成 .tsx,解决对应错误
-  //   3. 全部迁完后再把 checkJs 改回 true
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -13,19 +6,39 @@
     "jsx": "preserve",
     "allowJs": true,
     "checkJs": false,
-    "strict": false,
+    "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "allowImportingTsExtensions": false,
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": false,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
     "paths": {
+      "@/*": ["./src/*"],
       "@/types/*": ["./src/types/rust/*"],
-      "@/events/*": ["./src/types/rust/events/*"]
-    }
+      "@/events/*": ["./src/types/rust/events/*"],
+      "@/components/*": ["./src/components/*"],
+      "@/lib/*": ["./src/lib/*"],
+      "@/hooks/*": ["./src/hooks/*"],
+      "@/features/*": ["./src/features/*"],
+      "@/app/*": ["./src/app/*"],
+      "@/i18n/*": ["./src/i18n/*"],
+      "@/styles/*": ["./src/styles/*"]
+    },
+    "baseUrl": ".",
+    "types": []
   },
-  "include": ["src/**/*.js", "src/**/*.jsx", "src/**/*.ts", "src/**/*.tsx", "src/types/**/*.ts"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.js",
+    "src/**/*.jsx",
+    "src/types/**/*.d.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }
