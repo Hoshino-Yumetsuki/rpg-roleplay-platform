@@ -1,5 +1,4 @@
-// @ts-nocheck
-// main.jsx — 全站唯一 ESM 入口。
+// main.tsx — 全站唯一 ESM 入口。
 // 单 index.html + React Router:按路径懒加载 login / platform / console 三个路由块。
 // 取代原先 Login.html / Platform.html / Game Console.html 各自的 createRoot 入口。
 import '../lib/web-vitals-rum';
@@ -75,7 +74,7 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <App />
   </ErrorBoundary>,

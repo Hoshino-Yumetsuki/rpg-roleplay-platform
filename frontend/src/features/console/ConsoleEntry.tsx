@@ -1,19 +1,19 @@
 // @ts-nocheck
-// Game Console 路由块 — 由 main.jsx 懒加载,挂载于 /console。
-// 共享基础设施(web-vitals / api-client / a11y / i18n)已由 main.jsx 预加载,此处不重复;
+// Game Console 路由块 — 由 main.tsx 懒加载,挂载于 /console。
+// 共享基础设施(web-vitals / api-client / a11y / i18n)已由 main.tsx 预加载,此处不重复;
 // 仅保留 console 专属的 side-effect 模块。
 import React from 'react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 
 // 基础设施 side-effect 模块
-import '../mock-data.js';
+import '../../lib/mock-data';
 // 运行环境采集 — 反馈抽屉提交时附带最近 20 个错误 + 10 个失败 API 给管理员排查
-import '../runtime-telemetry.js';
-import '../data-loader.js';
-import '../state-event-bridge.js';
-import '../worldbook-status-toast.js';
-import '../ui-atlas.js';
-import '../console-assistant-navigation.jsx';
+import '../../lib/runtime-telemetry';
+import '../../lib/data-loader';
+import '../../lib/state-event-bridge';
+import '../../lib/worldbook-status-toast';
+import '../../lib/ui-atlas';
+import '../../components/ConsoleAssistantNavigation';
 
 // 反馈抽屉使用 Cloudscape 组件；游戏页也必须加载同一套暗色主题。
 import '@cloudscape-design/global-styles/index.css';

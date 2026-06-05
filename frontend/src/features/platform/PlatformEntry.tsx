@@ -1,20 +1,20 @@
 // @ts-nocheck
 // Platform 页面入口 — Vite ESM 版
-import '../web-vitals-rum.js';
+import '../../lib/web-vitals-rum';
 import React, { useState, useEffect } from 'react';
 
 // 基础设施 side-effect 模块(设置 window.api / window.MOCK_* / SSE bridge 等)
-import '../mock-data.js';
-import '../api-client.js';
-import '../a11y-tooltip-labels.js'; // data-tip → aria-label 镜像(屏幕阅读器)
+import '../../lib/mock-data';
+import '../../lib/api-client';
+import '../../lib/a11y-tooltip-labels'; // data-tip → aria-label 镜像(屏幕阅读器)
 // 运行环境采集 — 反馈抽屉提交时附带最近 20 个错误 + 10 个失败 API 给管理员排查
-import '../runtime-telemetry.js';
-import '../data-loader.js';
-import '../state-event-bridge.js';
-import '../worldbook-status-toast.js';
-import '../ui-atlas.js';
-import '../console-assistant-navigation.jsx';
-import '../i18n/index.js'; // 初始化 i18next + 接 interfaceLang
+import '../../lib/runtime-telemetry';
+import '../../lib/data-loader';
+import '../../lib/state-event-bridge';
+import '../../lib/worldbook-status-toast';
+import '../../lib/ui-atlas';
+import '../../components/ConsoleAssistantNavigation';
+import '../../i18n/index'; // 初始化 i18next + 接 interfaceLang
 
 // Cloudscape 设计系统 + 暖色主题(UI 底座)
 import '@cloudscape-design/global-styles/index.css';
