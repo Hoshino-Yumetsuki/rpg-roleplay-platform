@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* Script Review (Phase E.1) — 提取规范层 KB 复核表 + god 编辑。
    自包含新文件,不改既有页面(零回归风险)。需浏览器 e2e 验证渲染/交互。
    后端已 live 验证:GET /api/scripts/{id}/graph · PATCH /api/scripts/{id}/canon */

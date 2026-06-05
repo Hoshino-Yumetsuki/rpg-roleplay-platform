@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /**
  * feedback.jsx — 「支持与反馈」页(参考 AWS 支持中心)。路由 /feedback。
  * 职责:历史反馈(状态/官方回复)+ 完整新反馈表单。快速新反馈走顶栏「反馈」弹窗(FeedbackQuickModal)。

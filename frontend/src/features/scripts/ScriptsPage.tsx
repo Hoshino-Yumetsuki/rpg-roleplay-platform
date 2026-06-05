@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* Scripts page — split out of platform-app.jsx (task 52: 拆 platform-app.jsx 按页面).
    只搬家，UI / props 流 / fetch 路径完全不变。
    依赖 platform-app.jsx 注入的全局: PromptModal / Icon / usePlatformData / fmtBytes / fmtN

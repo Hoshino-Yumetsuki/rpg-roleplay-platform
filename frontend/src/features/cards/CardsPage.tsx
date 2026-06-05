@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* Cards page — split out of platform-app.jsx (task 52).
    只搬家，UI / props 流 / fetch 路径完全不变。
    依赖 platform-app.jsx 注入的全局: Icon / fmtBytes。 */

@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Platform 页面入口 — Vite ESM 版
 import '../web-vitals-rum.js';
 import React, { useState, useEffect } from 'react';

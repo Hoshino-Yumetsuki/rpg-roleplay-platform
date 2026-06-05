@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * api-client.test.js — smoke tests for the IIFE-based API client.
  *

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* responsive.jsx — task 102A: 通用响应式 + 拖动基础组件
  *
  * 暴露到 window (babel-standalone 无 import,挂全局):

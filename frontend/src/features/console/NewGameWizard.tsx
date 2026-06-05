@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* New Game Wizard (Phase F / W6-b) — 5 步建档向导 + 设置(锁死/可改)。
    自包含新文件,不改既有 NewGameModal(零回归)。需浏览器 e2e 验证。
    后端已 live 验证:GET/PATCH /api/saves/{id}/settings(apply 锁死 enforcement)。

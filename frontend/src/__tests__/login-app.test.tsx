@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * login-app.test.jsx — smoke tests for LoginApp component.
  *

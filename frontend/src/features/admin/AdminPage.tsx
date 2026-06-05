@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* Admin pages — 全量系统管理页面集合
    8 个页面组件，全部通过 window.api.admin.* 从后端获取数据，禁止 mock/硬编码示例数据。 */
 

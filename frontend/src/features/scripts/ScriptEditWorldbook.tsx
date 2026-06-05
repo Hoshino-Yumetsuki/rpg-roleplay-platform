@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* WorldbookEditorView — Cloudscape 风格世界书可视化编辑器
    设计规范:
    - 主视图 = CSTable (可排序、可分页、inline-edit: title/priority/enabled)

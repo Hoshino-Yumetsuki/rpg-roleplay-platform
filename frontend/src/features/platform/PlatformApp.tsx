@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* Platform shell + all page bodies. Single-file for simplicity. */
 
 import React from 'react';

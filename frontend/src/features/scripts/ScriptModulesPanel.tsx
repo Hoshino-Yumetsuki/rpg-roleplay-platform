@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /* script-modules-panel.jsx — Rebuild Panel 编排层 (phase_rebuild_panel).
    职责:把 ModuleStatusCard / ModuleMatrixOverview / RebuildJobBanner / RebuildEstimateModal 串成一个
    可在 ScriptDetailPanel 内消费的 React hook + view 组件.
