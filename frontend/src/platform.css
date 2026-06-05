@@ -1534,6 +1534,23 @@ button, a, [role="button"], .btn, .iconbtn, summary, label {
   border-radius: var(--r-3);
   background: var(--panel);
 }
+
+/* 平台资源网格：桌面 4 列(对齐原 Cloudscape columns={4}),手机端塌成 2×2。
+   不依赖 Cloudscape 响应式(它在窄屏会塌成单列 1×4,太长)。 */
+.pl-resources-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.pl-resources-grid > div {
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .pl-resources-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .pl-me-avatar {
   width: 88px; height: 88px;
   border-radius: 999px;
