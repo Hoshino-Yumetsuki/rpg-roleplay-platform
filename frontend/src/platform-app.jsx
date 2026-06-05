@@ -2155,7 +2155,7 @@ function ProfilePage() {
 
       {/* 平台资源概览 */}
       <CSContainer header={<CSHeader variant="h2">平台资源</CSHeader>}>
-        <CSColumnLayout columns={4} variant="text-grid">
+        <div className="pl-resources-grid">
           <div>
             <CSBox variant="awsui-key-label">剧本</CSBox>
             <CSBox fontSize="display-l" fontWeight="bold">{realScripts.length}</CSBox>
@@ -2176,7 +2176,7 @@ function ProfilePage() {
             <CSBox fontSize="display-l" fontWeight="bold">{fmtN(stats?.assets)}</CSBox>
             <CSBox color="text-body-secondary" fontSize="body-s">用量详见 <a href="/usage" onClick={(e) => { e.preventDefault(); plNavigate('usage'); }} style={{borderBottom: "1px dotted var(--muted-2)"}}>用量页</a></CSBox>
           </div>
-        </CSColumnLayout>
+        </div>
       </CSContainer>
 
       {/* 系统状态(身份资料见「个人主页」,此处不重复) */}
