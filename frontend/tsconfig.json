@@ -20,8 +20,6 @@
     "noFallthroughCasesInSwitch": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@/types/*": ["./src/types/rust/*"],
-      "@/events/*": ["./src/types/rust/events/*"],
       "@/components/*": ["./src/components/*"],
       "@/lib/*": ["./src/lib/*"],
       "@/hooks/*": ["./src/hooks/*"],
@@ -40,5 +38,5 @@
     "src/**/*.jsx",
     "src/types/**/*.d.ts"
   ],
-  "exclude": ["node_modules", "dist", "src/types/rust"]
+  "exclude": ["node_modules", "dist"]
 }
