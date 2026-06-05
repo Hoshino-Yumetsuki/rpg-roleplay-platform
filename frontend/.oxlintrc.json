@@ -11,8 +11,7 @@
     "no-var": "warn",
     "no-console": "off",
     "typescript/no-explicit-any": "off",
-    "react/jsx-key": "warn",
-    "react/no-dangerously-set-innerhtml": "off"
+    "react/jsx-key": "warn"
   },
   "env": {
     "browser": true,
@@ -46,5 +45,5 @@
     "Error": "readonly",
     "Promise": "readonly"
   },
-  "ignorePatterns": ["dist/**", "node_modules/**"]
+  "ignorePatterns": ["dist/**", "node_modules/**", "tests/**"]
 }

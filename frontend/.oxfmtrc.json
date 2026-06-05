@@ -1,11 +1,13 @@
 {
   "indent": { "type": "space", "width": 2 },
-  "lineWidth": 100,
+  "lineWidth": 80,
   "lineEnding": "lf",
-  "semicolons": "always",
+  "semicolons": "as-needed",
   "singleQuote": true,
   "jsxQuoteStyle": "double",
-  "trailingCommas": "es5",
+  "trailingCommas": "none",
   "arrowParentheses": "always",
-  "bracketSpacing": true
+  "bracketSpacing": true,
+  "attributePosition": "auto",
+  "ignorePatterns": ["*.md"]
 }
