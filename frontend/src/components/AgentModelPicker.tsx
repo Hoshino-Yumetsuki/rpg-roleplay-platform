@@ -198,16 +198,7 @@ export default function AgentModelPicker({
                   ? { value: apiId, label: apiId + ' (未配 key)' }
                   : null;
             })()}
-<<<<<<< HEAD:frontend/src/components/AgentModelPicker.tsx
-            options={apis
-              .filter((a) => credApiIds.has(a.api_id || a.id))
-              .map((a) => ({
-                value: a.api_id || a.id,
-                label: a.display_name || a.name || a.api_id || a.id,
-              }))}
-=======
             options={providerOptions}
->>>>>>> felixchaos/main:frontend/src/components/AgentModelPicker.jsx
             placeholder={credApiIds.size === 0 ? '请先配 API key' : '选择 provider'}
             onChange={({ detail }) => {
               const aid = detail.selectedOption.value;
@@ -227,54 +218,44 @@ export default function AgentModelPicker({
             empty="还没配 API key"
           />
         </CSFormField>
-<<<<<<< HEAD:frontend/src/components/AgentModelPicker.tsx
-        <CSFormField label="Model">
-          <CSSelect
-            selectedOption={(() => {
-              const m = modelsOf(apiId).find((x) => (x.real_name || x.id) === model);
-              return m
-                ? { value: model, label: m.display_name || m.real_name || m.id }
-                : model
-                  ? { value: model, label: model }
-                  : null;
-            })()}
-            options={modelsOf(apiId)
-              .filter((m) => !isEmbeddingOnly(m))
-              .map((m) => ({
-                value: m.real_name || m.id,
-                label: `${m.display_name || m.real_name || m.id}${m.enabled === false ? ' (禁用)' : ''}`,
-                disabled: m.enabled === false,
-              }))}
-            placeholder="选择模型"
-            onChange={({ detail }) => {
-              const mid = detail.selectedOption.value;
-              setModel(mid);
-              persist(apiId, mid);
-            }}
-            disabled={saving || !apiId}
-          />
-=======
-        <CSFormField label="Model" description="列表没有你的模型时,直接填写服务商实际 model 名称并保存。">
+        <CSFormField
+          label="Model"
+          description="列表没有你的模型时,直接填写服务商实际 model 名称并保存。"
+        >
           <div style={{ display: 'grid', gap: 8 }}>
             {modelOptions.length > 0 && (
               <CSSelect
                 selectedOption={(() => {
                   const m = modelsOf(apiId).find((x) => (x.real_name || x.id) === model);
-                  return m ? { value: model, label: m.display_name || m.real_name || m.id }
-                    : (model ? { value: model, label: model } : null);
+                  return m
+                    ? { value: model, label: m.display_name || m.real_name || m.id }
+                    : model
+                      ? { value: model, label: model }
+                      : null;
                 })()}
                 options={modelOptions}
                 placeholder="选择模型"
-                onChange={({ detail }) => { const mid = detail.selectedOption.value; setModel(mid); persist(apiId, mid); }}
+                onChange={({ detail }) => {
+                  const mid = detail.selectedOption.value;
+                  setModel(mid);
+                  persist(apiId, mid);
+                }}
                 disabled={saving || !apiId}
               />
             )}
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8 }}>
               <CSInput
                 value={model}
-                placeholder={modelOptions.length ? '或手动填写模型名,例如 gpt-4o-mini' : '填写模型名,例如 gpt-4o-mini'}
+                placeholder={
+                  modelOptions.length
+                    ? '或手动填写模型名,例如 gpt-4o-mini'
+                    : '填写模型名,例如 gpt-4o-mini'
+                }
                 onChange={({ detail }) => setModel(detail.value)}
-                onBlur={() => { const m = (model || '').trim(); if (apiId && m) persist(apiId, m); }}
+                onBlur={() => {
+                  const m = (model || '').trim();
+                  if (apiId && m) persist(apiId, m);
+                }}
                 disabled={saving || !apiId}
               />
               <CSButton
@@ -286,7 +267,6 @@ export default function AgentModelPicker({
               </CSButton>
             </div>
           </div>
->>>>>>> felixchaos/main:frontend/src/components/AgentModelPicker.jsx
         </CSFormField>
       </CSColumnLayout>
     </>
