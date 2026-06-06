@@ -49,6 +49,50 @@ const _saveSortOpts = (t) => [
 ];
 
 const _AWAPI = () => (window.__API_BASE || '');
+const NEWGAME_ACTIVE_IMPORT_STATUSES = new Set(["queued", "pending", "running", "processing", "importing", "started"]);
+const NEWGAME_IMPORT_TERMINAL_STATUSES = new Set(["done", "done_with_errors", "partial", "failed", "cancelled"]);
+const NEWGAME_BLOCKING_READINESS_KEYS = new Set(["chunks", "anchors"]);
+
+function newGameReadinessLabel(key, t) {
+  return t(`scripts.my.readiness_label_${key}`, { defaultValue: key });
+}
+
+function newGameActiveJobBlockReason(payload, t) {
+  const job = payload?.job || payload?.active_job || payload;
+  const status = String(job?.status || payload?.status || "").trim().toLowerCase();
+  if (status && NEWGAME_ACTIVE_IMPORT_STATUSES.has(status) && !NEWGAME_IMPORT_TERMINAL_STATUSES.has(status)) {
+    return t('saves.new_game.script_not_ready_importing');
+  }
+  if (payload?.active === true && (!status || !NEWGAME_IMPORT_TERMINAL_STATUSES.has(status))) {
+    return t('saves.new_game.script_not_ready_importing');
+  }
+  return "";
+}
+
+function newGameScriptBlockReason(script, t) {
+  if (!script) return "";
+  const status = String(
+    script.import_status
+    || script.job_status
+    || script.active_job?.status
+    || script.readiness?.active_job?.status
+    || ""
+  ).trim().toLowerCase();
+  if (status && NEWGAME_ACTIVE_IMPORT_STATUSES.has(status) && !NEWGAME_IMPORT_TERMINAL_STATUSES.has(status)) {
+    return t('saves.new_game.script_not_ready_importing');
+  }
+  const missing = Array.isArray(script.readiness?.missing) ? script.readiness.missing : [];
+  const blocking = missing.filter((key) => NEWGAME_BLOCKING_READINESS_KEYS.has(key));
+  if (blocking.length > 0) {
+    return t('saves.new_game.script_not_ready_missing', {
+      items: blocking.map((key) => newGameReadinessLabel(key, t)).join('、'),
+    });
+  }
+  if (Number(script.chapter_count || 0) <= 0) {
+    return t('saves.new_game.script_not_ready_missing', { items: newGameReadinessLabel('chunks', t) });
+  }
+  return "";
+}
 
 /* 就地设置表单(取代「游戏设置」弹窗向导)— 一屏展示全部字段,直接 PATCH。
    建档锁死项由后端 enforce:is_create=false 时被拒,前端用 flash 提示。 */
@@ -1867,10 +1911,11 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
       } else {
         let remembered = "";
         try { remembered = localStorage.getItem("newgame.lastScriptId") || ""; } catch (_) {}
-        if (remembered && scList.some(x => String(x.id) === remembered)) {
+        if (remembered && scList.some(x => String(x.id) === remembered && !newGameScriptBlockReason(x, t))) {
           pickId = remembered;
         } else {
-          pickId = scList.length ? String(scList[0].id) : "";
+          const firstPlayable = scList.find(x => !newGameScriptBlockReason(x, t));
+          pickId = firstPlayable ? String(firstPlayable.id) : (scList.length ? String(scList[0].id) : "");
         }
       }
       setScriptId(pickId);
@@ -1904,7 +1949,9 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
   ];
 
   // 各必填模块完成校验(单页:不再按步骤 gating,只用于概要 + 创建按钮)
-  const step1Valid = title.trim() && scriptId;
+  const selectedScript = scripts.find(sc => String(sc.id) === String(scriptId)) || null;
+  const scriptBlockReason = newGameScriptBlockReason(selectedScript, t);
+  const step1Valid = title.trim() && scriptId && !scriptBlockReason;
   const step2Valid = (roleMode === "existing" && pickedCard) || (roleMode === "new" && newCardForm.name.trim());
   const step3Valid = !!birthpoint;
   // 身份卡是 overlay,和玩家出身正交。用户可以只选魂穿/肉穿/双魂/原住民定位,
@@ -1912,8 +1959,14 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
   const step4Valid = true;
 
   const handleSubmit = async () => {
-    setSubmitErr(""); setSubmitting(true);
+    setSubmitErr(""); setReviewGateBlocked(false); setSubmitting(true);
     try {
+      const selected = scripts.find(sc => String(sc.id) === String(scriptId)) || null;
+      const localBlock = newGameScriptBlockReason(selected, t);
+      if (localBlock) throw new Error(localBlock);
+      const active = scriptId ? await window.api.scripts.activeJob(parseInt(scriptId, 10)).catch(() => null) : null;
+      const liveBlock = newGameActiveJobBlockReason(active, t);
+      if (liveBlock) throw new Error(liveBlock);
       // 新建角色卡:走与「新建用户角色卡」完全相同的创建路径(myUpsert),
       // 落库后当作"现有卡"使用,确保所有字段一致持久化。
       let picked = allRoleOptions.find(o => o.key === pickedCard);
@@ -1983,29 +2036,44 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
   };
 
   /* ── EC2 式单页:基本信息区块 ── */
-  const scriptOpts = scripts.map(sc => ({ value: String(sc.id), label: sc.title }));
+  const scriptOpts = scripts.map(sc => {
+    const reason = newGameScriptBlockReason(sc, t);
+    return {
+      value: String(sc.id),
+      label: reason ? `${sc.title}（${t('saves.new_game.script_not_ready_short')}）` : sc.title,
+      description: reason || undefined,
+      disabled: !!reason,
+    };
+  });
 
   const sec_basic = (
     // Cloudscape Container 内部 SpaceBetween 包 [header, children],期望 children 顶层有 key
-    <CSColumnLayout key="sec_basic" columns={2}>
-      <CSFormField label={t('saves.new_game.field_save_name')} constraintText={t('saves.new_game.field_save_name_req')}>
-        <CSInput value={title} onChange={({ detail }) => setTitle(detail.value)} autoFocus />
-      </CSFormField>
-      <CSFormField label={t('saves.new_game.field_script')} constraintText={t('saves.new_game.field_script_req')}>
-        <CSSelect
-          selectedOption={scriptOpts.find(o => o.value === scriptId) || null}
-          options={scriptOpts}
-          disabled={!scripts.length}
-          placeholder={scripts.length ? t('saves.new_game.field_script_placeholder') : t('saves.new_game.field_script_no_scripts')}
-          onChange={({ detail }) => {
-            const v = detail.selectedOption.value;
-            setScriptId(v);
-            setBirthpoint(null);
-            try { if (v) localStorage.setItem('newgame.lastScriptId', v); } catch (_) {}
-          }}
-        />
-      </CSFormField>
-    </CSColumnLayout>
+    <CSSpaceBetween key="sec_basic" size="m">
+      <CSColumnLayout key="fields" columns={2}>
+        <CSFormField label={t('saves.new_game.field_save_name')} constraintText={t('saves.new_game.field_save_name_req')}>
+          <CSInput value={title} onChange={({ detail }) => setTitle(detail.value)} autoFocus />
+        </CSFormField>
+        <CSFormField label={t('saves.new_game.field_script')} constraintText={t('saves.new_game.field_script_req')}>
+          <CSSelect
+            selectedOption={scriptOpts.find(o => o.value === scriptId) || null}
+            options={scriptOpts}
+            disabled={!scripts.length}
+            placeholder={scripts.length ? t('saves.new_game.field_script_placeholder') : t('saves.new_game.field_script_no_scripts')}
+            onChange={({ detail }) => {
+              const v = detail.selectedOption.value;
+              setScriptId(v);
+              setBirthpoint(null);
+              try { if (v) localStorage.setItem('newgame.lastScriptId', v); } catch (_) {}
+            }}
+          />
+        </CSFormField>
+      </CSColumnLayout>
+      {scriptBlockReason && (
+        <CSAlert key="script-block" type="warning" header={t('saves.new_game.script_not_ready_title')}>
+          {scriptBlockReason}
+        </CSAlert>
+      )}
+    </CSSpaceBetween>
   );
 
   const step1Content = (
@@ -2134,7 +2202,9 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
               <CSContainer key="basic" header={secHeader(t('saves.new_game.sec_basic_title'), t('saves.new_game.sec_basic_desc'))}>{sec_basic}</CSContainer>
               <CSContainer key="role" header={secHeader(t('saves.new_game.sec_role_title'), t('saves.new_game.sec_role_desc'))}>{step1Content}</CSContainer>
               <CSContainer key="birthpoint" header={secHeader(t('saves.new_game.sec_birthpoint_title'), scriptId ? t('saves.new_game.sec_birthpoint_desc_ready') : t('saves.new_game.sec_birthpoint_desc_wait'))}>
-                {scriptId
+                {scriptBlockReason
+                  ? <CSAlert key="birthpoint-block" type="warning" header={t('saves.new_game.script_not_ready_title')}>{scriptBlockReason}</CSAlert>
+                  : scriptId
                   ? <BirthpointStep key="birthpoint-step" scriptId={scriptId} birthpoint={birthpoint} setBirthpoint={setBirthpoint} />
                   : <CSBox key="birthpoint-empty" color="text-body-secondary" fontSize="body-s">{t('saves.new_game.sec_birthpoint_empty')}</CSBox>}
               </CSContainer>

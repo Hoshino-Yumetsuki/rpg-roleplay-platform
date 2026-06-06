@@ -51,6 +51,47 @@ import CSDrawer from '@cloudscape-design/components/drawer';
 const PENDING_IMPORT_KEY = "rpg.import.pendingImport";
 const PENDING_IMPORT_PIPELINE_KEY = "rpg.import.pendingPipeline";
 const IMPORT_JOB_TERMINAL_STATUSES = new Set(["done", "done_with_errors", "partial", "failed", "cancelled"]);
+const ACTIVE_IMPORT_STATUSES = new Set(["queued", "pending", "running", "processing", "importing", "started"]);
+const PLAY_BLOCKING_READINESS_KEYS = new Set(["chunks", "anchors"]);
+
+function readinessLabel(key, t) {
+  return t(`scripts.my.readiness_label_${key}`, { defaultValue: key });
+}
+
+function activeJobPlayBlockReason(payload, t) {
+  const job = payload?.job || payload?.active_job || payload;
+  const status = String(job?.status || payload?.status || "").trim().toLowerCase();
+  if (status && ACTIVE_IMPORT_STATUSES.has(status) && !IMPORT_JOB_TERMINAL_STATUSES.has(status)) {
+    return t('scripts.my.play_block_importing');
+  }
+  if (payload?.active === true && (!status || !IMPORT_JOB_TERMINAL_STATUSES.has(status))) {
+    return t('scripts.my.play_block_importing');
+  }
+  return "";
+}
+
+function scriptPlayBlockReason(script, t) {
+  if (!script) return "";
+  const status = String(
+    script.import_status
+    || script.job_status
+    || script.active_job?.status
+    || script.readiness?.active_job?.status
+    || ""
+  ).trim().toLowerCase();
+  if (status && ACTIVE_IMPORT_STATUSES.has(status) && !IMPORT_JOB_TERMINAL_STATUSES.has(status)) {
+    return t('scripts.my.play_block_importing');
+  }
+  const missing = Array.isArray(script.readiness?.missing) ? script.readiness.missing : [];
+  const blocking = missing.filter((key) => PLAY_BLOCKING_READINESS_KEYS.has(key));
+  if (blocking.length > 0) {
+    return t('scripts.my.play_block_missing', { items: blocking.map((key) => readinessLabel(key, t)).join('、') });
+  }
+  if (Number(script.chapter_count || 0) <= 0) {
+    return t('scripts.my.play_block_missing', { items: readinessLabel('chunks', t) });
+  }
+  return "";
+}
 
 function isCredentialsRequiredError(err) {
   const payload = err?.payload || {};
@@ -553,6 +594,7 @@ function ScriptDetailPanel({ script: s, savesCount, embedStatus, currentUserId,
   // phase_rebuild_panel: 7 模块状态 + 估算/重做 SSE 协调器.
   // hook 自己拉 /modules-status,在 active rebuild job 时禁用其他卡按钮 + 顶部 banner 实时进度.
   const rb = useScriptRebuild(s.id);
+  const playBlock = scriptPlayBlockReason(s, t);
 
   return (
     <>
@@ -567,7 +609,7 @@ function ScriptDetailPanel({ script: s, savesCount, embedStatus, currentUserId,
       <CSHeader variant="h2"
         actions={
           <CSSpaceBetween direction="horizontal" size="xs">
-            <CSButton variant="primary" iconName="caret-right-filled" onClick={() => onPlay(s)}>{t('scripts.my.play_game')}</CSButton>
+            <CSButton variant="primary" iconName="caret-right-filled" disabled={!!playBlock} onClick={() => onPlay(s)}>{t('scripts.my.play_game')}</CSButton>
             <CSButton iconName="file" onClick={() => onChapters(s)}>{t('scripts.my.view_chapters')}</CSButton>
             <CSButton iconName="status-info" onClick={() => onReview(s)}>{t('scripts.my.kb_review')}</CSButton>
             <CSButton iconName="settings" onClick={() => setHistoryOpen(v => !v)}>{t('scripts.version.history_btn')}</CSButton>
@@ -618,6 +660,11 @@ function ScriptDetailPanel({ script: s, savesCount, embedStatus, currentUserId,
       )}
       {/* phase_rebuild_panel: 活跃重做任务通知条,所有 tab 共享 */}
       <RebuildJobBanner {...rb.bannerProps} />
+      {playBlock && (
+        <CSAlert type="warning" header={t('scripts.my.play_block_title')}>
+          {playBlock}
+        </CSAlert>
+      )}
       {/* phase_rebuild_panel: 估算确认弹窗,所有卡片重做按钮共享 */}
       <RebuildEstimateModal {...rb.modalProps} />
       {/* tab 栏滚下去就消失了用户找不到当前 tab — Cloudscape Tabs 不暴露
@@ -1204,11 +1251,31 @@ function ScriptsListView() {
       window.__apiToast?.(t('scripts.toast.op_fail'), { kind: 'danger', detail: e?.message });
     }
   };
-  const onPlay = (s) => {
+  const onPlay = async (s) => {
     // 有存档 → 直接进入(__openContinue 现已直接启动新标签);无 → 走建档向导
     const sv = platSaves.find(x => x.script_id === s.id);
-    if (sv) window.__openContinue?.(sv);
-    else setNewModalScriptId(s.id);
+    if (sv) {
+      window.__openContinue?.(sv);
+      return;
+    }
+    const localBlock = scriptPlayBlockReason(s, t);
+    if (localBlock) {
+      window.__apiToast?.(t('scripts.my.play_block_title'), { kind: 'warn', detail: localBlock, duration: 6500 });
+      return;
+    }
+    setBusyId(s.id);
+    try {
+      const active = await window.api.scripts.activeJob(s.id).catch(() => null);
+      const liveBlock = activeJobPlayBlockReason(active, t);
+      if (liveBlock) {
+        window.__apiToast?.(t('scripts.my.play_block_title'), { kind: 'warn', detail: liveBlock, duration: 6500 });
+        await reload();
+        return;
+      }
+      setNewModalScriptId(s.id);
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const visibleScripts = query
@@ -1349,10 +1416,11 @@ function ScriptsListView() {
           return n > 0 ? <CSBadge color="green">{t('scripts.my.saves_count', { n })}</CSBadge> : <CSBox color="text-status-inactive">—</CSBox>;
         } },
         { id: 'public', header: t('scripts.my.share'), cell: (s) => s.is_public ? <CSStatusIndicator type="success">{t('scripts.my.is_public')}</CSStatusIndicator> : <CSBox color="text-status-inactive">—</CSBox> },
-        { id: 'go', header: '', cell: (s) => isInternalPlaceholder(s)
-          ? <CSButton variant="inline-link" iconName="status-pending" disabled>{t('scripts.my.play')}</CSButton>
-          : <CSButton variant="inline-link" iconName="caret-right-filled" disabled={busyId === s.id} onClick={() => onPlay(s)}>{t('scripts.my.play')}</CSButton>
-        },
+        { id: 'go', header: '', cell: (s) => {
+          if (isInternalPlaceholder(s)) return <CSButton variant="inline-link" iconName="status-pending" disabled>{t('scripts.my.play')}</CSButton>;
+          const block = scriptPlayBlockReason(s, t);
+          return <CSButton variant="inline-link" iconName={block ? "status-pending" : "caret-right-filled"} disabled={busyId === s.id || !!block} onClick={() => onPlay(s)}>{block ? t('scripts.my.play_blocked') : t('scripts.my.play')}</CSButton>;
+        } },
       ]}
     />
   );
