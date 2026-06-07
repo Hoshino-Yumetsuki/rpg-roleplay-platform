@@ -559,6 +559,21 @@ _run_lock = Lock()
 # 全局 _run_id/_stop_event 会让一个用户的 /api/stop 打断所有其他用户正在跑的 chat。
 _run_id_by_user: OrderedDict[int, int] = OrderedDict()
 _stop_events_by_user: OrderedDict[int, Event] = OrderedDict()
+_last_run_id = 0
+
+
+def _next_run_id_locked() -> int:
+    """Return a process-local monotonic bigint that does not repeat after restart.
+
+    stop_signals is persisted in Postgres, so small in-memory counters (1, 2, 3)
+    can collide with old rows after a restart or on another worker.
+    """
+    global _last_run_id
+    candidate = time.time_ns()
+    if candidate <= _last_run_id:
+        candidate = _last_run_id + 1
+    _last_run_id = candidate
+    return candidate
 
 
 def _get_run_state(api_user: dict[str, Any] | None) -> tuple[int, Event]:
@@ -567,7 +582,7 @@ def _get_run_state(api_user: dict[str, Any] | None) -> tuple[int, Event]:
     with _run_lock:
         if uid not in _stop_events_by_user:
             _lru_set(_stop_events_by_user, uid, Event())
-        _lru_set(_run_id_by_user, uid, _lru_get(_run_id_by_user, uid, 0) + 1)
+        _lru_set(_run_id_by_user, uid, _next_run_id_locked())
         _lru_get(_stop_events_by_user, uid).clear()
         return _lru_get(_run_id_by_user, uid), _lru_get(_stop_events_by_user, uid)
 

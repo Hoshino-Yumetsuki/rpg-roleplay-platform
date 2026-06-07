@@ -175,10 +175,16 @@
   // ---- SSE helper for /api/chat & /api/opening ---------------
   // Posts a JSON body and parses the streaming response into
   // structured event objects: { event, data }.
-  async function sseStream(path, body, handlers) {
+  function sseStream(path, body, handlers) {
     handlers = handlers || {};
     const url = path.startsWith('http') ? path : BASE + path;
     const ctl = new AbortController();
+    const isAbort = (e) => ctl.signal.aborted || (e && e.name === "AbortError");
+    const abortPayload = (e) => ({
+      reason: ctl.signal.reason || null,
+      message: (e && e.message) || "请求已取消",
+      url,
+    });
     const promise = (async () => {
       let res;
       try {
@@ -190,6 +196,10 @@
           signal: ctl.signal,
         });
       } catch (e) {
+        if (isAbort(e)) {
+          if (handlers.onAbort) handlers.onAbort(abortPayload(e));
+          return;
+        }
         if (handlers.onError) handlers.onError(new ApiError('network', 0, e && e.message));
         return;
       }
@@ -218,7 +228,15 @@
         try {
           chunk = await reader.read();
         } catch (e) {
-          break;
+          if (isAbort(e)) {
+            if (handlers.onAbort) handlers.onAbort(abortPayload(e));
+            return;
+          }
+          if (handlers.onError)
+            handlers.onError(
+              new ApiError('stream_read', 0, (e && e.message) || '流式读取失败', { url }),
+            );
+          return;
         }
         if (chunk.done) break;
         buf += decoder.decode(chunk.value, { stream: true });
@@ -240,7 +258,13 @@
       }
       if (handlers.onClose) handlers.onClose();
     })();
-    return { stop: () => ctl.abort(), done: promise };
+    return {
+      stop: (reason) => {
+        try { ctl.abort(reason || "client_stop"); } catch (_) { ctl.abort(); }
+      },
+      done: promise,
+      signal: ctl.signal,
+    };
   }
   function parseSseBlock(raw) {
     if (!raw) return null;
