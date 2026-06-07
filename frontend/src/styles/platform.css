@@ -234,6 +234,16 @@ label {
     display: none;
   }
 
+  /* 移动端双菜单按钮修复:
+     Cloudscape AppLayout 在窄屏会渲染自己的 mobile toolbar(含 navigation 触发器),
+     但 navigationTriggerHide 只隐藏桌面端 trigger,移动端的 mobile-toolbar 仍会出现 ——
+     于是设置等非 standalone 页同时显示「自定义顶栏 hamburger + CS 移动触发器」两个菜单按钮。
+     自定义 hamburger(setNavOpen)已完整接管侧栏开关(含移动 drawer),这里隐藏整条 CS
+     mobile toolbar。用 [class*=] 前缀匹配,避开会随版本变的 CSS module hash 后缀。 */
+  [class*='awsui_mobile-toolbar'] {
+    display: none !important;
+  }
+
   /* iOS Safari 在表单控件字号 <16px 时聚焦会自动放大页面(jarring,且放大后布局错位)。
      viewport meta 用的是 width=device-width/可缩放(为可访问性不禁缩放),所以必须靠
      字号 ≥16px 来抑制聚焦缩放。桌面端字号不受影响(本规则仅 <768px 生效)。

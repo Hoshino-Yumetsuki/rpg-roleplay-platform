@@ -96,6 +96,7 @@ output/
 .omo
 .omc
 superpowers
+.playwright-mcp
 
 #  task 87 工具化阶段后引入的本地 venv / 生成报告
 rpg/.venv/
