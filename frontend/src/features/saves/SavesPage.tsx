@@ -1285,7 +1285,7 @@ function ContinuePicker({ open, save, focusedNodeId, onClose }) {
   const { t } = useTranslation();
   // task 45：原来 allSaves = window.MOCK_PLATFORM.saves —— 登录用户看不到自己的真存档
   // （只看到 mock 的 4 条假 save id=11/12/13/14）。改用 /api/saves 实时拉真存档。
-  // 匿名访客（designer preview）才回退到 MOCK_PLATFORM。
+  // mock 兜底数据已移除：拉取失败一律空列表，不再显示示例存档。
   const [allSaves, setAllSaves] = useStatePL([]);
   const [savesLoading, setSavesLoading] = useStatePL(false);
   const [branchTree, setBranchTree] = useStatePL(null); // task 45：真实分支树 / null=未加载
@@ -1305,8 +1305,8 @@ function ContinuePicker({ open, save, focusedNodeId, onClose }) {
         const r = await window.api.saves.list();
         list = Array.isArray(r) ? r : r?.items || r?.saves || [];
       } catch (_) {
-        // 匿名访客 / 401：回退到 mock 保留 designer offline preview
-        list = window.RPG_AUTH && window.RPG_AUTH.authed ? [] : window.MOCK_PLATFORM?.saves || [];
+        // 拉取失败 / 401：一律空列表（mock 示例兜底已移除）
+        list = [];
       }
       if (cancelled) return;
       setAllSaves(list);

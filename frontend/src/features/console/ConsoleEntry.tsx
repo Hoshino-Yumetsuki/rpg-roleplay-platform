@@ -495,7 +495,6 @@ function App() {
 
   // 当 activeSave 变化时由下方 useEffect 更新广播 save_id（activeSave 在下方声明）
 
-  const IS_ANON = !(window.RPG_AUTH && window.RPG_AUTH.authed);
   const EMPTY_STATE = {
     player: { name: '', role: '', background: '', current_location: '' },
     world: { time: '', weather: '', known_events: [], timeline: {} },
@@ -512,10 +511,9 @@ function App() {
     turn: 0,
     history: [],
   };
-  const INITIAL_STATE =
-    IS_ANON && window.MOCK_STATE
-      ? structuredClone(window.MOCK_STATE)
-      : structuredClone(EMPTY_STATE);
+  // mock 示例兜底已移除：匿名 / 未加载时统一用结构完整的 EMPTY_STATE，
+  // 真实数据由 data-loader 拉取 /api/game/state 后注入。
+  const INITIAL_STATE = structuredClone(EMPTY_STATE);
   const [game, setGame] = useState(INITIAL_STATE);
   const [history, setHistory] = useState(INITIAL_STATE.history || []);
   const [text, setText] = useState('');
@@ -2163,13 +2161,7 @@ function App() {
             } catch (_) {}
           }}
           currentSaveId={activeSave?.id ?? null}
-          saves={
-            realSaves.length
-              ? realSaves
-              : window.RPG_AUTH && window.RPG_AUTH.authed
-                ? []
-                : window.MOCK_PLATFORM?.saves || []
-          }
+          saves={realSaves.length ? realSaves : []}
           mobileOpen={mobileNav}
         />
       ) : (

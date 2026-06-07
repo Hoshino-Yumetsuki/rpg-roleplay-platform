@@ -2,16 +2,16 @@
 /* ============================================================
  *  RPG Roleplay · Data Loader
  *  -----------------------------------------------------------
- *  Bridges the real backend (window.api) with the Claude Design
- *  mock globals (window.MOCK_*). On first load it tries to fill
- *  the mocks from /api/* and keeps the static designer fallback
- *  values if the backend is unreachable.
+ *  Bridges the real backend (window.api) with the window.MOCK_*
+ *  globals. On load it fills those globals from /api/*. When the
+ *  backend is unreachable the globals stay on the empty baseline
+ *  from mock-data.ts (no fabricated demo content).
  *
  *  Pages can wait for `window.RPG_DATA_READY` (a Promise) or the
  *  `rpg-data-ready` DOM event before rendering — the included
  *  HTML uses it to delay initial paint when the API is reachable.
  * ============================================================ */
-// Capture the designer baseline so we can fall back / extend it.
+// Capture the empty baseline so we can fall back / extend it.
 const BASELINE = {
   novel: deepCopy(window.MOCK_NOVEL),
   state: deepCopy(window.MOCK_STATE),
@@ -293,78 +293,11 @@ const readyResolvers = [];
 const ready = new Promise((res) => readyResolvers.push(res));
 window.RPG_DATA_READY = ready;
 
-// task 45：匿名访客顶部加可见『示例数据预览模式』横幅，避免用户把 mock 顾承砚/
-// 北港码头/残页等示例当成自己存档。横幅永远固定在屏顶，提供登录链接。
-function injectDemoBanner() {
-  try {
-    if (document.getElementById('rpg-demo-banner')) return;
-    const div = document.createElement('div');
-    div.id = 'rpg-demo-banner';
-    div.setAttribute('role', 'status');
-    div.style.cssText = [
-      'position:fixed',
-      'top:0',
-      'left:0',
-      'right:0',
-      'z-index:99999',
-      'background:#7a4f1c',
-      'color:#fff8e1',
-      'padding:8px 14px',
-      'font-size:12.5px',
-      'line-height:1.4',
-      "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-      'letter-spacing:0.02em',
-      'text-align:center',
-      'box-shadow:0 2px 6px rgba(0,0,0,0.25)',
-      'display:flex',
-      'align-items:center',
-      'justify-content:center',
-      'gap:14px',
-    ].join(';');
-    const span = document.createElement('span');
-    const strong = document.createElement('strong');
-    strong.textContent = '示例数据预览模式';
-    span.appendChild(strong);
-    span.appendChild(
-      document.createTextNode(
-        '：当前显示的存档 / 角色 / 剧本均为内置示例，不会落库。登录后可创建自己的真实数据。',
-      ),
-    );
-
-    const link = document.createElement('a');
-    link.href = '/login';
-    link.textContent = '立即登录';
-    link.style.cssText = 'color:#ffd591;text-decoration:underline;font-weight:600;';
-
-    const closeBtn = document.createElement('button');
-    closeBtn.id = 'rpg-demo-banner-close';
-    closeBtn.textContent = '隐藏';
-    closeBtn.style.cssText =
-      'background:transparent;border:1px solid #ffd591;color:#fff8e1;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;';
-
-    div.appendChild(span);
-    div.appendChild(link);
-    div.appendChild(closeBtn);
-    document.body.appendChild(div);
-    // banner 高度补偿
-    document.body.style.paddingTop =
-      (parseFloat(getComputedStyle(document.body).paddingTop) || 0) + 36 + 'px';
-    closeBtn.addEventListener('click', () => {
-      div.remove();
-      document.body.style.paddingTop =
-        (parseFloat(getComputedStyle(document.body).paddingTop) || 36) - 36 + 'px';
-    });
-  } catch (_) {
-    /* 容错：不挂 banner 也不能阻塞 boot */
-  }
-}
-
 async function bootstrap() {
   if (!window.api) {
-    console.warn('[data-loader] window.api not present, staying on baseline mocks');
+    console.warn('[data-loader] window.api not present, staying on empty baseline');
     // 没接 API 的纯设计预览：明确告诉调用方 authed=false + online=false
     window.RPG_AUTH = { authed: false, online: false };
-    injectDemoBanner();
     readyResolvers.forEach((r) => r({ online: false, authed: false }));
     return;
   }
@@ -373,11 +306,7 @@ async function bootstrap() {
   window.MOCK_STATE = state;
   // 让 mount 脚本可同步读到登录态（不必 await 整个 ready Promise）
   window.RPG_AUTH = { authed, online: true };
-  // task 45：未登录 / Login 页除外的所有页面都给横幅
-  if (!authed && location.pathname !== '/login') {
-    injectDemoBanner();
-  }
-  // Novel / runSteps remain on baseline until backend exposes them.
+  // Novel / runSteps remain on the empty baseline until backend exposes them.
   window.dispatchEvent(new CustomEvent('rpg-data-ready', { detail: { platform, state, authed } }));
   readyResolvers.forEach((r) => r({ online: true, authed, platform, state }));
 }
