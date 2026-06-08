@@ -79,13 +79,19 @@ def seed_tree(save_id: int, state_path: str) -> None:
             gm_text = (gm_msg or {}).get("content", "")
             snapshot_data = snapshot_for_history(data, history_index)
             snapshot = write_snapshot(save_id, turn, snapshot_data)
+            # BUGFIX(分支回退多删一轮): turn_index 必须与 snapshot_for_history / record_runtime_turn
+            # 的 `history_len//2` 约定一致(运行期开场=turn 0,与 root 同号)。原用顺序计数器 turn(1,2,3),
+            # 当 history 以"无玩家输入的开场"(酒馆 first_mes / 导入存档开场)起手时,开场被记成
+            # turn_index=1 而非 0,其后所有回合整体 +1;而前端回退按 msg_index//2 解析 → 命中早一个 turn
+            # → continue_from 多截一轮。改用 history_index//2 与全系统对齐(GM 运行期路径本就如此)。
+            tidx = history_index // 2
             row = _insert_commit(
                 db,
                 save_id=save_id,
                 parent_id=parent_id,
-                turn_index=turn,
+                turn_index=tidx,
                 kind="round",
-                title=f"第 {turn} 回合",
+                title=("开场" if tidx == 0 else f"第 {tidx} 回合"),
                 message=rough_summary(player_text, gm_text),
                 summary=rough_summary(player_text, gm_text),
                 content_preview=round_preview(player_text, gm_text),

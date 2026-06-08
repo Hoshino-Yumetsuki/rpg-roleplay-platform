@@ -154,6 +154,29 @@ class TavernSaveLifecycle(unittest.TestCase):
             ov = db.execute("select count(*) c from save_worldbook_overlays where save_id=%s", (save["id"],)).fetchone()
             self.assertEqual(ov["c"], 1)
 
+    def test_first_mes_commit_turn_index_zero(self):
+        """BUGFIX(回退多删一轮):first_mes 开场 round commit 的 turn_index 必须为 0,与 GM 运行期
+        开场(record_runtime_turn 用 data['turn']=history_len//2)对齐。否则前端按 msg_index//2
+        回退会命中早一个 turn → continue_from 多截一轮。"""
+        from platform_app import workspace
+        from platform_app.db import connect
+        from platform_app.branches.tree_ops import resolve_commit_id_by_message
+        save = workspace.create_tavern_save(self.uid, self.card_id)
+        self._save_ids.append(save["id"])
+        sid = int(save["id"])
+        with connect() as db:
+            rows = db.execute(
+                "select id, turn_index, kind, gm_output from branch_commits where save_id=%s order by turn_index, id",
+                (sid,),
+            ).fetchall()
+        # first_mes 开场必须是 turn_index=0 的 round commit(不是 turn 1)
+        opening_rounds = [r for r in rows if r["kind"] == "round" and int(r["turn_index"]) == 0
+                          and "找我有事" in (r.get("gm_output") or "")]
+        self.assertTrue(opening_rounds, f"first_mes 开场应在 turn_index 0;实际 commits={[(r['kind'], r['turn_index']) for r in rows]}")
+        # 回退到开场(msg_index=0)应命中 first_mes 的 round commit(turn 0,id>root),而非把它一起删掉
+        cid = resolve_commit_id_by_message(self.uid, sid, 0)
+        self.assertEqual(cid, int(opening_rounds[0]["id"]))
+
     def test_chat_jsonl_round_trip(self):
         from platform_app import tavern_chats, workspace
         save = workspace.create_tavern_save(self.uid, self.card_id)

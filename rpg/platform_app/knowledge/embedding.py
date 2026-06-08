@@ -228,6 +228,20 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
     global _last_openai_embed_error
     effective_url = (base_url.rstrip("/") if base_url else "https://api.openai.com/v1") + "/embeddings"
 
+    # BUGFIX: 不同 OpenAI 兼容 provider 对单请求 input 数组条数上限不同。DashScope(阿里 dashscope/
+    # 百炼)text-embedding 限 ≤10,而上游按 BATCH_SIZE=30 喂入 → "400 batch size ... not larger than 10"。
+    # 按 base_url 推断 provider 上限,超限就拆子批保序拼接(对 OpenAI/SiliconFlow 等大上限 provider 不变)。
+    _bl = (base_url or "").lower()
+    _max_batch = 10 if ("dashscope" in _bl or "aliyun" in _bl or "bailian" in _bl) else 64
+    if len(texts) > _max_batch:
+        out: list[list[float]] = []
+        for _i in range(0, len(texts), _max_batch):
+            sub = _embed_via_openai(model, api_key, texts[_i:_i + _max_batch], base_url)
+            if sub is None:
+                return None
+            out.extend(sub)
+        return out
+
     # SEC(H-4): 默认 opener 跟随 ≤10 次重定向 → 即便 base_url 存入时过了 _validate_base_url,
     # 攻击者端点也能 301 跳到 169.254.169.254 / 内网,且携 Authorization。禁止跟随重定向。
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -250,14 +264,18 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
         return [item["embedding"] for item in items]
 
     try:
-        return _post(with_dim=bool(EMBED_DIM))
+        result = _post(with_dim=bool(EMBED_DIM))
+        _last_openai_embed_error = ""  # BUGFIX(导入报错弹窗刷新仍在): 成功即清 sticky 错误,否则"向量嵌入配置可能有问题"横幅永久残留
+        return result
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
         code = e.code
         # 带 dimensions 被 400 拒(模型不支持降维)→ 去掉 dimensions 重试一次
         if code == 400 and EMBED_DIM:
             try:
-                return _post(with_dim=False)
+                result = _post(with_dim=False)
+                _last_openai_embed_error = ""  # 同上:重试成功也清错误
+                return result
             except urllib.error.HTTPError as e2:
                 body = e2.read().decode(errors="replace"); code = e2.code
             except Exception as e2:
