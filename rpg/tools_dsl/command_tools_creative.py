@@ -332,6 +332,11 @@ def _call_llm_emit_identities(
             obj = _parse_json_safely(text)
             if obj and isinstance(obj.get("recommendations"), list):
                 return obj["recommendations"]
+            # 诊断:LLM 有返回但格式不符(缺 recommendations 数组)→ 记 model + 文本片段,
+            # 便于定位「身份推荐为空」的根因。采自社区 PR #16/#18(xingzhiyou)。
+            _log.warning("[identity-gen] %s 返回格式异常 model=%s text=%s",
+                         backend_kind, getattr(backend, "model_name", "?"),
+                         (text or "")[:800])
         except Exception:
             _log.exception("[identity-gen] %s 调用失败 model=%s",
                            backend_kind, getattr(backend, "model_name", "?"))
