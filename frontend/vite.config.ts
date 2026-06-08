@@ -15,20 +15,20 @@ export default defineConfig(({ mode }) => {
       }) {
         server.middlewares.use((req: Req, res: Res, next: NextFn) => {
           const url = req.url || '';
+          // SPA 单入口:任何非 /api、非静态资源(带扩展名)、非 vite 内部路径的
+          // 干净 URL(/platform、/console、/console#... 等)都回退到 index.html,
+          // 由 main.tsx 的 React Router 接管。带扩展名的请求(.html/.svg/.js/.css)
+          // 已被 /\.\w+/ 放行,直接交给 vite 静态处理。
           if (
             url.startsWith('/api') ||
             url.startsWith('/assets/') ||
             url.startsWith('/@') ||
             url.startsWith('/node_modules/') ||
-            /\.\w+(\?|$)/.test(url) ||
-            url === '/Login.html' ||
-            url === '/Platform.html' ||
-            url === '/Game Console.html' ||
-            url === '/favicon.svg'
+            /\.\w+(\?|$)/.test(url)
           ) {
             return next();
           }
-          req.url = '/Platform.html';
+          req.url = '/index.html';
           next();
         });
       },
