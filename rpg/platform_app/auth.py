@@ -405,10 +405,11 @@ def register(
               (email, code_hash, purpose, expires_at, ip, ua)
             values (%s, %s, 'register', %s, %s, %s)
             """,
-            (email_norm, code_h, expires_at, ip or "", pending_json),
+            # SEC(H-7): ua 列存真实 user-agent,不再塞含 password_hash 的 pending_json。
+            (email_norm, code_h, expires_at, ip or "", (ua or "")[:512]),
         )
 
-    _PENDING_REGISTER[email_norm] = pending_json
+    _pending_store_set(email_norm, pending_json)
 
     # 决定是否跳过邮箱验证：本地部署 (require_auth=False) 或 admin.registration_config 里
     # 明确设置了 skip_email_verification = true 时跳过并直接完成注册。
@@ -454,13 +455,56 @@ def register(
     try:
         send_verification_email(email_norm, code)
     except EmailSendError:
-        _log.warning("send_verification_email failed (RESEND unconfigured?); code=%s", code)
+        _log.warning("send_verification_email failed (RESEND unconfigured?)")  # SEC(M-10): 不记明文验证码
 
     return {"ok": True, "pending_verify": True, "email_mask": _mask_email(email_norm)}
 
 
-# 进程内 pending 注册缓存（多 worker 须改 Redis）
+# 进程内 pending 注册缓存(回退用);跨 worker 走 Redis(见 _pending_store_*)
 _PENDING_REGISTER: dict[str, str] = {}
+_PENDING_TTL_SEC = 1800  # 待确认注册暂存有效期(覆盖 10 分钟验证码 + resend)
+
+
+def _pending_redis_key(email_norm: str) -> str:
+    return f"rpg:pending_reg:{email_norm}"
+
+
+def _pending_store_set(email_norm: str, pending_json: str) -> None:
+    """SEC(H-7): 跨 worker 暂存待确认注册(内含 Argon2 password_hash)。优先 Redis(有 TTL、
+    生产多 worker 共享),回退进程内 dict。**不再写入 email_verifications.ua**——那是 DB 明文
+    哈希暴露面(DB 读权限即可离线爆破未完成注册的密码)。"""
+    _PENDING_REGISTER[email_norm] = pending_json
+    try:
+        import redis_bus
+        c = redis_bus.get_sync_client()
+        if c is not None:
+            c.setex(_pending_redis_key(email_norm), _PENDING_TTL_SEC, pending_json)
+    except Exception:
+        pass
+
+
+def _pending_store_get(email_norm: str, *, consume: bool = False) -> str | None:
+    val = _PENDING_REGISTER.get(email_norm)
+    if val is None:
+        try:
+            import redis_bus
+            c = redis_bus.get_sync_client()
+            if c is not None:
+                raw = c.get(_pending_redis_key(email_norm))
+                if raw is not None:
+                    val = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
+        except Exception:
+            val = None
+    if consume:
+        _PENDING_REGISTER.pop(email_norm, None)
+        try:
+            import redis_bus
+            c = redis_bus.get_sync_client()
+            if c is not None:
+                c.delete(_pending_redis_key(email_norm))
+        except Exception:
+            pass
+    return val
 
 
 def _encode_pending_register(payload: dict[str, Any]) -> str:
@@ -619,8 +663,9 @@ def confirm_email_verification(email: str, code: str) -> tuple[dict[str, Any], s
 
         # 取 pending 注册参数。优先读进程缓存；若部署重启导致缓存丢失，
         # 从 email_verifications.ua 中恢复，保证验证码窗口内仍可完成注册。
-        pending_json = _PENDING_REGISTER.pop(email_norm, None)
-        pending = _decode_pending_register(pending_json) or _decode_pending_register(_row_get(verif, "ua"))
+        # SEC(H-7): 从 Redis/进程内取 pending(不再从 ua 列恢复 password_hash)。
+        pending_json = _pending_store_get(email_norm, consume=True)
+        pending = _decode_pending_register(pending_json)
         if not pending:
             raise ValueError("注册会话已过期，请重新注册")
 
@@ -811,7 +856,7 @@ def request_login_code(email: str, *, ip: str = "", ua: str = "") -> dict[str, A
     try:
         send_login_code_email(email_norm, code)
     except EmailSendError:
-        _log.warning("send_login_code_email failed (RESEND unconfigured?); code=%s", code)
+        _log.warning("send_login_code_email failed (RESEND unconfigured?)")  # SEC(M-10): 不记明文验证码
 
     return {"ok": True, "pending_verify": True, "email_mask": _mask_email(email_norm)}
 
@@ -1012,26 +1057,13 @@ def resend_verification_code(email: str, ip: str = "") -> None:
 
     init_db()
     with connect() as db:
-        pending = _decode_pending_register(_PENDING_REGISTER.get(email_norm))
-        if not pending:
-            verif = db.execute(
-                """
-                select * from email_verifications
-                where lower(email) = %s
-                  and purpose = 'register'
-                  and used_at is null
-                  and expires_at > now()
-                order by created_at desc
-                limit 1
-                """,
-                (email_norm,),
-            ).fetchone()
-            pending = _decode_pending_register(_row_get(verif, "ua") if verif else None)
+        # SEC(H-7): pending 只从 Redis/进程内取(不再从 ua 列恢复 password_hash)。
+        pending = _decode_pending_register(_pending_store_get(email_norm))
         if not pending:
             raise ValueError("注册会话已过期，请重新注册")
 
         pending_json = _encode_pending_register(pending)
-        _PENDING_REGISTER[email_norm] = pending_json
+        _pending_store_set(email_norm, pending_json)
 
         # 废弃旧记录，发新验证码
         db.execute(
@@ -1044,14 +1076,15 @@ def resend_verification_code(email: str, ip: str = "") -> None:
         expires_at = datetime.now(UTC) + _td(minutes=10)
         db.execute(
             "insert into email_verifications (email, code_hash, purpose, expires_at, ip, ua) values (%s, %s, 'register', %s, %s, %s)",
-            (email_norm, code_h, expires_at, ip or "", pending_json),
+            # SEC(H-7): ua 列存真实 user-agent,不再塞含 password_hash 的 pending_json。
+            (email_norm, code_h, expires_at, ip or "", str(pending.get("ua") or "")[:512]),
         )
 
     from .email import EmailSendError, send_verification_email
     try:
         send_verification_email(email_norm, code)
     except EmailSendError:
-        _log.warning("resend_verification_code: email send failed for %s; code=%s", email_norm, code)
+        _log.warning("resend_verification_code: email send failed for %s", email_norm)  # SEC(M-10)
 
 
 # ── 密码重置（忘记密码）────────────────────────────────────────────────────────
@@ -1153,12 +1186,14 @@ def consume_magic_token(token: str, email: str) -> dict:
         raise ValueError("邮箱格式不正确")
     init_db()
     with connect() as db:
+        # SEC(H-6): 加 used_at is null —— magic 邀请单次使用,登录成功后即失效,杜绝 30 天内重放。
         row = db.execute(
-            "select email_norm, magic_token, batch, created_at, used_by_user_id from registration_allowlist where magic_token = %s and email_norm = %s",
+            "select email_norm, magic_token, batch, created_at, used_by_user_id from registration_allowlist "
+            "where magic_token = %s and email_norm = %s and used_at is null",
             (token, norm),
         ).fetchone()
     if not row:
-        raise ValueError("邀请链接无效或已过期")
+        raise ValueError("邀请链接无效、已过期或已被使用")
     created = row["created_at"]
     if created.tzinfo is None:
         created = created.replace(tzinfo=UTC)
@@ -1196,7 +1231,7 @@ def request_passwordless_code(email: str, source: str = "magic_link") -> dict:
     try:
         send_login_code_email(email_norm, code)
     except EmailSendError:
-        _log.warning("request_passwordless_code: send email failed for %s; code=%s", email_norm, code)
+        _log.warning("request_passwordless_code: send email failed for %s", email_norm)  # SEC(M-10)
     return {"ok": True}
 
 
@@ -1343,6 +1378,13 @@ def login_via_magic_token(email: str, ip: str = "") -> dict:
                 (user_row["id"], email_norm),
             )
         user = dict(user_row)
+        # SEC(H-6): 标记 magic 邀请为已用(已注册用户分支过去从不标 → 30 天内可无限重放)。
+        # 幂等(used_at is null 才更新),配合 consume_magic_token 的 used_at is null 实现单次使用。
+        db.execute(
+            "update registration_allowlist set used_by_user_id = %s, used_at = now() "
+            "where email_norm = %s and used_at is null",
+            (int(user["id"]), email_norm),
+        )
         token = _issue_session(db, int(user["id"]))
         _record_login_success(ip, email_norm)
 
@@ -1368,6 +1410,17 @@ def confirm_password_reset(token: str, new_password: str, ip: str = "") -> dict:
         raise ValueError(f"密码至少 {MIN_PASSWORD_LENGTH} 位")
     if len(new_password or "") > 1024:
         raise ValueError("密码超长")
+
+    # SEC(L-2): per-IP 软上限,防对 reset token 的零摩擦探测 / DoS 放大(每次探针触发全表扫 + HMAC)。
+    try:
+        import redis_bus as _rb
+        _c = _rb.rate_incr(f"pwreset:{ip or '-'}", 600)
+        if _c and _c > 30:
+            raise ValueError("尝试过于频繁,请稍后再试")
+    except ValueError:
+        raise
+    except Exception:
+        pass
 
     token_hash = hash_email_code(token)
     init_db()

@@ -401,6 +401,14 @@ async def api_models_remote_sync(
         cred_base = ""
     if not base_url:
         base_url = cred_base
+    # SEC(H-2): body.base_url 由请求方控制,过去直接进 OpenAI client → SSRF 打内网/云元数据。
+    # 解析 host→IP 校验,拒私网/保留地址(catalog/已存凭证的公网 base_url 会正常通过)。
+    if base_url:
+        try:
+            from platform_app.user_credentials import _validate_base_url
+            _validate_base_url(base_url)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc), "models": []}, status_code=400)
     # 全局没这个 provider(自建中转站)→ 必须有 base_url 才能调,且按 openai_compat 路由
     kind = meta_api.get("kind") or ("openai_compat" if base_url else api_id)
     if not api and not base_url:

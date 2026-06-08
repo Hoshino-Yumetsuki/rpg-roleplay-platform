@@ -33,6 +33,19 @@ from core.logging import get_logger
 log = get_logger(__name__)
 
 
+def _no_redirect_urlopen(req, *, timeout):
+    """SEC(H-4): 默认 opener 跟随重定向 → base_url 存入时校验过也能被 301 跳到内网/元数据,
+    且携 Authorization。统一用不跟随重定向的 opener 发请求。"""
+    import urllib.request
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+
+    opener = urllib.request.build_opener(_NoRedirect())
+    return opener.open(req, timeout=timeout)
+
+
 def call_agent_json(
     api_id: str,
     model: str,
@@ -375,7 +388,7 @@ def _openai_compat_json_mode(
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+        with _no_redirect_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         text = payload["choices"][0]["message"]["content"]
         usage = _openai_usage(payload.get("usage") or {})
@@ -389,7 +402,7 @@ def _openai_compat_json_mode(
             headers={"Content-Type": "application/json",
                      "Authorization": f"Bearer {cred['key']}"},
         )
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+        with _no_redirect_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         text = payload["choices"][0]["message"]["content"]
         usage = _openai_usage(payload.get("usage") or {})
@@ -452,7 +465,7 @@ def _openai_function_call(
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+        with _no_redirect_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         usage = _openai_usage(payload.get("usage") or {})
         msg = payload["choices"][0]["message"]

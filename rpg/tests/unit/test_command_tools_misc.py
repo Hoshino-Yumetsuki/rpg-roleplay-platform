@@ -157,7 +157,8 @@ class UserLevelMiscTools(unittest.TestCase):
         self.assertIn("server_id 为空", r.result or "")
 
     def test_mcp_server_start_only_admin_origin(self):
-        for origin in ("llm_chat", "llm_set"):
+        # SEC(M-1): console_assistant 也被拒(MCP 管理只 ui_button/api_direct,后者 HTTP 层强制 admin)。
+        for origin in ("llm_chat", "llm_set", "console_assistant"):
             r = self._call("mcp_server_start", {"server_id": "x"},
                            origin=origin, trace_id=f"tmss-{origin}")
             self.assertFalse(r.ok)

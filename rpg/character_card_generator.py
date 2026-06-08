@@ -230,6 +230,17 @@ def _layer1_reality_slice(
         from platform_app.db import connect, init_db
         init_db()
         with connect() as db:
+            # SEC(M-2): 校验 script 读权限(owner 或订阅者),防 console_assistant 用 args 注入任意
+            # script_id 跨用户读取他人私有剧本的 NPC/worldbook(executor 拿不到 env.script_id)。
+            if script_id is not None:
+                try:
+                    from tools_dsl.command_tools_misc import _user_can_read_script
+                    _ok = _user_can_read_script(db, int(script_id), int(user_id))
+                except Exception:
+                    _ok = False
+                if not _ok:
+                    slice_["warnings"].append(f"script {script_id} 无读权限,已跳过剧本参考")
+                    script_id = None
             # 剧本 NPC 名单
             if script_id is not None:
                 rows = db.execute(

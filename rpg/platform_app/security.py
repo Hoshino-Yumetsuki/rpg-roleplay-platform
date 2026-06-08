@@ -101,6 +101,16 @@ def _email_server_secret() -> bytes:
     global _PROC_SECRET
     if "_PROC_SECRET" not in globals():
         _PROC_SECRET = secrets.token_bytes(32)
+        # SEC(L-1): 未设 EMAIL_CODE_SECRET → 重启/多 worker 间验证码哈希不一致(进行中验证码静默失效)。
+        try:
+            import logging
+            from core.config import require_auth as _require_auth
+            logging.getLogger(__name__).warning(
+                "EMAIL_CODE_SECRET 未设置:验证码 HMAC 回退进程级随机 key,重启/多 worker 会使进行中验证码失效。%s",
+                "服务器鉴权模式强烈建议设置该环境变量。" if _require_auth() else "",
+            )
+        except Exception:
+            pass
     return _PROC_SECRET  # type: ignore[return-value]
 
 

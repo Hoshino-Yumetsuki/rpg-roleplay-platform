@@ -39,6 +39,7 @@ RPG Roleplay drops a long-form novel into a self-hosted, LLM-driven RPG runtime:
 | **Branchable saves** — commit / ref / checkout work like Git, hard-delete with 30-day grace queue | ✅ Stable |
 | **Script ingestion** — TXT / ZIP upload, 7 chapter splitters, auto-extract character cards + worldbook + timeline, vector index | ✅ Stable |
 | **SillyTavern V2/V3 import** — character cards (PNG tEXt / JSON) + chat history (JSONL → new save) | ✅ Stable |
+| **Tavern Mode** — SillyTavern-style 1:1 character chat: drop-in cards, agent tools (create/swap character, popup choices, import/export card), per-conversation system-prompt editor, round-trip JSONL | ✅ Stable |
 | **Provider catalog** — 10 providers (Anthropic / OpenAI / Vertex / Google AI Studio / DeepSeek / DashScope / Hunyuan / MiMo / xAI / OpenRouter), BYOK encrypted at-rest (AES-256-GCM HKDF per-user-per-api), live model sniffing | ✅ Stable |
 | **i18n** — zh-CN + en, ~2000 keys, full UI coverage (settings / login / platform / game / admin) | ✅ Stable |
 | **Help system** — in-app HelpDrawer with 27 module docs | ✅ Stable |
@@ -46,6 +47,20 @@ RPG Roleplay drops a long-form novel into a self-hosted, LLM-driven RPG runtime:
 | **Auth + registration** — invite-code gate, email verification (Resend), Argon2id with rehash-on-login, forgot-password, two-step register | ✅ Stable |
 | **Account lifecycle** — soft deactivate, request-delete (30-day grace), data export, hard-delete cron | ✅ Stable |
 | **License** | ✅ AGPL-3.0-or-later (this repo) + commercial dual-license available — contact <chaosai31@gmail.com> |
+
+## Tavern Mode — SillyTavern-style 1:1 character chat
+
+A second way to play, alongside the script-driven Game Console. **Tavern Mode** is a 1:1 character chat (think SillyTavern) where you talk directly to a *character* instead of a GM. It reuses the entire GM turn pipeline — memory, worldbook, branching, token accounting, prompt caching — so there is **no separate engine**; it just runs script-free, with its own saves and a Claude-web-style UI.
+
+- **Drop-in character cards.** Import SillyTavern V2 cards (PNG / JSON / WebP) by drag-and-drop, or upload one mid-chat and let the agent parse + import it via the `import_character_card` tool. Export any character back to V2 JSON.
+- **Harness agent, not a fixed script.** The character is a full tool-using agent: it can create/switch characters and personas, optionally bind one of *your own* scripts to ground the roleplay in a novel (permission-gated), and pop a **multiple-choice question** to you (`ask_player_choice`) when the story needs your decision.
+- **Dedicated, branchable saves.** Each chat is its own save with persistent memory + relationships and git-style fork; the sidebar lists conversations Claude-Code-style (archive / rename / delete / auto-title). Pick who to talk to from a dedicated character-selection panel.
+- **In-page right panel** (collapsible, never covers the top nav) with three tabs: the AI character card, your editable persona, and a **per-conversation system-prompt editor** (jailbreak / persona / behaviour overrides).
+- **Immersion-first transcript.** Roleplay prose stays clean; tool calls and the model's reasoning stream render as collapsible blocks and **persist in history** (still there after reload). Live turn timer + a context-usage ring fed by real token accounting.
+- **Round-trippable export.** Export a conversation to SillyTavern JSONL (with a confirm step) and re-import it losslessly — opening message included.
+- **User-level tool fencing.** Every agent tool call is scoped to your own account + save: it can read/write only *your* data, never another user's or any server-level state.
+
+Worldbook overlays, character-book ingestion, a deterministic opening (`first_mes` pasted verbatim, never LLM-invented), and BYOK routing (Anthropic / OpenAI-compatible / Vertex Gemini, streaming + tool-use) are all wired in.
 
 ## Quick start
 

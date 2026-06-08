@@ -93,6 +93,14 @@ async def api_verify_email(request: Request):
     code = body.get("code", "").strip()
     if not email or not code:
         return json_response({"ok": False, "error": "email 和 code 不能为空"}, status_code=400)
+    # SEC(L-5): per-IP 软上限,与 email 维度失败计数器叠加做纵深防御(防多 IP 轮询放大暴破)。
+    try:
+        import redis_bus as _rb
+        _c = _rb.rate_incr(f"verifyip:{_client_ip(request)}", 600)
+        if _c and _c > 60:
+            return json_response({"ok": False, "error": "尝试过于频繁,请稍后再试"}, status_code=429)
+    except Exception:
+        pass
     try:
         user, token = _auth.confirm_email_verification(email, code)
         workspace.ensure_default(user["id"])
@@ -231,8 +239,9 @@ async def api_magic_consume(request: Request):
         result = _auth.login_via_magic_token(email, ip=ip)
         # Step 3: 保证 workspace 已建好
         workspace.ensure_default(result["user_id"])
+        token = result.pop("session_token", "")  # SEC(M-6): 仅经 HTTPOnly cookie 下发,不写响应体
         response = json_response({"ok": True, **result})
-        _set_session_cookie(response, request, result["session_token"])
+        _set_session_cookie(response, request, token)
         return response
     except ValueError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=403)
@@ -252,9 +261,9 @@ async def api_passwordless_verify(request: Request):
         result = _auth.verify_passwordless_and_login(email, code, ip=ip)
         # ensure workspace exists for new/existing user
         workspace.ensure_default(result["user_id"])
+        token = result.pop("session_token", "")  # SEC(M-6): 仅经 HTTPOnly cookie 下发,不写响应体
         response = json_response({"ok": True, **result})
-        # set session cookie using session_token
-        _set_session_cookie(response, request, result["session_token"])
+        _set_session_cookie(response, request, token)
         return response
     except ValueError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=400)

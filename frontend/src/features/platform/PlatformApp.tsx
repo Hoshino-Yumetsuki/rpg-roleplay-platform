@@ -98,6 +98,10 @@ const getPLTitles = (t) => ({
   modules: [t('platform.nav.modules'), t('platform.nav.modules_sub')],
   saves: [t('platform.nav.saves'), t('platform.nav.saves_sub')],
   'saves-branches': [t('platform.nav.saves_branches'), t('platform.nav.saves_branches_sub')],
+  tavern: [
+    t('platform.nav.tavern', { defaultValue: '酒馆' }),
+    t('platform.nav.tavern_sub', { defaultValue: '与角色卡 1:1 自由对话' }),
+  ],
   cards: [t('platform.nav.cards'), t('platform.nav.cards_sub')],
   'cards-npc': [t('platform.nav.cards_npc'), t('platform.nav.cards_npc_sub')],
   'cards-online': [
@@ -5931,10 +5935,11 @@ const getCSModules = (t) => [
     label: t('platform.nav.saves'),
     group: t('platform.nav.group_play'),
     // NPC 角色卡已移入「剧本」详情面板(NPC 卡属于具体剧本),不再在开始游戏出现。
-    pages: ['saves', 'saves-branches', 'cards', 'cards-online', 'modules', 'play-settings'],
+    pages: ['saves', 'saves-branches', 'tavern', 'cards', 'cards-online', 'modules', 'play-settings'],
     sub: [
       { text: t('platform.nav.cs_saves'), href: '#saves' },
       { text: t('platform.nav.cs_branches'), href: '#saves-branches' },
+      { text: t('platform.nav.tavern', { defaultValue: '酒馆' }), href: '#tavern' },
       { text: t('platform.nav.cs_user_cards'), href: '#cards' },
       {
         text: t('platform.nav.cards_online', { defaultValue: '在线角色卡库' }),
@@ -6379,8 +6384,9 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
     }
   };
 
-  // 独立页(无侧栏):欢迎页就是登陆后的工作台首页,不归任何模块,整页铺满
-  const standalone = page === 'profile';
+  // 独立页(无侧栏):欢迎页就是登陆后的工作台首页,不归任何模块,整页铺满。
+  // 酒馆(#tavern)自带两段式子侧栏 + 整页铺满,同样走 standalone 路径。
+  const standalone = page === 'profile' || page === 'tavern';
 
   return (
     <>
@@ -6657,6 +6663,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
         navigationTriggerHide
         navigationWidth={208}
         toolsHide
+        disableContentPaddings={page === 'tavern'}
         navigation={
           <CSSideNavigation
             header={{

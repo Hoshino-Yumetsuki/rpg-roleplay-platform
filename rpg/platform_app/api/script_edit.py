@@ -532,6 +532,12 @@ async def api_worldbook_update(
         )
         db.commit()
 
+    # L-4: worldbook 改动后清 constant 层缓存(本 worker 即时;其余 worker 300s TTL 自愈)。
+    try:
+        from gm_serving.context_inject import invalidate_constant_cache
+        invalidate_constant_cache(script_id)
+    except Exception:
+        pass
     return json_response({"ok": True, "entry": after, "commit_id": commit_id})
 
 
@@ -593,6 +599,12 @@ async def api_worldbook_add(
         )
         db.commit()
 
+    # L-4: worldbook 改动后清 constant 层缓存(本 worker 即时;其余 worker 300s TTL 自愈)。
+    try:
+        from gm_serving.context_inject import invalidate_constant_cache
+        invalidate_constant_cache(script_id)
+    except Exception:
+        pass
     return json_response({"ok": True, "entry": after, "commit_id": commit_id})
 
 
@@ -630,6 +642,12 @@ async def api_worldbook_delete(
         )
         db.commit()
 
+    # L-4: worldbook 改动后清 constant 层缓存(本 worker 即时;其余 worker 300s TTL 自愈)。
+    try:
+        from gm_serving.context_inject import invalidate_constant_cache
+        invalidate_constant_cache(script_id)
+    except Exception:
+        pass
     return json_response({"ok": True, "deleted": True, "commit_id": commit_id})
 
 

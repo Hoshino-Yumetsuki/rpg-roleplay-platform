@@ -1577,6 +1577,36 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "create index if not exists idx_messages_save_role_created "
         "on messages(save_id, role, created_at, id)",
     ]),
+    # 版本号说明:deploy-prod 生产此前到 v61。v62-64 被 living-world-engine 分支占用
+    # (living_world_save_rag/coarse_world/entity_state,见共享 dev DB),那条线后续会并入
+    # deploy-prod。为避免并入时撞号,酒馆迁移直接用 v65(>= 两边已知最大),留出 62-64 给 living-world。
+    (65, "tavern_mode_saves", [
+        # 酒馆模式:独立的"角色对话"存档(无剧本)。复用 game_saves 一张表 + 区分列,
+        # 不另建并行表 —— 这样 branch_commits/messages/advisory-lock 单写者/save_io
+        # 全部原样复用。script_id 此前 NOT NULL(init.py:110),酒馆存档无剧本,
+        # 故去掉 NOT NULL;用 CHECK 兜底"game 存档仍必须有 script_id"(应用层不变量)。
+        # 已有 game 存档零影响:save_kind 默认 'game' 且 script_id 本就非空 → CHECK 通过。
+        "alter table game_saves alter column script_id drop not null",
+        "alter table game_saves add column if not exists save_kind text not null default 'game'",
+        "alter table game_saves add column if not exists tavern_character_card_id bigint references character_cards(id) on delete set null",
+        "alter table game_saves add column if not exists tavern_persona_card_id bigint references character_cards(id) on delete set null",
+        "alter table game_saves add column if not exists archived_at timestamptz",
+        # add constraint 无 if not exists → 先 drop 再 add 保持幂等(重复运行/已健康均 no-op)
+        "alter table game_saves drop constraint if exists chk_game_save_needs_script",
+        "alter table game_saves add constraint chk_game_save_needs_script check (save_kind <> 'game' or script_id is not null)",
+        "create index if not exists idx_game_saves_kind on game_saves(user_id, save_kind, archived_at, updated_at desc)",
+    ]),
+    (66, "branch_commit_turn_index_backfill", [
+        # BUGFIX(分支回退多删一轮)的存量回填:历史上 seed_tree 用顺序计数器给 round commit 的
+        # turn_index 编号(1,2,3),与全系统其余处(snapshot_for_history / record_runtime_turn /
+        # resolve_commit_id_by_message)的 `history_len//2` 约定不一致 —— 当 history 以"无玩家输入的
+        # 开场"(酒馆 first_mes / 导入存档开场)起手时,开场被记成 turn_index=1 而非 0,其后回合整体 +1,
+        # 前端按 msg_index//2 回退会多截一轮。seed.py 已改用 history_len//2;此处把存量 commit 对齐。
+        # 幂等:仅更新「turn_index 与快照 history 长度//2 不符」的 commit;jsonb_typeof 守 array 防脏快照报错。
+        "update branch_commits set turn_index = jsonb_array_length(state_snapshot->'history')/2 "
+        "where jsonb_typeof(state_snapshot->'history') = 'array' "
+        "and turn_index <> (jsonb_array_length(state_snapshot->'history')/2)",
+    ]),
 ]
 
 

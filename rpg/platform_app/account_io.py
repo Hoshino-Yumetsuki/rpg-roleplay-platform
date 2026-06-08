@@ -264,7 +264,8 @@ def import_account(user_id: int, zip_bytes: bytes, progress=None) -> dict[str, A
             raise ValueError(f"解压后过大(max {MAX_ACCOUNT_EXPANDED_BYTES // 1024 // 1024}MB)")
 
         try:
-            manifest = json.loads(zf.read("account-manifest.json").decode("utf-8"))
+            # SEC(H-8): 有界解压,防单成员谎报/炸弹 OOM。
+            manifest = json.loads(script_pack._safe_member_read(zf, "account-manifest.json").decode("utf-8"))
         except KeyError as exc:
             raise ValueError("缺少 account-manifest.json — 不是账号数据包") from exc
         av = int(manifest.get("account_export_version") or 0)
@@ -283,7 +284,7 @@ def import_account(user_id: int, zip_bytes: bytes, progress=None) -> dict[str, A
                 warnings.append(f"剧本成员缺失:{member}")
                 continue
             try:
-                res = script_pack.import_script_pack(zf.read(member), user_id)
+                res = script_pack.import_script_pack(script_pack._safe_member_read(zf, member), user_id)  # SEC(H-8): 有界解压
                 new_sid = int(res.get("script_id"))
                 if origin is not None:
                     script_id_map[int(origin)] = new_sid
@@ -306,7 +307,7 @@ def import_account(user_id: int, zip_bytes: bytes, progress=None) -> dict[str, A
                 warnings.append(f"存档成员缺失:{member}")
                 continue
             try:
-                payload = json.loads(zf.read(member).decode("utf-8"))
+                payload = json.loads(script_pack._safe_member_read(zf, member).decode("utf-8"))  # SEC(H-8): 有界解压
                 save_obj = payload.get("save") or {}
                 # 把原 script_id 重映射到新导入的剧本;映射不到则置空,
                 # import_save 会兜底挂到用户第一个剧本并 warning。

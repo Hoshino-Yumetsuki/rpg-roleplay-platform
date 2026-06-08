@@ -333,6 +333,15 @@ async def api_script_import_pipeline(request: Request, script_id: int, user=Depe
         body = await request.json()
     except Exception:
         pass
+    # SEC(H-9/L-3): 前置所有权校验 —— 过去所有权只在后台线程 _stage_chunks 才查,任意认证用户可对
+    # 他人 script_id 启动 job 并拿到确认性 job_id(TOCTOU + 信息泄露)。镜像 schedule_module_rebuild。
+    from ..db import connect as _connect
+    with _connect() as _db:
+        _owns = _db.execute(
+            "select 1 from scripts where id = %s and owner_id = %s", (script_id, user["id"])
+        ).fetchone()
+    if not _owns:
+        return json_response({"ok": False, "error": "无权操作该剧本或剧本不存在"}, status_code=403)
     from .. import import_pipeline
     try:
         return json_response(import_pipeline.schedule_full_import(

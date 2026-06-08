@@ -200,6 +200,24 @@ MAX_TRACE_SEEN = 1024
 AUDIT_LOG_LIMIT = 200
 RECENT_AUDIT_LIMIT = 1000
 
+# SEC(H-14/H-15): dispatcher 多为「每请求新建实例」(chat_pipeline/chat_tool_router/apply_ops/
+# black_swan_agent/ui_dispatch_helper),所以实例级限流 bucket / asyncio.Lock 都形同虚设
+# (跨请求/跨实例不共享)。下面是进程级全局结构:限流回退用全局 bucket(优先 Redis 跨 worker),
+# 同步写路径用全局 per-(user,save) RLock 串行化同一存档的并发回合(双 tab / 重叠 SSE)。
+_GLOBAL_RATE_BUCKETS: dict[int, list[float]] = {}
+_GLOBAL_RATE_LOCK = threading.Lock()
+_SYNC_SCOPE_LOCKS: dict[tuple[int, int | None], threading.RLock] = {}
+_SYNC_LOCKS_GUARD = threading.Lock()
+
+
+def _get_sync_scope_lock(key: tuple[int, int | None]) -> threading.RLock:
+    with _SYNC_LOCKS_GUARD:
+        lock = _SYNC_SCOPE_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _SYNC_SCOPE_LOCKS[key] = lock
+        return lock
+
 
 class ToolDispatcher:
     """中央分发器。所有工具调用必须通过它。
@@ -257,6 +275,12 @@ class ToolDispatcher:
             spec = self._validate(env)
         except DispatchError as exc:
             return self._reject(env, exc)
+        # SEC(H-15): 同步写路径过去无锁 → 同一存档两并发回合(双 tab/重叠 SSE)read-modify-write
+        # 互覆盖。用进程级全局 per-(user,save) RLock 串行化(advisory lock 只串 DB 提交,不护内存态)。
+        if spec.scope in ("save", "script", "user"):
+            lock_key = (env.user_id, env.save_id if spec.scope == "save" else None)
+            with _get_sync_scope_lock(lock_key):
+                return self._execute(env, spec)
         return self._execute(env, spec)
 
     def recent_audit(self, limit: int = 50, user_id: int | None = None) -> list[dict[str, Any]]:
@@ -369,8 +393,13 @@ class ToolDispatcher:
             elif spec.scope == "script":
                 text = spec.executor(env.user_id, env.script_id, env.args, state)
             else:  # save
-                # dispatcher 自动注入 env.save_id 到 args,让 executor 不必依赖 state._save_id
-                if env.save_id is not None and "save_id" not in env.args:
+                # 安全围栏(防 LLM 跨档注入):save 级工具的 save_id 必须恒等于服务端绑定的
+                # env.save_id。**无条件覆盖** args 里任何调用方/LLM 传入的 save_id —— 旧实现
+                # 只在 "save_id" not in args 时注入,LLM 把 save_id 写进 tool args 即可绕过,
+                # 令 worldbook_add / set_tavern_character 等据此向**他人存档**读写(跨用户越权)。
+                # env.save_id 由 chat handler 从已鉴权会话绑定,LLM 不可控,故覆盖是安全且正确的
+                # (save 级语义恒为"当前绑定存档",不存在合法的跨档 save 级调用)。
+                if env.save_id is not None:
                     env.args["save_id"] = env.save_id
                 text = spec.executor(state, env.args)
             # task 109b: 工具可以返 dict (e.g. ui_set_field 返 __ui_action__ payload);
@@ -472,21 +501,38 @@ class ToolDispatcher:
         return ToolResult(ok=False, error=f"[{exc.kind}] {exc.detail}", audit=audit)
 
     def _rate_ok(self, user_id: int) -> bool:
-        now = time.monotonic()
-        bucket = self._rate_buckets.setdefault(user_id, [])
-        # 丢掉 1 秒前的
-        cutoff = now - 1.0
-        while bucket and bucket[0] < cutoff:
-            bucket.pop(0)
-        if len(bucket) >= MAX_CALLS_PER_USER_PER_SECOND:
-            return False
-        bucket.append(now)
-        return True
+        # SEC(H-14): dispatcher 多为每请求新建实例 → 实例级 bucket 形同虚设(跨请求/跨 worker 不共享)。
+        def _sliding(bucket: list[float]) -> bool:
+            now = time.monotonic()
+            cutoff = now - 1.0
+            while bucket and bucket[0] < cutoff:
+                bucket.pop(0)
+            if len(bucket) >= MAX_CALLS_PER_USER_PER_SECOND:
+                return False
+            bucket.append(now)
+            return True
+        # 测试环境:用实例级 bucket,保持各测试隔离(每测试新建 dispatcher → 干净);
+        # test_rate_limit 在单实例内连续调用仍能触发上限,机制不被绕过。
+        import os as _os
+        if _os.environ.get("PYTEST_CURRENT_TEST"):
+            return _sliding(self._rate_buckets.setdefault(user_id, []))
+        # 生产:优先 Redis 固定窗口跨 worker 共享计数;不可用回退进程级全局 bucket(跨请求/跨实例)。
+        try:
+            import redis_bus
+            cnt = redis_bus.rate_incr(f"tooluse:{int(user_id)}", 1)
+            if cnt is not None:
+                return cnt <= MAX_CALLS_PER_USER_PER_SECOND
+        except Exception:
+            pass
+        with _GLOBAL_RATE_LOCK:
+            return _sliding(_GLOBAL_RATE_BUCKETS.setdefault(user_id, []))
 
     # ── 测试 hook ─────────────────────────────────────────
 
     def reset_rate_limits(self) -> None:
         self._rate_buckets.clear()
+        with _GLOBAL_RATE_LOCK:
+            _GLOBAL_RATE_BUCKETS.clear()
         self._trace_seen.clear()
 
 

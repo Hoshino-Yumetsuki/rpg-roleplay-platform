@@ -52,6 +52,7 @@ import { SavesPage } from '../saves/SavesPage';
 import { ScriptsPage } from '../scripts/ScriptsPage';
 import { CardsPage } from '../cards/CardsPage';
 import { SettingsPage } from '../settings/SettingsPage';
+import TavernPage from '../tavern/TavernPage';
 import { FeedbackPage } from './FeedbackPage';
 import { plPathToPage, plNavigate, plPageToPath } from '../../app/router';
 
@@ -98,6 +99,7 @@ const PL_IDS = [
   'scripts-editor',
   'scripts-settings',
   'play-settings',
+  'tavern',
   'settings-models',
   'settings-modelparams',
   'settings-modules',
@@ -212,6 +214,7 @@ function PlatformApp() {
   else if (page === 'play-settings')
     body = <ComingSoon title="游戏设置" desc="全局游玩默认(元知识/引导/防剧透)。迁移中。" />;
   else if (page === 'library') body = <LibraryPage />;
+  else if (page === 'tavern') body = <TavernPage />;
   else if (page === 'cards') body = <CardsPage subPage="user" />;
   else if (page === 'cards-npc') body = <CardsPage subPage="npc" />;
   else if (page === 'settings') body = <SettingsPage section="preferences" />;

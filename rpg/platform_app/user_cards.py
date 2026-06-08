@@ -257,6 +257,11 @@ def upsert_user_card(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         "scope": _normalize_scope(payload.get("scope")),
     }
 
+    # SEC(M-13): metadata JSONB 限长(character_book 经 JSON body 路径可达 nginx 50MB),防存储放大。
+    import json as _json
+    if len(_json.dumps(payload.get("metadata") or {}, ensure_ascii=False).encode("utf-8")) > 256 * 1024:
+        raise ValueError("角色卡 metadata 过大(上限 256KB)")
+
     with connect() as db:
         if card_id:
             owned = db.execute(

@@ -228,7 +228,23 @@ def _migrate_mcp_catalog(data: dict[str, Any]) -> dict[str, Any]:
 
 
 _MCP_CMD_WHITELIST = {"python3", "python", "node", "npx"}
-_MCP_CMD_SAFE_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,32}$")
+# SEC(C-1): 旧实现有 _MCP_CMD_SAFE_RE = ^[a-zA-Z0-9_-]{1,32}$ 兜底,会把 bash/sh/curl/nc/socat
+# 当合法命令放过 → 配合 self-hosted 模式 admin 短路 = 未认证 RCE。现彻底删除正则兜底:
+# command 必须严格命中白名单,且每种解释器都校验 args 禁止内联代码执行。
+_MCP_PY_FORBIDDEN_FLAGS = {"-c", "-e"}                          # python 内联代码执行
+_MCP_NODE_FORBIDDEN_FLAGS = {"-e", "--eval", "-p", "--print"}   # node 内联代码执行
+
+
+def _validate_interpreter_args(command: str, args: list[str]) -> None:
+    """python/node 解释器禁止内联代码执行 flag(-c/-e/-p),防止 `python3 -c '...'` RCE。
+
+    MCP server 只应以模块(`-m pkg`)或脚本(`server.py`)形式启动,绝不接受内联代码。
+    """
+    forbidden = _MCP_PY_FORBIDDEN_FLAGS if command in {"python", "python3"} else _MCP_NODE_FORBIDDEN_FLAGS
+    for raw in args:
+        a = str(raw)
+        if any(a == f or a.startswith(f) for f in forbidden):
+            raise ValueError(f"{command} 禁用内联执行 flag: {a!r}(MCP server 必须以模块/脚本形式启动)")
 
 # P1-3 SEC: npx 专项 args 校验 ─────────────────────────────────────────────
 # 允许的包名：@modelcontextprotocol/<slug> 或普通小写短名
@@ -286,11 +302,13 @@ def _normalize_mcp_server(server: dict[str, Any]) -> dict[str, Any]:
     if command:
         if "/" in command or ".." in command:
             raise ValueError(f"MCP server command 不能包含路径分隔符: {command!r}")
-        if command not in _MCP_CMD_WHITELIST and not _MCP_CMD_SAFE_RE.match(command):
-            raise ValueError(f"MCP server command 不合法（仅允许白名单或 [a-zA-Z0-9_-]{{1,32}}）: {command!r}")
-        # P1-3 SEC: npx 专项 args 校验 — 防止 npx evil-package / -p / -c 绕过
+        if command not in _MCP_CMD_WHITELIST:
+            raise ValueError(f"MCP server command 不在白名单(仅允许 {sorted(_MCP_CMD_WHITELIST)}): {command!r}")
+        # P1-3 SEC + C-1: 每种命令都校验 args,禁止内联代码执行(npx evil-pkg / python -c / node -e)
         if command == "npx":
             _validate_npx_args([str(a) for a in args])
+        else:
+            _validate_interpreter_args(command, [str(a) for a in args])
     return {
         "id": server_id,
         "display_name": str(server.get("display_name") or server_id).strip(),

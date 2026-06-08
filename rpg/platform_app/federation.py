@@ -501,6 +501,7 @@ def connector_device_start(user_id: int, base_url: str, scopes: list[str]) -> di
 def connector_device_poll(user_id: int, base_url: str, device_code: str) -> dict[str, Any]:
     """轮询在线服务;拿到令牌即落本地加密存储。"""
     base = _normalize_base(base_url)
+    user_credentials._validate_base_url(base)  # SEC(H-1): 与 device_start 对齐,防 SSRF 跳过 start 直调 poll
     with _client(base) as c:
         r = c.post("/api/ext/device/token", json={"device_code": device_code})
     data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}

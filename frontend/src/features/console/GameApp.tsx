@@ -2130,4 +2130,6 @@ export {
   SearchDrawer,
   GameToastStack,
   GameSettingsModal,
+  NarrativeBlock,
+  PlayerBlock,
 };

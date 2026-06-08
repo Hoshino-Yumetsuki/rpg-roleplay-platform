@@ -16,6 +16,22 @@ log = logging.getLogger(__name__)
 # rpg/ 根目录（rpg/core/vertex_sa.py → rpg/）
 _RPG_BASE = Path(__file__).resolve().parent.parent
 
+# SEC(H-3): 用户上传的 SA JSON 里 token_uri 决定 google-auth 把「private_key 签名的 JWT」
+# POST 到哪个端点。若不校验,攻击者把 token_uri 改成自己的服务器 → 服务器主动把含凭据的
+# JWT 发给攻击者(SSRF + 凭据外泄)。白名单只允许 Google 官方 token 端点。
+_ALLOWED_SA_TOKEN_URIS = {
+    "https://oauth2.googleapis.com/token",
+    "https://accounts.google.com/o/oauth2/token",
+}
+
+
+def _validate_sa_json(sa: dict) -> None:
+    if not isinstance(sa, dict) or sa.get("type") != "service_account":
+        raise ValueError("SA JSON 非法:type 必须为 service_account")
+    token_uri = sa.get("token_uri") or "https://oauth2.googleapis.com/token"
+    if token_uri not in _ALLOWED_SA_TOKEN_URIS:
+        raise ValueError(f"SA JSON token_uri 不在白名单(疑似 SSRF):{token_uri!r}")
+
 
 def load_sa_credentials(
     user_id: int | None,
@@ -48,6 +64,7 @@ def load_sa_credentials(
             cred = get_credential(int(user_id), api_id)
             if cred and cred.get("key"):
                 sa = _json.loads(cred["key"])
+                _validate_sa_json(sa)  # SEC(H-3): token_uri 白名单 + type 校验,防 JWT 外泄到攻击者端点
                 credentials = service_account.Credentials.from_service_account_info(
                     sa, scopes=_SCOPES,
                 )

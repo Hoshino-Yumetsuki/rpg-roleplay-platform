@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
-from routes._deps_fastapi import get_current_admin, get_current_user
+from routes._deps_fastapi import get_current_admin_strict, get_current_user
 from schemas._common import COMMON_ERROR_RESPONSES, ErrorResponse, GenericOkResponse
 from schemas.mcp import (
     McpServerDeleteRequest,
@@ -33,7 +33,7 @@ async def api_tools(
 @router.post("/api/mcp/server", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
 async def api_mcp_server(
     body: McpServerRequest,
-    api_user: dict[str, Any] | None = Depends(get_current_admin),
+    api_user: dict[str, Any] | None = Depends(get_current_admin_strict),
 ) -> JSONResponse:
     from app import tool_payload, upsert_mcp_server
     try:
@@ -47,7 +47,7 @@ async def api_mcp_server(
 @router.post("/api/mcp/server/enabled", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
 async def api_mcp_server_enabled(
     body: McpServerEnabledRequest,
-    api_user: dict[str, Any] | None = Depends(get_current_admin),
+    api_user: dict[str, Any] | None = Depends(get_current_admin_strict),
 ) -> JSONResponse:
     from app import set_mcp_server_enabled, tool_payload
     body_dict = body.model_dump(exclude_none=True)
@@ -61,7 +61,7 @@ async def api_mcp_server_enabled(
 @router.post("/api/mcp/server/delete", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
 async def api_mcp_server_delete(
     body: McpServerDeleteRequest,
-    api_user: dict[str, Any] | None = Depends(get_current_admin),
+    api_user: dict[str, Any] | None = Depends(get_current_admin_strict),
 ) -> JSONResponse:
     from app import delete_mcp_server, tool_payload
     body_dict = body.model_dump(exclude_none=True)
@@ -75,7 +75,7 @@ async def api_mcp_server_delete(
 @router.post("/api/mcp/server/validate", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
 async def api_mcp_server_validate(
     body: McpServerValidateRequest,
-    api_user: dict[str, Any] | None = Depends(get_current_admin),
+    api_user: dict[str, Any] | None = Depends(get_current_admin_strict),
 ) -> JSONResponse:
     from app import validate_mcp_server
     body_dict = body.model_dump(exclude_none=True)
@@ -88,7 +88,7 @@ async def api_mcp_server_validate(
 @router.post("/api/mcp/server/start", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
 async def api_mcp_server_start(
     body: McpServerStartRequest,
-    api_user: dict[str, Any] | None = Depends(get_current_admin),
+    api_user: dict[str, Any] | None = Depends(get_current_admin_strict),
 ) -> JSONResponse:
     body_dict = body.model_dump(exclude_none=True)
     import mcp_broker
@@ -98,7 +98,7 @@ async def api_mcp_server_start(
 @router.post("/api/mcp/server/stop", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
 async def api_mcp_server_stop(
     body: McpServerStopRequest,
-    api_user: dict[str, Any] | None = Depends(get_current_admin),
+    api_user: dict[str, Any] | None = Depends(get_current_admin_strict),
 ) -> JSONResponse:
     body_dict = body.model_dump(exclude_none=True)
     import mcp_broker
@@ -138,7 +138,7 @@ async def api_mcp_runtime(
 @router.post("/api/mcp/tool/call", response_model=GenericOkResponse, responses={**COMMON_ERROR_RESPONSES, 403: {"model": ErrorResponse}})
 async def api_mcp_tool_call(
     body: McpToolCallRequest,
-    api_user: dict[str, Any] = Depends(get_current_admin),
+    api_user: dict[str, Any] = Depends(get_current_admin_strict),
 ) -> JSONResponse:
     """前端或主 GM 调用 MCP 工具的统一入口。
 
@@ -162,7 +162,7 @@ async def api_mcp_tool_call(
 
 @router.get("/api/mcp/tools")
 async def api_mcp_tools(
-    api_user: dict[str, Any] = Depends(get_current_admin),
+    api_user: dict[str, Any] = Depends(get_current_admin_strict),
 ) -> JSONResponse:
     """列出所有已启动 server 的工具清单（前端加号菜单/Skill 选择面板用）。
 
@@ -176,7 +176,7 @@ async def api_mcp_tools(
 @router.get("/api/admin/tool-usage")
 async def api_admin_tool_usage(
     request: Request,
-    api_user: dict[str, Any] = Depends(get_current_admin),
+    api_user: dict[str, Any] = Depends(get_current_admin_strict),
 ) -> JSONResponse:
     """聚合 tool_invocations 表数据 — 看 GM 实际调了哪些工具,失败率多少。
 
@@ -247,7 +247,7 @@ async def api_admin_tool_usage(
 
 @router.get("/api/admin/tool-debug")
 async def api_admin_tool_debug(
-    api_user: dict[str, Any] = Depends(get_current_admin),
+    api_user: dict[str, Any] = Depends(get_current_admin_strict),
 ) -> JSONResponse:
     """debug: 当前 chat 会注入 GM 的 unified_tools 摘要。
     返回:

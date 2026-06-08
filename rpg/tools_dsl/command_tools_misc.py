@@ -49,6 +49,9 @@ _USER_DEST = frozenset({"ui_button", "api_direct", "console_assistant"})
 _SAVE_OK = frozenset({"ui_button", "api_direct", "llm_set", "llm_chat", "console_assistant"})
 _SAVE_SENSITIVE = frozenset({"ui_button", "api_direct"})
 _ADMIN = frozenset({"ui_button", "api_direct", "console_assistant"})
+# SEC(M-1): MCP server 管理(全局共享 + 启动=任意代码执行)严格限 UI/API,**不含 console_assistant**
+# —— 这两个 origin 的 MCP HTTP 端点已被 get_current_admin_strict 强制 admin(Batch 1)。
+_MCP_ADMIN = frozenset({"ui_button", "api_direct"})
 # 旧别名,保持向后兼容(misc 文件 user_specs 表里用)
 _USER_OK = _USER_READ
 
@@ -117,6 +120,9 @@ def _t_set_preference(user_id: int, args: dict) -> str:
     value = args.get("value")
     if not key:
         return "失败: key 为空"
+    # SEC(M-12): value 限长,防 console_assistant LLM 放大存储。
+    if value is not None and len(json.dumps(value, ensure_ascii=False)) > 4096:
+        return "失败: value 过大(上限 4096 字符)"
     try:
         from platform_app.db import connect, init_db
         init_db()
@@ -130,6 +136,9 @@ def _t_set_preference(user_id: int, args: dict) -> str:
             if not isinstance(prefs, dict):
                 prefs = {}
             prefs[key] = value
+            # SEC(M-12): 总 blob 上限,防累积放大。
+            if len(json.dumps(prefs, ensure_ascii=False).encode("utf-8")) > 32 * 1024:
+                return "失败: 偏好总量超限(32KB)"
             db.execute(
                 "insert into user_preferences (user_id, preferences) values (%s, %s) "
                 "on conflict (user_id) do update set preferences = excluded.preferences, "
@@ -142,7 +151,11 @@ def _t_set_preference(user_id: int, args: dict) -> str:
 
 
 # ────────────────────────────────────────────────────────────
-# MCP 管理 (admin 工具,只 ui_button)
+# MCP 管理 (admin 工具)
+# SEC(M-1): MCP server 配置全局共享、启动 = 以服务进程身份执行任意代码。这 3 个工具只允许
+# ui_button / api_direct origin —— 这两个 origin 的 MCP 端点在 HTTP 层已被 get_current_admin_strict
+# 强制 admin(Batch 1)。**不含 console_assistant** —— 否则任意非 admin 用户的侧栏助手 LLM 即可
+# 操作全局 MCP catalog(原 _ADMIN 含 console_assistant 是越权面)。见 _MCP_ADMIN。
 # ────────────────────────────────────────────────────────────
 
 
@@ -251,6 +264,17 @@ def _t_get_save_detail(user_id: int, args: dict) -> str:
         return f"失败: {type(exc).__name__}: {exc}"
 
 
+def _user_can_read_script(db, sid: int, user_id: int) -> bool:
+    """剧本读权限:owner 或订阅者。镜像 tavern_bind_script 的校验 —— 防 LLM 用任意
+    script_id 跨用户读取他人私有剧本的章节/世界书/NPC 内容(script 级工具的 sid 可由
+    args 注入,env.script_id 在酒馆/无剧本会话里为 None)。"""
+    return db.execute(
+        "select 1 from scripts s where s.id = %s and ("
+        "  s.owner_id = %s or s.id in (select script_id from user_script_subscriptions where user_id = %s))",
+        (int(sid), user_id, user_id),
+    ).fetchone() is not None
+
+
 def _t_get_chapter_facts(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
     sid = script_id or args.get("script_id")
     chapter_index = args.get("chapter_index")
@@ -260,6 +284,8 @@ def _t_get_chapter_facts(user_id: int, script_id: int | None, args: dict, state:
         from platform_app.db import connect, init_db
         init_db()
         with connect() as db:
+            if not _user_can_read_script(db, int(sid), user_id):
+                return f"失败 (权限): 剧本 #{int(sid)} 不属于当前用户或未订阅"
             if chapter_index is None:
                 rows = db.execute(
                     "select chapter, title, summary from chapter_facts "
@@ -286,6 +312,8 @@ def _t_get_worldbook(user_id: int, script_id: int | None, args: dict, state: Any
         from platform_app.db import connect, init_db
         init_db()
         with connect() as db:
+            if not _user_can_read_script(db, int(sid), user_id):
+                return f"失败 (权限): 剧本 #{int(sid)} 不属于当前用户或未订阅"
             # 真实表名 worldbook_entries(不是 script_worldbook,旧 SQL 用了过期表名)
             # 字段:title / content(不是 key)
             if query:
@@ -387,13 +415,13 @@ def register_misc_tools() -> None:
          {"type": "object",
           "properties": {"server_id": {"type": "string"}, "enabled": {"type": "boolean"}},
           "required": ["server_id", "enabled"]},
-         _t_mcp_server_enable, _ADMIN, False),
+         _t_mcp_server_enable, _MCP_ADMIN, False),  # SEC(M-1): 不含 console_assistant
         ("mcp_server_start", "启动指定 MCP server",
          {"type": "object", "properties": {"server_id": {"type": "string"}}, "required": []},
-         _t_mcp_server_start, _ADMIN, False),
+         _t_mcp_server_start, _MCP_ADMIN, False),   # SEC(M-1): 不含 console_assistant
         ("mcp_server_stop", "停止指定 MCP server",
          {"type": "object", "properties": {"server_id": {"type": "string"}}, "required": ["server_id"]},
-         _t_mcp_server_stop, _ADMIN, False),
+         _t_mcp_server_stop, _MCP_ADMIN, False),    # SEC(M-1): 不含 console_assistant
         ("select_model", "切换当前 GM 使用的模型 (api_id + model_real_name)",
          {"type": "object",
           "properties": {"api_id": {"type": "string"}, "model": {"type": "string"}},

@@ -39,6 +39,7 @@ RPG Roleplay 把一本长篇小说扔进一个自托管的 LLM 驱动的 RPG 运
 | **可分支存档** — commit / ref / checkout 像 Git 一样工作 + 硬删 30 天宽限队列 | ✅ 稳定 |
 | **剧本导入** — TXT / ZIP 上传, 7 种章节切分, 自动抽角色卡 + 世界书 + 时间线 + 向量索引 | ✅ 稳定 |
 | **SillyTavern V2/V3 导入** — 角色卡(PNG tEXt / JSON) + 聊天记录(JSONL → 新存档) | ✅ 稳定 |
+| **酒馆模式** — SillyTavern 风 1:1 角色对话:拖卡即用、agent 工具(建/换角色、弹出选择、导入/导出卡)、本对话系统提示编辑、JSONL 往返 | ✅ 稳定 |
 | **Provider 目录** — 10 家(Anthropic / OpenAI / Vertex / Google AI Studio / DeepSeek / DashScope / Hunyuan / MiMo / xAI / OpenRouter), BYOK 加密存储(AES-256-GCM HKDF per-user-per-api), 实时模型嗅探 | ✅ 稳定 |
 | **i18n** — 简体中文 + 英文, ~2000 keys, UI 全覆盖(设置 / 登录 / 平台 / 游戏 / 管理) | ✅ 稳定 |
 | **帮助系统** — 应用内 HelpDrawer, 27 个模块文档 | ✅ 稳定 |
@@ -46,6 +47,20 @@ RPG Roleplay 把一本长篇小说扔进一个自托管的 LLM 驱动的 RPG 运
 | **认证 + 注册** — 邀请码闸, 邮件验证(Resend), Argon2id 登录时 rehash, 忘记密码, 两步注册 | ✅ 稳定 |
 | **账号生命周期** — 软停用, 请求删除(30 天宽限), 数据导出, 硬删 cron | ✅ 稳定 |
 | **许可证** | ✅ AGPL-3.0-or-later (本仓库) + 双授权商用 — 联系 <chaosai31@gmail.com> |
+
+## 酒馆模式 —— SillyTavern 风格 1:1 角色对话
+
+除了剧本驱动的「游戏控制台」,平台还有第二种玩法:**酒馆模式**。这是一对一的角色对话(类 SillyTavern)—— 你直接和某个*角色*聊天,而不是和 GM。它**复用整条 GM 回合管线**(记忆 / 世界书 / 分支 / token 计费 / 提示缓存),**没有另起的引擎**;只是无剧本运行,独立存档 + Claude 网页风 UI。
+
+- **拖卡即用。** 导入 SillyTavern V2 角色卡(PNG / JSON / WebP):拖拽即建,或在对话中上传一张卡、让 agent 用 `import_character_card` 工具解析导入;当前角色也能导出回 V2 JSON。
+- **harness agent,而非写死剧本。** 角色是完整的工具型 agent:能建/换角色与 persona,可按需把*你自己的*剧本绑到对话以贴合原著(走权限门控),并在剧情需要你抉择时弹出**选择题**(`ask_player_choice`)。
+- **独立可分支存档。** 每段对话是独立存档,带持久记忆 + 关系 + git 式 fork;侧栏以 Claude-Code 风列出对话(归档 / 重命名 / 删除 / 自动起名),从专门的「选择角色」面板挑要聊的人。
+- **页内右侧栏**(可折叠,绝不盖住顶部导航栏),三个 tab:AI 角色卡、可编辑的 persona、以及**本对话的系统提示词编辑器**(越狱 / 人设 / 行为约束)。
+- **沉浸优先的转录。** 角色扮演正文保持干净;工具调用与模型的思考流以可折叠块呈现,并**持久化进历史**(刷新 / 重开后仍在)。本轮实时计时 + 真实 token 计费驱动的 context 用量圆环。
+- **可往返的导出。** 一键导出对话为 SillyTavern JSONL(带二次确认),可无损重新导入 —— 含开场白。
+- **用户级工具围栏。** 每个 agent 工具调用都限定在你自己的账号 + 存档:只能读写*你的*数据,绝不触及他人或服务器级状态。
+
+世界书 overlay、character-book 摄入、确定性开场(`first_mes` 原样贴出,绝不让 LLM 现编)、以及 BYOK 路由(Anthropic / OpenAI 兼容 / Vertex Gemini,流式 + 工具调用)均已接好。
 
 ## 快速开始
 

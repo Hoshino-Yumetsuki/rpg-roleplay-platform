@@ -187,6 +187,19 @@ async def lifespan(app: FastAPI):
     except Exception:
         log.exception("durable sync recovery failed")
 
+    # 3b. 僵尸 import_jobs 回收:卡死的 running 行(worker 线程挂死,finally 没跑到)
+    #     本进程刚起,这些行绝无 worker 真在跑 → 既无进度更新又无 token_usage 活动的标 failed。
+    try:
+        from platform_app.import_pipeline import reap_zombie_import_jobs
+        zres = reap_zombie_import_jobs()
+        if zres.get("reaped"):
+            log.warning(
+                "[startup] reaped %d zombie import_jobs: %s",
+                zres["reaped"], [j["job_id"] for j in zres.get("jobs", [])],
+            )
+    except Exception:
+        log.exception("[startup] zombie import_jobs reap failed")
+
     # 4. 清理残留上传分片（防磁盘泄漏）
     try:
         from platform_app.script_import import cleanup_stale_upload_chunks
@@ -300,8 +313,11 @@ def _build_csp(dev: bool) -> str:
             "api.minimax.chat hunyuan.tencentcloudapi.com"
         )
     else:
+        # SEC(M-15): 原 prod connect-src 含裸 `https:` 等价 https://*:* → 任意 XSS 后可向任意
+        # HTTPS 主机外泄。去掉通配,仅留 'self' + wss(SSE/WS)+ 已知 AI/分析主机显式白名单。
+        # (浏览器不直连 LLM provider,后端代理;LLM base_url 仅在设置页作占位文本展示。)
         connect_src = (
-            "'self' wss: https: "
+            "'self' wss: "
             "api.anthropic.com api.openai.com api.deepseek.com "
             "dashscope.aliyuncs.com ark.cn-beijing.volces.com "
             "api.minimax.chat hunyuan.tencentcloudapi.com"

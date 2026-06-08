@@ -408,6 +408,10 @@ _LAYER_CATEGORY = {
     "player_card": ("character_cards", "角色卡", "#e05c7a"),
     "npc_cards": ("character_cards", "角色卡", "#e05c7a"),
     "novel_characters": ("character_cards", "角色卡", "#e05c7a"),
+    # 酒馆模式的卡层(AI 角色 / 用户 persona / 卡内高优先级指令)—— 此前未映射 → 错归 system_prompt。
+    "tavern_character": ("character_cards", "角色卡", "#e05c7a"),
+    "tavern_persona": ("character_cards", "角色卡", "#e05c7a"),
+    "tavern_card_system": ("character_cards", "角色卡", "#e05c7a"),
     # 世界书
     "worldbook": ("worldbook", "世界书", "#3dbad4"),
     "novel_worldbook": ("worldbook", "世界书", "#3dbad4"),
@@ -455,9 +459,24 @@ async def api_context_breakdown(
             key = "system_prompt"
         cat_tokens[key] = cat_tokens.get(key, 0) + tok
 
-    from app import selected_model
+    # layer bundle 之外的真实发送构成(master.respond_stream_with_tools 记录到 last_context):
+    # 系统模板 + 工具定义拼进 system 字符串;历史走 messages[] —— 三者都不是 context 层,
+    # 否则 breakdown 把它们漏算(角色卡/对话历史/工具 显示 0、总量严重偏低)。
+    cat_tokens["system_prompt"] = cat_tokens.get("system_prompt", 0) + int(last_ctx.get("system_prompt_tokens") or 0)
+    cat_tokens["tools"] = cat_tokens.get("tools", 0) + int(last_ctx.get("tools_tokens") or 0)
+    cat_tokens["history"] = cat_tokens.get("history", 0) + int(last_ctx.get("history_tokens") or 0)
+
+    from app import _get_user_preferences_cached, selected_model
     model = selected_model()
-    ctx_limit = int(context_window_for(model["api_id"], model["real_name"]) or 1_000_000)
+    ctx_limit = int(context_window_for(model["api_id"], model["real_name"]) or 0)
+    # 与 _payload 的圆环分母一致:min(模型原生, 用户 context_size 默认 16384)。
+    # 不再回退到悬空 1M —— 那是"未配置"假象,且与「模型参数」里的设置不符(用户报的 bug)。
+    try:
+        _prefs = _get_user_preferences_cached(api_user) if api_user else {}
+        _ucs = int(float(_prefs.get("settings.context_size") or _prefs.get("context_size") or 16384))
+        ctx_limit = min(ctx_limit, _ucs) if ctx_limit else _ucs
+    except Exception:
+        ctx_limit = ctx_limit or 16384
 
     breakdown = []
     used_sum = 0
@@ -473,7 +492,9 @@ async def api_context_breakdown(
 
     return JSONResponse({
         "ok": True,
-        "total_tokens": total_tokens or used_sum,
+        # total = 所有类目之和(含历史/系统/工具),与 breakdown 一致;不再只取 layer bundle 的
+        # estimated_tokens(那会漏掉历史/系统/工具,圆环与明细对不上)。
+        "total_tokens": used_sum or total_tokens,
         "ctx_limit": ctx_limit,
         "breakdown": breakdown,
     })
@@ -536,6 +557,19 @@ async def api_chat(
     message_for_model = _message_with_attachments(message, attachments)
     if not message_for_model.strip():
         return StreamingResponse(iter([_sse("error", {"message": "空消息"})]), media_type="text/event-stream")
+
+    # F#1:把本轮上传的角色卡文件(.png/.json/.webp)落盘路径挂到 state,供 agent 的
+    # import_character_card 工具读取(只读服务端 user 作用域落盘路径,非 agent 注入 → 安全)。
+    try:
+        _card_files = [
+            {"name": a.get("name"), "path": a.get("path")}
+            for a in (attachments or [])
+            if str(a.get("name") or "").lower().endswith((".png", ".json", ".webp"))
+        ]
+        if _card_files and api_user:
+            _ensure_loaded(api_user).data["_uploaded_files"] = _card_files
+    except Exception:
+        pass
 
     # task #61: 多 tab 冲突检测 — 前端带 save_id 时校验是否与 user_runtime 匹配
     client_save_id = body_dict.get("save_id")
@@ -637,72 +671,79 @@ async def api_chat(
             if pipeline_ctx.early_return:
                 return
 
+            # 酒馆模式(tavern_gm):跳过 GM 专属阶段 —— 世界书/剧本检索(Phase 2.5)与 5E 规则(Phase 3)。
+            # 纯角色扮演不"翻剧本"、不跑规则;绑定剧本后的检索由 context provider 按需触发,不在此前缀强灌。
+            from context_providers.registry import resolve_content_pack as _resolve_cp
+            _is_tavern = (_resolve_cp(state).get("gm_policy") or {}).get("mode") == "tavern_gm"
+
             # Phase 2.5 — task 86/87: 世界书子代理 (确定性, 不调 LLM, ~20ms)
             # 翻阅 phase_digests + chapter_facts + worldbook → 注入 ctx_text。
             # SSE 广播 worldbook_consulting/ready, 前端显示"翻阅设定中"。
-            try:
-                from agents import worldbook_agent
-                script_id_for_wb = _active_script_id(api_user)
-                world = state.data.get("world", {}) or {}
-                memory = state.data.get("memory", {}) or {}
-                cur_phase = str((world.get("timeline") or {}).get("current_phase") or "")
-                cur_time = str(world.get("time") or "")
-                yield _sse("worldbook_consulting", {
-                    "query": message_for_model[:80],
-                    "phase": cur_phase,
-                    "time": cur_time,
-                })
-                wb_query = " ".join(filter(None, [
-                    message_for_model,
-                    str(memory.get("current_objective") or ""),
-                ]))[:300]
-                wb_result = worldbook_agent.consult(
-                    script_id=int(script_id_for_wb or 0),
-                    query=wb_query,
-                    current_phase=cur_phase,
-                    current_time=cur_time,
-                )
-                yield _sse("worldbook_ready", {
-                    "confidence": round(wb_result.confidence, 2),
-                    "sources": wb_result.sources,
-                    "phase": (wb_result.timeline_anchor or {}).get("phase"),
-                    "elapsed_ms": wb_result.elapsed_ms,
-                })
-                if wb_result.confidence > 0:
-                    wb_text = wb_result.to_context_text()
-                    if wb_text:
-                        pipeline_ctx.ctx_text = (pipeline_ctx.ctx_text or "") + "\n\n" + wb_text
-                # 把 confidence + progress_note 也塞 bundle 让 GM prompt 知道是否"翻阅未果"
-                if pipeline_ctx.bundle is None:
-                    pipeline_ctx.bundle = {}
-                pipeline_ctx.bundle.setdefault("worldbook", {})
-                pipeline_ctx.bundle["worldbook"].update({
-                    "confidence": wb_result.confidence,
-                    "progress_note": wb_result.progress_note,
-                    "sources": wb_result.sources,
-                })
-            except Exception as wb_exc:
-                yield _sse("worldbook_ready", {
-                    "confidence": 0.0, "error": f"{type(wb_exc).__name__}: {wb_exc}",
-                })
+            if not _is_tavern:
+                try:
+                    from agents import worldbook_agent
+                    script_id_for_wb = _active_script_id(api_user)
+                    world = state.data.get("world", {}) or {}
+                    memory = state.data.get("memory", {}) or {}
+                    cur_phase = str((world.get("timeline") or {}).get("current_phase") or "")
+                    cur_time = str(world.get("time") or "")
+                    yield _sse("worldbook_consulting", {
+                        "query": message_for_model[:80],
+                        "phase": cur_phase,
+                        "time": cur_time,
+                    })
+                    wb_query = " ".join(filter(None, [
+                        message_for_model,
+                        str(memory.get("current_objective") or ""),
+                    ]))[:300]
+                    wb_result = worldbook_agent.consult(
+                        script_id=int(script_id_for_wb or 0),
+                        query=wb_query,
+                        current_phase=cur_phase,
+                        current_time=cur_time,
+                    )
+                    yield _sse("worldbook_ready", {
+                        "confidence": round(wb_result.confidence, 2),
+                        "sources": wb_result.sources,
+                        "phase": (wb_result.timeline_anchor or {}).get("phase"),
+                        "elapsed_ms": wb_result.elapsed_ms,
+                    })
+                    if wb_result.confidence > 0:
+                        wb_text = wb_result.to_context_text()
+                        if wb_text:
+                            pipeline_ctx.ctx_text = (pipeline_ctx.ctx_text or "") + "\n\n" + wb_text
+                    # 把 confidence + progress_note 也塞 bundle 让 GM prompt 知道是否"翻阅未果"
+                    if pipeline_ctx.bundle is None:
+                        pipeline_ctx.bundle = {}
+                    pipeline_ctx.bundle.setdefault("worldbook", {})
+                    pipeline_ctx.bundle["worldbook"].update({
+                        "confidence": wb_result.confidence,
+                        "progress_note": wb_result.progress_note,
+                        "sources": wb_result.sources,
+                    })
+                except Exception as wb_exc:
+                    yield _sse("worldbook_ready", {
+                        "confidence": 0.0, "error": f"{type(wb_exc).__name__}: {wb_exc}",
+                    })
 
             # Phase 3: 5E rules preflight + rule candidates + clarify 短路
-            async for evt, data in run_rules_phase(
-                pipeline_ctx,
-                payload_fn=_payload,
-                persist_chat_turn=_persist_chat_turn,
-                persist_runtime_checkpoint=_persist_runtime_checkpoint,
-                resolve_persist_target=_resolve_persist_target,
-                mark_context_run=_mark_context_run,
-                clarify_threshold=_clarify_threshold,
-                apply_chat_rule_candidates=_apply_chat_rule_candidates,
-                chat_rule_candidates=_chat_rule_candidates,
-                rule_results_prompt=_rule_results_prompt,
-                platform_knowledge_mod=platform_knowledge,
-            ):
-                yield _sse(evt, data)
-            if pipeline_ctx.early_return:
-                return
+            if not _is_tavern:
+                async for evt, data in run_rules_phase(
+                    pipeline_ctx,
+                    payload_fn=_payload,
+                    persist_chat_turn=_persist_chat_turn,
+                    persist_runtime_checkpoint=_persist_runtime_checkpoint,
+                    resolve_persist_target=_resolve_persist_target,
+                    mark_context_run=_mark_context_run,
+                    clarify_threshold=_clarify_threshold,
+                    apply_chat_rule_candidates=_apply_chat_rule_candidates,
+                    chat_rule_candidates=_chat_rule_candidates,
+                    rule_results_prompt=_rule_results_prompt,
+                    platform_knowledge_mod=platform_knowledge,
+                ):
+                    yield _sse(evt, data)
+                if pipeline_ctx.early_return:
+                    return
 
             # Phase 4: GM 主响应 (token + tool_call + extractor + acceptance)
             async for evt, data in run_gm_phase(
@@ -741,7 +782,24 @@ async def api_chat(
             yield _sse("error", {"message": _client_safe_error(exc), "partial": pipeline_ctx.response or response})
             yield _sse("done", {"interrupted": True, "status": _payload(api_user)})
 
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    async def _stream_with_done_guard():
+        # BUGFIX(工具调用后一直转圈):保证任何退出路径(early_return 未发 done / 中途异常 /
+        # schema-echo 截停)结束时前端都能收到一个 done。否则 Composer 的 streaming 旗标永不清,
+        # 圆环/思考流也因 applyState 不跑而出不来。done 走 _sse 前缀 "event: done\n" 可靠识别。
+        _done_seen = False
+        try:
+            async for _chunk in stream():
+                if isinstance(_chunk, str) and _chunk.startswith("event: done\n"):
+                    _done_seen = True
+                yield _chunk
+        finally:
+            if not _done_seen:
+                try:
+                    yield _sse("done", {"status": _payload(api_user), "interrupted": True})
+                except Exception:
+                    yield _sse("done", {"interrupted": True})
+
+    return StreamingResponse(_stream_with_done_guard(), media_type="text/event-stream")
 
 
 @router.post("/api/stop", response_model=OkResponse, responses=COMMON_ERROR_RESPONSES)

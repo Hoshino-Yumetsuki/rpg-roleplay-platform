@@ -1159,6 +1159,7 @@ async def admin_terminate_user(
         _write_audit(db, admin, "aup.terminate",
                      target_type="user", target_id=str(user_id),
                      details={"reason": reason}, ip=ip)
+    return json_response({"ok": True})  # SEC(L-6): 显式返回,避免 200 空 body 致前端误判/重试
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1215,10 +1216,20 @@ async def api_list_allowlist(
                 "from registration_allowlist order by created_at desc limit %s",
                 (limit,),
             ).fetchall()
+    # SEC(M-8): magic_token 脱敏 —— admin 列表无需回显完整邀请 token(token 已随邮件下发)。
+    # 入侵任一 admin session 即可批量导出全量未用邀请并持久冒充,故仅显示前缀 + ***。
+    def _mask_token(t):
+        t = (t or "")
+        return (t[:8] + "***") if t else ""
+    entries = []
+    for r in rows:
+        d = dict(r)
+        d["magic_token"] = _mask_token(d.get("magic_token"))
+        entries.append(d)
     return json_response({
         "ok": True,
-        "entries": [dict(r) for r in rows],
-        "count": len(rows),
+        "entries": entries,
+        "count": len(entries),
     })
 
 
@@ -1267,6 +1278,17 @@ async def api_internal_allowlist_bulk(request: Request):
     expected = os.environ.get("RPG_ALLOWLIST_SHARED_SECRET", "").strip()
     if not expected:
         raise HTTPException(status_code=503, detail="endpoint disabled (RPG_ALLOWLIST_SHARED_SECRET not set)")
+    # SEC(M-7): per-IP 速率上限,blunt 对共享 secret 的暴力探测(纵深防御;首选仍是 nginx 内网白名单)。
+    try:
+        import redis_bus as _rb
+        _ip = (request.client.host if request.client else "") or "-"
+        _c = _rb.rate_incr(f"intl_allowlist:{_ip}", 60)
+        if _c and _c > 20:
+            raise HTTPException(status_code=429, detail="rate limited")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     got = (request.headers.get("X-Internal-Secret") or "").strip()
     if not secrets.compare_digest(got, expected):
         raise HTTPException(status_code=401, detail="invalid X-Internal-Secret")
