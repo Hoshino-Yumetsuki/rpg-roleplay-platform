@@ -25,6 +25,7 @@ class CanonEntity:
     type: str
     aliases: list[str] = field(default_factory=list)
     first_revealed_chapter: int = 0
+    last_revealed_chapter: int = 0   # RC1: 出场跨度 span 算主角融合分用(不持久化)
     importance: int = 0
     summary: str = ""
     # v28: 与玩家 PC 角色卡字段对齐(character_cards 多态合并)。
@@ -81,7 +82,8 @@ def gather_entity_mentions(chapter_extracts: list) -> dict[tuple[str, str], dict
                 continue
             key = (name, typ)
             rec = acc.setdefault(key, {"name": name, "type": typ, "count": 0,
-                                       "first_chapter": ex.chapter, "surfaces": set(),
+                                       "first_chapter": ex.chapter, "last_chapter": ex.chapter,
+                                       "surfaces": set(),
                                        "full_name": "", "identity": "", "background": "",
                                        # P0 大改:跟踪 subtype 候选 + parent 候选
                                        "subtype": "", "parent_names": []})
@@ -95,6 +97,7 @@ def gather_entity_mentions(chapter_extracts: list) -> dict[tuple[str, str], dict
                 rec["parent_names"].append(pr)
             rec["count"] += 1
             rec["first_chapter"] = min(rec["first_chapter"], ex.chapter)
+            rec["last_chapter"] = max(rec["last_chapter"], ex.chapter)   # RC1: span
             for s in (sfc, cg, full):
                 if s:
                     rec["surfaces"].add(s)
@@ -103,6 +106,12 @@ def gather_entity_mentions(chapter_extracts: list) -> dict[tuple[str, str], dict
                     ca = _clean_name(a)
                     if ca:
                         rec["surfaces"].add(ca)
+            # RC2: 把所有 surface 的中文敬称基名(≥2字)也塞进 surfaces,让『苏玖姑娘』与
+            # 独立的『苏玖』经既有 surface 相交合并(单字基名如『红姑』→『红』不归一)。
+            for s in list(rec["surfaces"]) + [name]:
+                hb = _honorific_base(s)
+                if hb:
+                    rec["surfaces"].add(hb)
             # v28: full_name / identity / background 取最长(信息量更大的胜出)
             if full and len(full) > len(rec["full_name"]):
                 rec["full_name"] = full
@@ -117,6 +126,29 @@ def gather_entity_mentions(chapter_extracts: list) -> dict[tuple[str, str], dict
 
 def _norm_name(s: str) -> str:
     return re.sub(r"[\s·_、.\-]", "", (s or "").strip())
+
+
+# RC2: 中文敬称/称谓前后缀。剥离后产出"基名"作【额外别名信号】喂回 surfaces,
+# 复用既有保守聚簇(子串/surface 相交),不新增独立合并规则,避免误并异人。
+_HONORIFIC_SUFFIXES = ("姑娘", "嬷嬷", "公子", "夫人", "大人", "小姐", "先生", "姑", "娘", "君", "氏")
+_HONORIFIC_PREFIXES = ("老", "小", "阿", "大")
+
+
+def _honorific_base(name: str) -> str:
+    """剥中文敬称前后缀产出归一基名;基名 <2 字(如『红姑』→『红』)视为不可靠 → 返回 ''。
+
+    只对基名 ≥2 字的称谓名生效(苏玖姑娘→苏玖、青桐君→青桐),把基名作为该实体的一个
+    surface 喂回聚簇,让『苏玖姑娘』与独立出现的『苏玖』经既有 surface 相交合并。单字基名
+    歧义太大,不归一。
+    """
+    s = _norm_name(name)
+    for suf in _HONORIFIC_SUFFIXES:
+        if s.endswith(suf) and len(s) - len(suf) >= 2:
+            return s[: -len(suf)]
+    for pre in _HONORIFIC_PREFIXES:
+        if s.startswith(pre) and len(s) - len(pre) >= 2:
+            return s[len(pre):]
+    return ""
 
 
 def cluster_entities(mentions: dict, *, embedder=None, sim_threshold: float = 0.95) -> list[CanonEntity]:
@@ -178,8 +210,10 @@ def cluster_entities(mentions: dict, *, embedder=None, sim_threshold: float = 0.
         for cl in clusters:
             members = [recs[j] for j in cl["members"]]
             rep = max(members, key=lambda r: r["count"])
-            aliases = sorted({s for m in members for s in m["surfaces"]} |
-                             {m["name"] for m in members} - {rep["name"]})
+            # RC9 修运算符优先级:| 比 - 松,原式 = surfaces | (names - rep) → rep 名仍从
+            # surfaces 漏进 aliases(规范名自指)。加括号让 rep 名从【并集整体】里去掉。
+            aliases = sorted(({s for m in members for s in m["surfaces"]} |
+                              {m["name"] for m in members}) - {rep["name"]})
             # v28: full_name / identity / background 跨成员取最长非空(信息量最大的胜出)
             full_name = max((m.get("full_name", "") for m in members), key=len, default="")
             identity = max((m.get("identity", "") for m in members), key=len, default="")
@@ -206,6 +240,7 @@ def cluster_entities(mentions: dict, *, embedder=None, sim_threshold: float = 0.
                 logical_key=_slug(rep["name"]),
                 name=rep["name"], type=typ, aliases=aliases,
                 first_revealed_chapter=min(m["first_chapter"] for m in members),
+                last_revealed_chapter=max(m.get("last_chapter", m["first_chapter"]) for m in members),
                 importance=sum(m["count"] for m in members),
                 summary=summary,
                 full_name=full_name, identity=identity, background=background,
@@ -229,6 +264,95 @@ def cluster_entities(mentions: dict, *, embedder=None, sim_threshold: float = 0.
         "cluster_method": cluster_method,
     })
     return canon
+
+
+# ── RC4: 非人名(官职/封号/泛称/地名)误标 character 的确定性降级闸 ───────────────
+# 中文古典/历史语境里官职、封号、泛称极易被便宜 LLM 拟人化抽成 character(将军/单于/公主)。
+# 整词等于下列词、或带地名后缀,且无个人化佐证(identity / 额外别名)时 → 判为非个体人物,
+# 不建 NPC 卡。保守:只整词匹配 + 有 identity/别名佐证就放过(防误降『外号就叫将军』的真人)。
+_NON_PERSON_TITLE_WORDS = frozenset({
+    "将军", "校尉", "都尉", "单于", "可汗", "丞相", "太守", "刺史", "县令", "侯爷", "侯",
+    "公主", "郡主", "王", "皇帝", "皇后", "太后", "太子", "陛下", "大人", "大王", "国王", "王后",
+    "将士", "士兵", "侍卫", "官兵", "百姓", "奴隶", "奴婢", "商人", "船夫", "村民",
+    "众人", "众将", "群臣", "百官", "丫鬟", "婢女", "下人", "仆人", "护卫", "亲兵", "门客",
+})
+_LOC_NAME_SUFFIX = ("宫", "府", "邸", "城", "楼", "塔", "港", "岛", "庄园", "宅", "关", "营", "寨", "驿")
+
+
+def _looks_like_non_person(name: str) -> bool:
+    """整词等于官职/封号/泛称,或带地名后缀(≥2字) → 像非个体人物。仅作降级候选。"""
+    n = _norm_name(name)
+    if not n:
+        return True
+    if n in _NON_PERSON_TITLE_WORDS:
+        return True
+    if len(n) >= 2 and any(n.endswith(s) for s in _LOC_NAME_SUFFIX):
+        return True
+    return False
+
+
+def _has_person_evidence(c: "CanonEntity") -> bool:
+    """有个人化身份描述,或除规范名外还有 ≥1 别名 → 像真有其人,降级闸放过。"""
+    if (getattr(c, "identity", "") or "").strip():
+        return True
+    extra = [a for a in (c.aliases or []) if _norm_name(a) != _norm_name(c.name)]
+    return len(extra) >= 1
+
+
+# ── RC1: character 叙事重要度 = 多信号融合,替代裸提及频次(治『红姑被标主角』) ─────────
+def compute_protagonist_importance(canon: list, chapter_extracts: list, *, title_text: str = "") -> None:
+    """把 type='character' 实体的 importance 从 sum(提及次数) 改写成【叙事中心度融合分】。
+
+    病灶:裸频次≠主角性,贴身高频配角(奶娘/侍从)会盖过真主角(常以代词指代、真名被别名拆分
+    分票)。融合 出场跨度 span + 关系出入度 + 事件参与度 + 频次 + 书名/标题命中 —— **全部复用
+    per_chapter 早抽好却从未被 resolve 读取的字段(relationships / events.participants),零 LLM**。
+    只动 character;faction/location/concept 的 importance 保留频次(worldbook 阈值依赖它)。
+    rerank 的 row_number(order by importance desc) 因 importance 已是融合分而无需改一字。
+    """
+    chars = [c for c in canon if c.type == "character"]
+    if not chars:
+        return
+    key_to_idx: dict[str, int] = {}
+    for idx, c in enumerate(chars):
+        for nm in [c.name, *(c.aliases or [])]:
+            k = _norm_name(nm)
+            if k and k not in key_to_idx:
+                key_to_idx[k] = idx
+    rel_deg = [0] * len(chars)
+    evt_part = [0] * len(chars)
+    last_ch = [c.last_revealed_chapter or c.first_revealed_chapter for c in chars]
+    for ex in chapter_extracts:
+        ch = getattr(ex, "chapter", 0) or 0
+        for r in getattr(ex, "relationships", []) or []:
+            if not isinstance(r, dict):
+                continue
+            for ep in (r.get("from"), r.get("to")):
+                i = key_to_idx.get(_norm_name(_clean_name(ep or "")))
+                if i is not None:
+                    rel_deg[i] += 1
+                    last_ch[i] = max(last_ch[i], ch)
+        for ev in getattr(ex, "events", []) or []:
+            if not isinstance(ev, dict):
+                continue
+            for p in (ev.get("participants") or []):
+                i = key_to_idx.get(_norm_name(_clean_name(p or "")))
+                if i is not None:
+                    evt_part[i] += 1
+                    last_ch[i] = max(last_ch[i], ch)
+    freq = [max(int(c.importance), 1) for c in chars]  # 此刻 importance 还是 sum(count)
+    span = [max(last_ch[i] - chars[i].first_revealed_chapter + 1, 1) for i in range(len(chars))]
+
+    def _norm(xs: list) -> list:
+        m = max(xs) if xs else 0
+        return [x / m for x in xs] if m else [0.0 for _ in xs]
+
+    fn, sn, rn, en = _norm(freq), _norm(span), _norm(rel_deg), _norm(evt_part)
+    title_terms = set(re.findall(r"[一-鿿A-Za-z]{2,}", title_text or ""))
+    for i, c in enumerate(chars):
+        names_blob = c.name + " " + " ".join(c.aliases or [])
+        title_hit = 1.0 if title_terms and any(t in names_blob for t in title_terms) else 0.0
+        score = 0.28 * fn[i] + 0.34 * sn[i] + 0.19 * rn[i] + 0.19 * en[i] + 0.20 * title_hit
+        c.importance = int(round(score * 1000)) + 1
 
 
 def resolve_and_write(db, script_id: int, chapter_extracts: list, *, embedder=None,
@@ -258,6 +382,32 @@ def resolve_and_write(db, script_id: int, chapter_extracts: list, *, embedder=No
     for nm, r in concept_acc.items():
         canon.append(CanonEntity(logical_key=_slug(nm) + "_concept", name=nm, type="concept",
                                  first_revealed_chapter=r["first"], importance=r["count"], summary=r["gloss"]))
+
+    # RC4: 剔除误标 character 的官职/封号/泛称/地名(无个人佐证)— 不进 KB、不建 NPC 卡。
+    # 放在主角融合分之前,避免『众人/将军』这类超高频伪人名污染归一化分母。
+    _kept, _dropped = [], []
+    for c in canon:
+        if c.type == "character" and _looks_like_non_person(c.name) and not _has_person_evidence(c):
+            _dropped.append(c.name)
+        else:
+            _kept.append(c)
+    if _dropped:
+        import logging as _lg
+        _lg.getLogger(__name__).info("[resolve] RC4 剔除误标 character 的非人名: %s", _dropped[:20])
+    canon = _kept
+
+    # RC1: character importance 改叙事中心度融合分(span+关系/事件中心度+频次+书名),治主角误判。
+    try:
+        _title = ""
+        try:
+            _trow = db.execute("select title from scripts where id=%s", (script_id,)).fetchone()
+            _title = ((_trow.get("title") if _trow else "") or "") if _trow else ""
+        except Exception:
+            _title = ""
+        compute_protagonist_importance(canon, chapter_extracts, title_text=_title)
+    except Exception as _pe:
+        import logging as _lg
+        _lg.getLogger(__name__).warning("[resolve] 主角融合分跳过(非致命): %s", _pe)
 
     # P0 大改:用 name→logical_key 映射把 parent_name 解析成 parent_logical_key
     # 一次扫:先建 name index,再 backfill parent_logical_key
