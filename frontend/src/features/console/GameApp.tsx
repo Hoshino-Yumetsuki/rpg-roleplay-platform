@@ -1349,11 +1349,12 @@ function _readShowUsage() {
   }
 }
 
-function GameSettingsModal({ open, onClose, saveTitle, permission }) {
+function GameSettingsModal({ open, onClose, saveTitle, permission, saveId }) {
   const [density, setDensityState] = useStateA(_readDensity);
   const [narrativeFont, setNarrativeFontState] = useStateA(_readNarrativeFont);
   const [autosave, setAutosaveState] = useStateA(_readAutosave);
   const [showUsage, setShowUsageState] = useStateA(_readShowUsage);
+  const [steerStrength, setSteerStrength] = useStateA('guided');
 
   // sync density state with external RPG_setDensity calls
   useEffectA(() => {
@@ -1361,6 +1362,18 @@ function GameSettingsModal({ open, onClose, saveTitle, permission }) {
     window.addEventListener('rpg-density-change', onDensityChange);
     return () => window.removeEventListener('rpg-density-change', onDensityChange);
   }, []);
+
+  // 打开时拉一次存档设置,取 steering_strength 当前值
+  useEffectA(() => {
+    if (!open || saveId == null) return;
+    const base = window.__API_BASE || '';
+    fetch(`${base}/api/saves/${saveId}/settings`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.ok && d.settings?.steering_strength) setSteerStrength(d.settings.steering_strength);
+      })
+      .catch(() => {});
+  }, [open, saveId]);
 
   const handleDensity = (d) => {
     setDensityState(d);
@@ -1397,6 +1410,18 @@ function GameSettingsModal({ open, onClose, saveTitle, permission }) {
     window.dispatchEvent(new CustomEvent('rpg-show-usage-change', { detail: v }));
   };
 
+  const handleSteerStrength = (v) => {
+    setSteerStrength(v);
+    if (saveId == null) return;
+    const base = window.__API_BASE || '';
+    fetch(`${base}/api/saves/${saveId}/settings`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates: { steering_strength: v } }),
+    }).catch(() => {});
+  };
+
   if (!open) return null;
 
   const PERM_OPT = (typeof window.PERMISSION_OPTIONS !== 'undefined' &&
@@ -1417,6 +1442,11 @@ function GameSettingsModal({ open, onClose, saveTitle, permission }) {
     { id: 'serif', label: '宋体 Serif' },
     { id: 'sans', label: '黑体 Sans' },
     { id: 'mono', label: '等宽 Mono' },
+  ];
+  const STEER_OPTS = [
+    { id: 'rail', label: '贴原著' },
+    { id: 'guided', label: '软引导' },
+    { id: 'free', label: '自由' },
   ];
 
   const rowStyle = {
@@ -1540,6 +1570,27 @@ function GameSettingsModal({ open, onClose, saveTitle, permission }) {
               </span>
             </label>
           </div>
+
+          {/* ── 剧情引导强度 ── */}
+          {saveId != null && (
+            <div style={rowStyle}>
+              <div style={labelStyle}>
+                <div>剧情引导强度</div>
+                <div style={sublabelStyle}>贴原著=强力锚点;软引导=默认温和;自由=不注入</div>
+              </div>
+              <div className="seg" style={{ flexShrink: 0 }}>
+                {STEER_OPTS.map((s) => (
+                  <button
+                    key={s.id}
+                    className={steerStrength === s.id ? 'active' : ''}
+                    onClick={() => handleSteerStrength(s.id)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── 写入权限（只读展示） ── */}
           <div style={{ ...rowStyle, borderBottom: 'none' }}>

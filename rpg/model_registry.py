@@ -316,13 +316,12 @@ def load_model_catalog() -> dict[str, Any]:
 
 
 def save_model_catalog(catalog: dict[str, Any]) -> None:
+    # 全局模型目录的【权威存储是 DB】(model_apis / model_entries / app_config.selected_model):
+    # 所有 worker 读 DB 同一真相源、写走行级 upsert 原子。**不再写 config/model_catalog.json** ——
+    # 运行时写它会造成 git churn(反复改动被提交)+ 部署互相覆盖 + 多 worker 文件不一致(用户反馈)。
+    # 该 JSON 退化为只读 seed / DB 读失败时的兜底(见 load_model_catalog 的异常分支)。
     catalog = _migrate_catalog(catalog)
     _save_model_catalog_to_db(catalog)
-    MODEL_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp_file = MODEL_CONFIG_FILE.with_suffix(".json.tmp")
-    with open(tmp_file, "w", encoding="utf-8") as f:
-        json.dump(catalog, f, ensure_ascii=False, indent=2)
-    tmp_file.replace(MODEL_CONFIG_FILE)
 
 
 def apply_user_overlay(catalog: dict[str, Any], user_id: int | None) -> dict[str, Any]:

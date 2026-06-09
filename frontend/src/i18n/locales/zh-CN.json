@@ -1145,7 +1145,8 @@
       "action_publish": "公开分享到剧本库",
       "action_unpublish": "取消公开分享",
       "action_export": "导出剧本包 (zip)",
-      "action_delete": "删除剧本"
+      "action_delete": "删除剧本",
+      "action_unsubscribe": "移出我的列表"
     },
     "public": {
       "title": "在线剧本库",
@@ -1478,11 +1479,16 @@
       "fork_fail": "Fork 失败",
       "import_partial": "导入部分完成,部分模块失败",
       "import_failed": "导入失败",
-      "sse_disconnected": "进度推送断开,已切换轮询"
+      "sse_disconnected": "进度推送断开,已切换轮询",
+      "unsubscribed": "已移出我的列表",
+      "unsubscribe_fail": "移出失败"
     },
     "confirm": {
       "delete_title": "删除剧本",
       "delete_msg": "确定删除剧本「{{title}}」?相关存档与索引也会一并清理。",
+      "unsubscribe_title": "移出我的列表",
+      "unsubscribe_msg": "将「{{title}}」从你的剧本列表移除?原剧本不受影响,之后可在公开库重新导入。",
+      "unsubscribe_btn": "移出",
       "publish_title": "公开分享到剧本库",
       "publish_msg": "把剧本「{{title}}」公开分享?其他用户将能浏览并导入它的章节 / 角色卡 / 世界书。",
       "publish_btn": "公开分享"

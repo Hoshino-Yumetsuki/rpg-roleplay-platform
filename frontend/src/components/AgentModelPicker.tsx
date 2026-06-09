@@ -35,6 +35,7 @@ export default function AgentModelPicker({
   variant = 'container',
   onChange = null,
   persistOnMount = false, // 无偏好时把解析出的默认(provider+model)一次性写入,保证"所见即所用"
+  fallbackPrefix = null, // 本功能(prefPrefix)无偏好时,继承哪个偏好命名空间作默认(如 'gm'=用户默认模型);默认不继承
 }) {
   const { useState, useEffect } = React;
   const [apis, setApis] = useState([]);
@@ -68,15 +69,21 @@ export default function AgentModelPicker({
         const p = (profile && profile.preferences) || {};
         const prefApi = p[`${prefPrefix}.api_id`];
         const prefModel = p[`${prefPrefix}.model_real_name`];
-        // Provider:已存偏好 > 偏好的 provider(若已配 key) > 用户首个已配 provider
+        // fallbackPrefix(如 'gm')= 用户设置的默认模型。本功能(prefPrefix)无偏好时,优先继承它,
+        // 而不是落到便宜档/写死默认 —— 满足"默认是用户设置的默认模型"。
+        const fbApi = fallbackPrefix ? p[`${fallbackPrefix}.api_id`] : '';
+        const fbModel = fallbackPrefix ? p[`${fallbackPrefix}.model_real_name`] : '';
+        // Provider:本功能偏好 > 继承的默认 provider(若已配 key) > 偏好的 provider(若已配 key) > 用户首个已配 provider
         const chosenApi =
           prefApi ||
+          (fbApi && ids.has(fbApi) ? fbApi : null) ||
           (preferProvider && ids.has(preferProvider) ? preferProvider : null) ||
           Array.from(ids)[0] ||
           preferProvider ||
           '';
         // Model 必须属于 chosenApi(否则会出现 Anthropic + gemini 这种错配):
-        //   已存偏好 model > defaultModel(若在该 provider 下) > 该 provider 首个非 embedding 模型
+        //   本功能偏好 model > 继承的默认 model(若在该 provider 下) > defaultModel(若在该 provider 下)
+        //   > 该 provider 首个非 embedding 模型
         const apiObj = list.find((x) => (x.api_id || x.id) === chosenApi);
         const chosenModels = (apiObj?.models || apiObj?.entries || []).filter(
           (m) =>
@@ -85,6 +92,7 @@ export default function AgentModelPicker({
               (m.capabilities || m.caps || [])[0] === 'embedding'
             ),
         );
+        const fbModelValid = fbModel && chosenModels.some((m) => (m.real_name || m.id) === fbModel);
         const hasDefault = chosenModels.some((m) => (m.real_name || m.id) === defaultModel);
         // 该 provider 下偏向便宜档(haiku/flash/mini/lite/small/nano),适合整理这种工具任务,
         // 避免默认落到旗舰(如 Opus)烧额度。
@@ -95,12 +103,15 @@ export default function AgentModelPicker({
         const firstModel = chosenModels[0] ? chosenModels[0].real_name || chosenModels[0].id : '';
         const chosenModel =
           prefModel ||
+          (fbModelValid ? fbModel : null) ||
           (hasDefault ? defaultModel : null) ||
           (cheap ? cheap.real_name || cheap.id : null) ||
           firstModel ||
           defaultModel;
         setApiId(chosenApi);
         setModel(chosenModel);
+        // 把解析出的当前 provider+model 告知父组件(父拿它提交),与展示完全一致,不依赖 persistOnMount。
+        if (chosenApi && chosenModel) onChange && onChange(chosenApi, chosenModel);
         // 无偏好时把解析出的一致默认写回(仅当 provider+model 都有效),避免"显示一套、后端用另一套"。
         if (persistOnMount && chosenApi && chosenModel && !(prefApi && prefModel)) {
           try {

@@ -641,8 +641,19 @@ def _build_initial_snapshot(
     # current_location=柏林哈布斯堡庄园附近、known_events=宴会/图卢兹/蛇信、
     # current_objective=观察柏林局势...）。从导入剧本创建 save 时必须用 script 的首章覆盖，
     # 否则用户看到的开场是别人剧本的状态。
+    # 入场选了出生锚点 → 情境字段(地点/目标/known_events/开场原文预览)从【锚点章节】派生,
+    # 否则 _apply_script_opening 恒锁第 1 章,与下面 birthpoint 改写的 world.time 自相矛盾,
+    # GM 仍从第一章开场(用户实测 bug)。
+    _prefer_chapter = None
+    if isinstance(birthpoint, dict):
+        try:
+            _cmin = birthpoint.get("chapter_min")
+            if _cmin is not None:
+                _prefer_chapter = int(_cmin)
+        except (TypeError, ValueError):
+            _prefer_chapter = None
     try:
-        _apply_script_opening(state, user_id, script_id)
+        _apply_script_opening(state, user_id, script_id, prefer_chapter=_prefer_chapter)
     except Exception:
         # 任何解析失败都不应该让 create_save 整个崩；退到 user/角色卡已写入的最小可玩 state。
         pass
@@ -816,7 +827,7 @@ def _has_opening_meta(content: str) -> bool:
     )
 
 
-def _apply_script_opening(state: Any, user_id: int, script_id: int) -> None:
+def _apply_script_opening(state: Any, user_id: int, script_id: int, prefer_chapter: int | None = None) -> None:
     """从 script_chapters 找『真实首章』（不是文档总标题/空前言），把 inline 元数据填到 state：
        当前地点 → player.current_location, world (location 同步)
        当前目标 → memory.current_objective
@@ -829,6 +840,12 @@ def _apply_script_opening(state: Any, user_id: int, script_id: int) -> None:
     task 40 修复：真实 markdown 导入后 chapter_index=1 常常是 `# 文档总标题` 单行
     （word_count=0、content=""），第 2 章才是 `## 第一章 雾港入夜` 含正文+inline meta。
     所以这里不能只 limit 1，要扫前 N 章选第一个『有 inline meta 或显著正文』的章节。
+
+    prefer_chapter 修复（出生锚点）：玩家入场选了非首章的出生点(birthpoint) 时,情境字段
+    (地点/目标/known_events/last_retrieval) 必须从【锚点章节】派生,而不是恒定第 1 章 —— 否则
+    world.time 被改成锚点标签、player.current_location/known_events 仍停在第 1 章,GM 拿到自相矛盾
+    的状态会照第 1 章渲染开场(用户实测:选了后段锚点仍从第一章开始)。传 prefer_chapter 时,从
+    chapter_index>=prefer_chapter 起选第一个显著正文章节;该段没有章节(锚点越界)才回退到全书首章。
     """
     # 任何 save（不论 script 有无导入章节）都先 scrub DEFAULT_STATE 的柏林硬编码：
     # 用户选择了某个 script（不论是 5E 模组容器还是空白容器），就不该再继承默认小说
@@ -836,17 +853,29 @@ def _apply_script_opening(state: Any, user_id: int, script_id: int) -> None:
     # 的 script（例如 5E 模组容器）创建的新存档全部带柏林污染。
     _scrub_berlin_default(state)
 
+    _first_chapters_sql = """
+        select chapter_index, title, content
+        from script_chapters
+        where script_id = %s
+        order by chapter_index asc
+        limit 10
+    """
     with connect() as db:
-        rows = db.execute(
-            """
-            select chapter_index, title, content
-            from script_chapters
-            where script_id = %s
-            order by chapter_index asc
-            limit 10
-            """,
-            (script_id,),
-        ).fetchall()
+        rows = []
+        if prefer_chapter and int(prefer_chapter) > 1:
+            rows = db.execute(
+                """
+                select chapter_index, title, content
+                from script_chapters
+                where script_id = %s and chapter_index >= %s
+                order by chapter_index asc
+                limit 10
+                """,
+                (script_id, int(prefer_chapter)),
+            ).fetchall()
+        # 锚点越界 / 该段无章节 → 回退全书首章(prefer_chapter 为空时也走这里)
+        if not rows:
+            rows = db.execute(_first_chapters_sql, (script_id,)).fetchall()
     if not rows:
         return
 
@@ -1126,7 +1155,8 @@ _SAVE_LIST_COLUMNS = """
     (state_snapshot->>'turn')::int as turn,
     (state_snapshot->'player'->>'name') as player_name,
     coalesce(jsonb_array_length(state_snapshot->'history'), 0) as history_count,
-    coalesce((state_snapshot->'world'->>'time'), '') as world_time
+    coalesce((state_snapshot->'world'->>'time'), '') as world_time,
+    coalesce(save_kind, 'game') as save_kind
 """
 
 

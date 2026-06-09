@@ -1267,7 +1267,10 @@ def _stage_cards(ctl: JobController, user_id: int, script_id: int, entities: lis
             from agents._harness import call_agent_json
             raw, last = call_agent_json(
                 api_id, model,
-                "你是角色卡提取器,严格判断 name 是否为真实角色人名。只输出 JSON。",
+                "你是角色卡提取器,严格判断 name 是否为真实角色人名。只输出 JSON。"
+                "【虚构铁律】本作是虚构小说,即使角色与真实历史人物同名,所有字段也"
+                "**只能依据给定的章节片段/摘要**,严禁引入你自己的真实史实/生平/百科知识"
+                "(如『活捉单于』『封冠军侯』这类片段里没有的内容),给不出片段依据就留空。",
                 prompt,
                 user_id,
                 max_tokens=700,
@@ -1695,7 +1698,9 @@ def _stage_npc_voices(user_id: int, script_id: int, *, max_npc: int = 20, only_e
             from agents._harness import call_agent_json
             raw, last = call_agent_json(
                 api_id, model,
-                "你是 RPG 角色档案抽取器,只输出结构化 JSON,不解释。",
+                "你是 RPG 角色档案抽取器,只输出结构化 JSON,不解释。"
+                "【虚构铁律】本作是虚构小说,即使角色与真实历史人物同名,也**只能依据上面给的原文片段**"
+                "总结其性格/说话风格,严禁掺入你自己知道的真实史实/生平/百科;片段不足就写概括性短语,不要脑补。",
                 prompt, user_id, max_tokens=500,
                 agent_kind="import_pipeline",
             )
@@ -1865,25 +1870,38 @@ def _rerank_cards_by_canon_importance(script_id: int) -> None:
     """
     try:
         with connect() as db:
+            # 人工锁定的主角(metadata.protagonist_locked=true)优先于 canon importance:
+            # 用户手动纠正过主角后,重新提取不能再按 LLM importance 把它覆盖回去
+            # (见 character_cards.set_character_card_protagonist)。有锁时:① 锁定卡完全
+            # 不动(WHERE 排除),② 其它 canon 卡一律 is_protagonist=false 且不抢 110 位。
+            has_lock = bool(db.execute(
+                "select 1 from character_cards "
+                "where script_id=%s and card_type='npc' "
+                "and coalesce((metadata->>'protagonist_locked')::boolean, false) limit 1",
+                (script_id,),
+            ).fetchone())
             db.execute(
                 """
                 with imp as (
                   select name, importance,
                          row_number() over (order by importance desc) as rk
                   from kb_canon_entities
-                  where script_id=%s and type='character'
+                  where script_id=%(sid)s and type='character'
                 )
                 update character_cards cc
-                set priority = case when imp.rk = 1 then 110
+                set priority = case when %(has_lock)s then greatest(50, 110 - imp.rk)
+                                    when imp.rk = 1 then 110
                                     else greatest(50, 110 - imp.rk) end,
                     metadata = cc.metadata || jsonb_build_object(
-                        'is_protagonist', imp.rk = 1,
+                        'is_protagonist', case when %(has_lock)s then false else imp.rk = 1 end,
                         'canon_importance', imp.importance,
                         'canon_rank', imp.rk
                     )
-                from imp where cc.script_id=%s and cc.name = imp.name
+                from imp
+                where cc.script_id=%(sid)s and cc.name = imp.name
+                  and coalesce((cc.metadata->>'protagonist_locked')::boolean, false) = false
                 """,
-                (script_id, script_id),
+                {"sid": script_id, "has_lock": has_lock},
             )
     except Exception as exc:
         import logging as _logging

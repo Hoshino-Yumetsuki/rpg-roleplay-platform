@@ -59,3 +59,38 @@ def _db_set_character_card_enabled(db, script_id: int, card_id: int, enabled: bo
         """,
         (bool(enabled), card_id, script_id),
     ).fetchone()
+
+
+def _db_set_protagonist(db, script_id: int, card_id: int):
+    """repository: 手动把某 NPC 卡设为该剧本「主角」(锁定,不被 canon importance 重排覆盖)。
+
+    分两步(同一事务):
+      1) 清掉本剧本所有 NPC 卡的 is_protagonist + protagonist_locked,并把占着主角位
+         (priority>=110)的卡降回普通 100 —— 保证全剧本最多一张主角卡。
+      2) 目标卡设 is_protagonist=true + protagonist_locked=true(锁定标记让
+         _rerank_cards_by_canon_importance 跳过它;重新提取不会再被 LLM importance 覆盖)
+         + priority=110(召回排序排第一)。
+    返回目标 row;目标不存在/不属于该剧本/非 NPC → None(调用方抛 ValueError)。
+    """
+    db.execute(
+        """
+        update character_cards
+        set metadata = coalesce(metadata, '{}'::jsonb)
+                        || jsonb_build_object('is_protagonist', false, 'protagonist_locked', false),
+            priority = case when priority >= 110 then 100 else priority end,
+            row_version = row_version + 1, updated_at = now()
+        where script_id = %s and card_type = 'npc'
+        """,
+        (script_id,),
+    )
+    return db.execute(
+        """
+        update character_cards
+        set metadata = coalesce(metadata, '{}'::jsonb)
+                        || jsonb_build_object('is_protagonist', true, 'protagonist_locked', true),
+            priority = 110, row_version = row_version + 1, updated_at = now()
+        where id = %s and script_id = %s and card_type = 'npc'
+        returning *
+        """,
+        (card_id, script_id),
+    ).fetchone()

@@ -68,7 +68,7 @@ _SCHEMA_HINT = """{
     "subtype": "<按 type 选,见下方 SUBTYPE_HINT;character 留空>",
     "parent": "<本实体归属的上级实体名;本章没揭示父级则空;见 PARENT_HINT>",
     "status": "linked|proposed",
-    "evidence": "≤20字依据"
+    "evidence": "≤20字,优先【逐字摘抄】本章原文里支撑该实体身份/背景的短语作依据"
   }],
   "events": [{"summary": "事件一句话", "participants": ["实体名"], "location": "地点", "importance": 0-100, "causal_refs": ["前置事件描述"]}],
   "relationships": [{"from": "实体A", "to": "实体B", "kind": "敌对|盟友|上下级|亲属|...", "evidence": "≤20字"}],
@@ -110,12 +110,20 @@ def build_system(era: str, power_system: list[str] | None = None) -> str:
         "【提取要求】entities 优先匹配下方已知实体词表(status=linked),文中新出现的标 proposed;"
         "concepts 必须尽量抽全(力量体系/组织设定/专有名词/世界规则),不要留空;"
         "events 给本章局部 importance(0-100),不要做跨章全局排序。\n"
-        "【欧美人名铁律】凡角色为欧美名(包含字母或音译,如 Mulelia/林菲尔德/伊莎贝拉·路德维希):full_name **必须** 是"
-        "正式的全套姓+名(若本章用 'Mulelia' 但作者之前已揭示她叫 'Mulelia Zazbarum',则 full_name 写完整全名);"
-        "本章里出现的所有别称(昵称/半名/敬称/外号/译名)塞进 aliases_in_chapter。**严禁** 把全名和昵称当作两个实体输出。\n"
+        "【人名归并铁律】① 欧美名(含字母/音译,如 Mulelia/林菲尔德):full_name 写正式全套姓+名"
+        "(若本章用 'Mulelia' 但作者之前已揭示她叫 'Mulelia Zazbarum',full_name 写完整全名),本章所有"
+        "别称(昵称/半名/敬称/外号/译名)塞进 aliases_in_chapter。② 中文名同理:同一人物的本名、小名、"
+        "敬称(本名±姑/娘/君/公子/夫人/大人/小姐/嬷嬷/哥/姐 等)、外号 都是【同一个实体】,用一个 entity + "
+        "aliases_in_chapter 收齐所有称呼(如『金玉/玉儿/小玉』是一人、『红姑/红姑娘』是一人)。**严禁** 把同一人的"
+        "全名与昵称/敬称拆成两个实体;但不同人即使共享一字也【绝不可合并】(如『王夫人』与『王公子』是两个人)。\n"
+        "【非人名负向铁律】character 必须是【具体的个体人物】。官职/头衔/封号/泛称(将军/单于/公主/大人/众人/士兵/丫鬟)、"
+        "地名、组织、物品 **绝不可** 抽成 character —— 它们应归 faction/location/item/concept,或干脆不抽。\n"
+        "【虚构作品铁律】本作是【虚构小说】。即便出现与真实历史/人物同名的实体(如霍去病、汉武帝),identity / background / "
+        "概念 summary **只能逐字依据本章原文可见或明确暗示的信息**;**严禁** 引入你自己知道的真实史实、生平、年代、百科知识"
+        "(如『活捉单于叔父』『封冠军侯』这类原文没写的内容)。给不出原文依据的就留空,绝不脑补补全。\n"
         "【角色卡字段铁律】entity.type=character 时,identity / background 两个字段必须抽:\n"
         "  identity = 此角色在本作世界里的身份/职位/阵营定位(尽量短,不重复 name)\n"
-        "  background = 角色出场前的关键经历 / 当下处境 / 出身或动机摘要(只抽本章可观察到或明确暗示的,严禁编造文本没有的设定)\n"
+        "  background = 角色出场前的关键经历 / 当下处境 / 出身或动机摘要(只抽本章可观察到或明确暗示的,严禁编造或套用真实史实)\n"
         "  本章不揭示则字段留空字符串,不要写 '未知' 或 'N/A'。type ≠ character 的实体两个字段必须留空。\n"
         "【层级铁律(P0 大改)】faction / location / concept 必须填 subtype + 尝试填 parent:\n"
         "  subtype:按下方 SUBTYPE_HINT 选枚举值,不要乱写。\n"

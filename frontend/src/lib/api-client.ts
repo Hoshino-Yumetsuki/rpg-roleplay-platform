@@ -46,7 +46,10 @@
 
   // One-shot guard: prevent redirect loop when a 401 fires on a page
   // that is itself mid-flight (e.g. Login.html calling /api/auth/me).
-  let _AUTH_REDIRECT_ARMED = true;
+  // 设计预览 / 离线模式(?offline):401 不跳登录页,让 mock UI 正常渲染。
+  let _AUTH_REDIRECT_ARMED = (() => {
+    try { return !new URLSearchParams(location.search).has("offline"); } catch (_) { return true; }
+  })();
 
   // ---- core fetch helpers ------------------------------------
   function timeoutSignal(ms) {
@@ -492,6 +495,7 @@
       importScript: (body) =>
         POST(`${API_PREFIX}/scripts/import`, body, { signal: timeoutSignal(90000) }),
       delete: (sid, body = {}) => POST(`${API_PREFIX}/scripts/` + sid + '/delete', body),
+      unsubscribe: (sid) => POST(`${API_PREFIX}/scripts/` + sid + '/unsubscribe', {}),
       chapters: (sid, q) => GET(`${API_PREFIX}/scripts/` + sid + '/chapters', q),
       // 单章节完整 content(列表只回 180-char preview;点入章节后 lazy 拉真正文)
       chapterDetail: (sid, idx) => GET(`${API_PREFIX}/scripts/${sid}/chapters/${idx}`),
@@ -745,6 +749,12 @@
         POST(`${API_PREFIX}/scripts/` + sid + '/character-cards/' + cid + '/enabled', {
           enabled: !!on,
         }),
+      // 手动指定剧本主角(清其它卡主角标记 + 锁定不被重新提取覆盖)。仅 owner。
+      scriptSetProtagonist: (sid, cid) =>
+        POST(`${API_PREFIX}/scripts/` + sid + '/character-cards/' + cid + '/protagonist', {}),
+      // 按需 AI 复核全部 NPC 卡(合并同人/锁定主角/删非人名)。model 由公用选择器传入(可空,后端读偏好兜底)。
+      auditCards: (sid, api_id, model) =>
+        POST(`${API_PREFIX}/scripts/` + sid + '/audit-cards', { api_id, model }),
     },
 
     // ---------- Chat history (SillyTavern JSONL import) ----------

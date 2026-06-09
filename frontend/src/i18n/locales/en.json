@@ -1059,7 +1059,8 @@
       "action_publish": "Share to Public Library",
       "action_unpublish": "Remove from Public Library",
       "action_export": "Export Pack (zip)",
-      "action_delete": "Delete Script"
+      "action_delete": "Delete Script",
+      "action_unsubscribe": "Remove from My List"
     },
     "public": {
       "title": "Public Script Library",
@@ -1392,11 +1393,16 @@
       "fork_fail": "Fork failed",
       "import_partial": "Import partially completed; some modules failed",
       "import_failed": "Import failed",
-      "sse_disconnected": "Progress stream disconnected; switched to polling"
+      "sse_disconnected": "Progress stream disconnected; switched to polling",
+      "unsubscribed": "Removed from your list",
+      "unsubscribe_fail": "Remove failed"
     },
     "confirm": {
       "delete_title": "Delete Script",
       "delete_msg": "Delete script '{{title}}'? Related saves and indexes will also be removed.",
+      "unsubscribe_title": "Remove from My List",
+      "unsubscribe_msg": "Remove '{{title}}' from your script list? The original script is not affected and can be re-imported from the public library.",
+      "unsubscribe_btn": "Remove",
       "publish_title": "Share to Public Library",
       "publish_msg": "Share script '{{title}}' publicly? Other users will be able to browse and import its chapters, cards, and worldbook.",
       "publish_btn": "Share Publicly"

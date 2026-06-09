@@ -21,7 +21,7 @@ import { installWarmTheme } from '../../lib/cloudscape-theme';
 installWarmTheme();
 
 // 组件模块 — named import
-import { useResizable } from '../../hooks/useResponsive';
+import { useResizable, useBreakpoint } from '../../hooks/useResponsive';
 import { safeUUID } from '../../lib/crypto-safe';
 import {
   LeftRail,
@@ -41,6 +41,19 @@ import AdultSplash from '../../components/AdultSplash';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { FeedbackDrawerRoot } from '../../components/FeedbackDrawer';
 import { appNavigate } from '../../app/router';
+import MobileGame from '../../mobile/game/MobileGame';
+import '../../mobile.css';
+
+// 移动游戏外壳灰度开关:迁移期默认关闭,开发用 ?m2=1 或 localStorage。
+const MOBILE_GAME_ENABLED = (() => {
+  try {
+    const q = new URLSearchParams(location.search);
+    if (q.get('m2') === '1') { try { localStorage.setItem('rpg_mobile_v2', '1'); } catch (_) {} return true; }
+    if (q.get('m2') === '0') { try { localStorage.removeItem('rpg_mobile_v2'); } catch (_) {} return false; }
+    return localStorage.getItem('rpg_mobile_v2') === '1';
+  } catch (_) { return false; }
+})();
+const MOBILE_GAME_MAX_WIDTH = 600;
 const SPLASH_VERSION = 'v1.0-2026-05-31';
 
 // density preset + narrative font init（等价原 HTML 非 babel inline script）
@@ -2055,6 +2068,117 @@ function App() {
     };
   }, [mountStage]);
 
+  // ── 移动游戏外壳(灰度)──
+  const { width: _vpWidth } = useBreakpoint();
+  const mobileGame = MOBILE_GAME_ENABLED && _vpWidth > 0 && _vpWidth < MOBILE_GAME_MAX_WIDTH;
+  if (mobileGame && mountStage >= 1) {
+    return (
+      <>
+        <MobileGame
+          game={game}
+          history={history}
+          runState={runState}
+          text={text}
+          setText={setText}
+          onSend={onSend}
+          onSendRaw={onSendRaw}
+          onStop={onStop}
+          attachments={attachments}
+          setAttachments={setAttachments}
+          model={model}
+          setModel={setModel}
+          permission={permission}
+          setPermission={setPermission}
+          pendingWrites={pendingWrites}
+          pendingQuestions={pendingQuestions}
+          onApprove={onApprove}
+          onReject={onReject}
+          onAnswerQuestion={onAnswerQuestion}
+          onDismissConfirm={onDismissConfirm}
+          onSlashPick={onSlashPick}
+          onAttachPick={onAttachPick}
+          pickedCommand={pickedCommand}
+          onClearCommand={() => setPickedCommand(null)}
+          onRetry={onRetry}
+          onRegenerate={onRegenerate}
+          onShowSse={onShowSse}
+          clicheNotice={clicheNotice}
+          onRetryCliche={() => {
+            setClicheNotice(null);
+            onRetry();
+          }}
+          onDismissCliche={() => setClicheNotice(null)}
+          hasError={hasError}
+          activeSave={activeSave}
+          realSaves={realSaves.length ? realSaves : []}
+          onSwitchSave={async (sid) => {
+            try {
+              if (runRef.current.sse || runState.running) stopRun();
+              await window.api.saves.activate(sid);
+              reloadState();
+            } catch (e) {
+              window.__apiToast?.('切换失败', { kind: 'danger', detail: e?.message });
+            }
+          }}
+          onNew={() => {
+            window.open('/platform/saves', '_blank');
+          }}
+          onSave={async () => {
+            try {
+              await window.api.game.saveGame();
+              window.__apiToast?.('已保存', { kind: 'ok' });
+            } catch (e) {
+              window.__apiToast?.('保存失败', { kind: 'danger', detail: e?.message });
+            }
+          }}
+          onMemoryMode={async (mode) => {
+            setGame((g) => ({ ...g, memory: { ...(g.memory || {}), mode } }));
+            try {
+              await window.api.game.memoryMode(mode);
+            } catch (_) {}
+          }}
+          reloadState={reloadState}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          lastUsage={lastUsage}
+          tabConflictBanner={tabConflictBanner}
+          setTabConflictBanner={setTabConflictBanner}
+          onExit={() => {
+            window.location.href = '/platform/saves';
+          }}
+          onOpenHistory={() => setShowHistoryDrawer(true)}
+          onOpenSearch={() => setShowSearchDrawer(true)}
+          onOpenSettings={() => setShowInGameSettings(true)}
+          onOpenFeedback={() => {
+            try {
+              window.__openFeedback?.();
+            } catch (_) {}
+          }}
+        />
+        {/* 找回的模态浮层 */}
+        <GameSettingsModal
+          open={showInGameSettings}
+          onClose={() => setShowInGameSettings(false)}
+          saveTitle={activeSave?.title || game?._raw?.save_title || ''}
+          permission={permission}
+          saveId={activeSave?.id ?? null}
+        />
+        <HistoryDrawer
+          open={showHistoryDrawer}
+          history={history}
+          onClose={() => setShowHistoryDrawer(false)}
+        />
+        <SearchDrawer
+          open={showSearchDrawer}
+          history={history}
+          state={game}
+          onClose={() => setShowSearchDrawer(false)}
+        />
+        <FeedbackDrawerRoot />
+      </>
+    );
+  }
+
   return (
     <div className="gc-shell" style={{ ...rootStyle, '--gc-rail-w': gcRailW + 'px' }}>
       {/* A2: 多 tab 冲突 banner */}
@@ -2199,6 +2323,7 @@ function App() {
               onClose={() => setShowInGameSettings(false)}
               saveTitle={activeSave?.title || game?._raw?.save_title || ''}
               permission={permission}
+              saveId={activeSave?.id ?? null}
             />
             <HistoryDrawer
               open={showHistoryDrawer}

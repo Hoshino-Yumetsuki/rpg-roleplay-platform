@@ -650,6 +650,7 @@ function ScriptDetailPanel({
   onExport,
   onToggleVisibility,
   onDelete,
+  onUnsubscribe,
   onEditOverrides,
   onReload,
 }) {
@@ -688,6 +689,81 @@ function ScriptDetailPanel({
   }, [s.id]);
 
   const isOwner = currentUserId && s.owner_id === currentUserId;
+
+  // 手动把某 NPC 卡设为主角(AI canon importance 误判时纠正)。设完重拉列表刷新「主角」徽标。
+  const [protagBusy, setProtagBusy] = useStatePL(null); // 正在设置的 card id
+  const onSetProtagonist = async (c) => {
+    if (!c || !c.id) return;
+    setProtagBusy(c.id);
+    try {
+      await window.api.cards.scriptSetProtagonist(s.id, c.id);
+      window.__apiToast?.(
+        t('scripts.toast.protagonist_set', {
+          name: c.name || 'NPC',
+          defaultValue: `已将「${c.name || 'NPC'}」设为主角`,
+        }),
+        { kind: 'ok' },
+      );
+      setNpc(null); // 触发 NPC 列表重新拉取
+    } catch (e) {
+      window.__apiToast?.(t('scripts.toast.protagonist_fail', { defaultValue: '设为主角失败' }), {
+        kind: 'danger',
+        detail: e?.message,
+      });
+    } finally {
+      setProtagBusy(null);
+    }
+  };
+
+  // 按需 AI 复核全部 NPC 卡:弹公用模型选择器(默认用户常用模型,可改)→ 用所选模型批量裁决
+  // (合并同人卡 / 锁定真主角 / 删非人名卡)。on-demand,不进导入流水线 → 零自动成本。
+  const [auditOpen, setAuditOpen] = useStatePL(false);
+  const [auditSel, setAuditSel] = useStatePL({ api_id: '', model: '' });
+  const [auditBusy, setAuditBusy] = useStatePL(false);
+  const runAudit = async () => {
+    setAuditBusy(true);
+    try {
+      const r = await window.api.cards.auditCards(s.id, auditSel.api_id, auditSel.model);
+      if (r && r.ok === false) {
+        if (r.needs_credentials) {
+          window.__apiToast?.(
+            t('scripts.audit.need_key', { defaultValue: '该模型还没配 API Key' }),
+            {
+              kind: 'warning',
+              detail: t('scripts.audit.need_key_hint', {
+                defaultValue: '去「设置 → API 与模型」配置后重试,或在上面换一个已配置的模型。',
+              }),
+            },
+          );
+        } else {
+          window.__apiToast?.(t('scripts.audit.fail', { defaultValue: 'AI 复核失败' }), {
+            kind: 'danger',
+            detail: r.error,
+          });
+        }
+        return;
+      }
+      const sm = (r && r.summary) || {};
+      const parts = [];
+      if (sm.protagonist) parts.push(`主角→${sm.protagonist}`);
+      if (Array.isArray(sm.merged) && sm.merged.length) parts.push(`合并 ${sm.merged.length} 组`);
+      if (Array.isArray(sm.dropped) && sm.dropped.length)
+        parts.push(`删非人名 ${sm.dropped.length} 张`);
+      window.__apiToast?.(
+        parts.length ? 'AI 复核完成:' + parts.join('、') : 'AI 复核完成:无需改动',
+        { kind: 'ok' },
+      );
+      setAuditOpen(false);
+      setNpc(null); // 触发 NPC 列表重新拉取
+    } catch (e) {
+      window.__apiToast?.(t('scripts.audit.fail', { defaultValue: 'AI 复核失败' }), {
+        kind: 'danger',
+        detail: e?.message,
+      });
+    } finally {
+      setAuditBusy(false);
+    }
+  };
 
   const doFork = async () => {
     setForkBusy(true);
@@ -820,7 +896,13 @@ function ScriptDetailPanel({
                         : t('scripts.my.action_publish'),
                       iconName: s.is_public ? 'lock-private' : 'share',
                     },
-                    { id: 'delete', text: t('scripts.my.action_delete'), iconName: 'remove' },
+                    s.is_subscribed
+                      ? {
+                          id: 'unsubscribe',
+                          text: t('scripts.my.action_unsubscribe'),
+                          iconName: 'remove',
+                        }
+                      : { id: 'delete', text: t('scripts.my.action_delete'), iconName: 'remove' },
                   ]}
                   onItemClick={({ detail }) => {
                     const id = detail.id;
@@ -828,6 +910,7 @@ function ScriptDetailPanel({
                     else if (id === 'export') onExport(s);
                     else if (id === 'visibility') onToggleVisibility(s);
                     else if (id === 'delete') onDelete(s);
+                    else if (id === 'unsubscribe') onUnsubscribe && onUnsubscribe(s);
                   }}
                 >
                   {t('scripts.my.more')}
@@ -1094,12 +1177,19 @@ function ScriptDetailPanel({
                         <CSHeader
                           counter={`(${(npc || []).length})`}
                           actions={
-                            <CSButton
-                              iconName="add-plus"
-                              onClick={() => setNpcEdit({ card: null, isNew: true })}
-                            >
-                              {t('scripts.editor.add_npc')}
-                            </CSButton>
+                            <CSSpaceBetween direction="horizontal" size="xs">
+                              {isOwner && (npc || []).length >= 2 && (
+                                <CSButton iconName="search" onClick={() => setAuditOpen(true)}>
+                                  {t('scripts.audit.btn', { defaultValue: 'AI 复核人名/语义' })}
+                                </CSButton>
+                              )}
+                              <CSButton
+                                iconName="add-plus"
+                                onClick={() => setNpcEdit({ card: null, isNew: true })}
+                              >
+                                {t('scripts.editor.add_npc')}
+                              </CSButton>
+                            </CSSpaceBetween>
                           }
                         >
                           {t('scripts.editor.tab_npc')}
@@ -1187,13 +1277,25 @@ function ScriptDetailPanel({
                           {
                             id: 'act',
                             content: (c) => (
-                              <CSButton
-                                variant="inline-link"
-                                iconName="edit"
-                                onClick={() => setNpcEdit({ card: c, isNew: false })}
-                              >
-                                {t('scripts.editor.view_edit')}
-                              </CSButton>
+                              <CSSpaceBetween direction="horizontal" size="xs">
+                                <CSButton
+                                  variant="inline-link"
+                                  iconName="edit"
+                                  onClick={() => setNpcEdit({ card: c, isNew: false })}
+                                >
+                                  {t('scripts.editor.view_edit')}
+                                </CSButton>
+                                {isOwner && !(c.metadata && c.metadata.is_protagonist) && (
+                                  <CSButton
+                                    variant="inline-link"
+                                    iconName="user-profile"
+                                    loading={protagBusy === c.id}
+                                    onClick={() => onSetProtagonist(c)}
+                                  >
+                                    {t('scripts.editor.set_protagonist', { defaultValue: '设为主角' })}
+                                  </CSButton>
+                                )}
+                              </CSSpaceBetween>
                             ),
                           },
                         ],
@@ -1349,6 +1451,48 @@ function ScriptDetailPanel({
             ]}
           />
         </div>
+        {auditOpen && (
+          <CSModal
+            visible
+            onDismiss={() => {
+              if (!auditBusy) setAuditOpen(false);
+            }}
+            header={t('scripts.audit.title', { defaultValue: 'AI 复核 NPC 角色卡' })}
+            footer={
+              <CSBox float="right">
+                <CSSpaceBetween direction="horizontal" size="xs">
+                  <CSButton onClick={() => setAuditOpen(false)} disabled={auditBusy}>
+                    {t('common.cancel', { defaultValue: '取消' })}
+                  </CSButton>
+                  <CSButton variant="primary" loading={auditBusy} onClick={runAudit}>
+                    {t('scripts.audit.run', { defaultValue: '开始复核' })}
+                  </CSButton>
+                </CSSpaceBetween>
+              </CSBox>
+            }
+          >
+            <CSSpaceBetween size="m">
+              <CSBox color="text-body-secondary" fontSize="body-s">
+                {t('scripts.audit.desc', {
+                  defaultValue:
+                    '用所选模型对本剧本全部 NPC 卡做一次复核:合并同一人的多张卡(如 金玉/玉儿/小玉)、识别并锁定真主角、删除官职/地名等非人名卡。按需触发,不影响导入流程与成本。',
+                })}
+              </CSBox>
+              <AgentModelPicker
+                prefPrefix="card_audit"
+                fallbackPrefix="gm"
+                variant="bare"
+                header={undefined}
+                description={t('scripts.audit.model_desc', {
+                  defaultValue:
+                    '选择本次复核用的模型(默认你设置的默认模型,可改;复核质量越好的模型越准)。',
+                })}
+                configHash="settings-models"
+                onChange={(api_id, model) => setAuditSel({ api_id, model })}
+              />
+            </CSSpaceBetween>
+          </CSModal>
+        )}
         {npcEdit && (
           <CardEditModal
             card={npcEdit.card}
@@ -1722,6 +1866,34 @@ function ScriptsListView() {
     }
   };
 
+  const onUnsubscribe = async (s) => {
+    if (
+      !(await window.__confirm({
+        title: t('scripts.confirm.unsubscribe_title'),
+        message: t('scripts.confirm.unsubscribe_msg', { title: s.title }),
+        danger: false,
+        confirmText: t('scripts.confirm.unsubscribe_btn'),
+      }))
+    )
+      return;
+    setBusyId(s.id);
+    try {
+      const result = await window.api.scripts.unsubscribe(s.id);
+      if (!result || result.ok !== true) {
+        throw new Error(result?.error || result?.detail || t('scripts.toast.unsubscribe_fail'));
+      }
+      window.__apiToast?.(t('scripts.toast.unsubscribed'), { kind: 'ok' });
+      reload();
+    } catch (e) {
+      window.__apiToast?.(t('scripts.toast.unsubscribe_fail'), {
+        kind: 'danger',
+        detail: e?.message,
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const onImportPackFile = async (file) => {
     if (!file) return;
     setImportPackBusy(true);
@@ -1802,12 +1974,19 @@ function ScriptsListView() {
         iconName: 'download',
         disabled: exportingId === s.id,
       },
-      {
-        id: 'delete',
-        text: t('scripts.my.action_delete'),
-        iconName: 'remove',
-        disabled: busyId === s.id,
-      },
+      s.is_subscribed
+        ? {
+            id: 'unsubscribe',
+            text: t('scripts.my.action_unsubscribe'),
+            iconName: 'remove',
+            disabled: busyId === s.id,
+          }
+        : {
+            id: 'delete',
+            text: t('scripts.my.action_delete'),
+            iconName: 'remove',
+            disabled: busyId === s.id,
+          },
     ];
   };
   const onRowAction = (s, id) => {
@@ -1818,6 +1997,7 @@ function ScriptsListView() {
     else if (id === 'export') onExportPack(s);
     else if (id === 'visibility') onToggleVisibility(s);
     else if (id === 'delete') onDelete(s);
+    else if (id === 'unsubscribe') onUnsubscribe(s);
   };
   const onToggleVisibility = async (s) => {
     const next = !s.is_public;
@@ -1925,6 +2105,7 @@ function ScriptsListView() {
         onExport={onExportPack}
         onToggleVisibility={onToggleVisibility}
         onDelete={onDelete}
+        onUnsubscribe={onUnsubscribe}
         onEditOverrides={setOverridesScript}
         onReload={(newId) => {
           reload();

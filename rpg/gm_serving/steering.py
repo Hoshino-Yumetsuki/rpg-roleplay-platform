@@ -9,11 +9,17 @@ from kb import canon_repo
 
 
 def resolve_steering_target(db, *, save_id: int, script_id: int,
-                            progress_chapter: int | None = None) -> dict:
+                            progress_chapter: int | None = None,
+                            steering_strength: str = "guided") -> dict:
     """产出 ① 层软目标。
 
     返回 {worldline, passed_nodes, next_node, soft_goal, pending_anchors}。
     定位:看已 occurred 的 save_anchor_states 簇匹配到哪个 worldline 节点;取序号下一个节点。
+
+    steering_strength:
+      rail    — 强化注入,明确要求贴合节点描述(用词更强硬)
+      guided  — 现状默认,软目标引导但不强制(保守措辞)
+      free    — 不注入软目标,完全自由发挥
     """
     worldlines = canon_repo.read_worldlines(db, script_id)
     if not worldlines:
@@ -43,11 +49,24 @@ def resolve_steering_target(db, *, save_id: int, script_id: int,
     pending = []
     if next_node:
         must = next_node.get("must_preserve") or []
-        soft = (
-            f"下一关键节点「{next_node['label']}」:{next_node.get('summary', '')}"
-            + (f" 须保留:{'、'.join(must)}。" if must else "")
-            + " ——朝这个方向自然推进即可,具体怎么发生交给玩家选择;不要生硬照搬原著。"
-        )
+        must_str = f" 须保留:{'、'.join(must)}。" if must else ""
+        if steering_strength == "free":
+            # 自由模式:不注入软目标,让 GM 自由发挥
+            soft = ""
+        elif steering_strength == "rail":
+            # 强贴模式:明确要求紧贴节点走向
+            soft = (
+                f"【强制引导】当前必须推进到节点「{next_node['label']}」:{next_node.get('summary', '')}"
+                + must_str
+                + " ——请严格按照该节点方向推进剧情,不可大幅偏离原著走向。"
+            )
+        else:
+            # guided(默认):软目标,温和引导
+            soft = (
+                f"下一关键节点「{next_node['label']}」:{next_node.get('summary', '')}"
+                + must_str
+                + " ——朝这个方向自然推进即可,具体怎么发生交给玩家选择;不要生硬照搬原著。"
+            )
         pending = next_node.get("anchor_keys") or []
     else:
         soft = "已抵达/超出当前规范世界线末节点,自由发挥并尽量保持世界自洽。"

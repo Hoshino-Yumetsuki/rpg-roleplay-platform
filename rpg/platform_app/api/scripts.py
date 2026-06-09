@@ -558,6 +558,45 @@ async def api_script_card_enabled(request: Request, script_id: int, card_id: int
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
+@router.post("/api/scripts/{script_id}/character-cards/{card_id}/protagonist")
+async def api_script_card_protagonist(script_id: int, card_id: int, user=Depends(require_user)):
+    """手动把某 NPC 卡设为该剧本主角（仅 owner）。
+
+    canon importance 误判会把配角标成主角；此接口清掉其它卡的主角标记 + 锁定目标卡,
+    锁定后重新提取(canon 重排)不会再覆盖人工指定。
+    """
+    try:
+        return json_response({"ok": True, "card": knowledge.set_character_card_protagonist(
+            user["id"], script_id, card_id
+        )})
+    except ValueError as exc:
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@router.post("/api/scripts/{script_id}/audit-cards")
+async def api_audit_character_cards(request: Request, script_id: int, user=Depends(require_user)):
+    """按需 AI 复核本剧本全部 NPC 角色卡(仅 owner)。
+
+    用前端公用模型选择器选的模型(body.api_id/model,缺省读 card_audit.* 偏好→提取器默认)对全部
+    NPC 卡做一次批量裁决:合并同人卡 / 锁定真主角 / 删非人名卡。按需触发,不进导入流水线 → 零自动成本。
+    """
+    body = await request.json()
+    api_id = str(body.get("api_id") or "").strip()
+    model = str(body.get("model") or body.get("model_real_name") or "").strip()
+    from platform_app import import_pipeline
+    try:
+        from platform_app.knowledge.card_audit import audit_character_cards
+        return json_response({"ok": True, **audit_character_cards(user["id"], script_id, api_id, model)})
+    except import_pipeline.MissingUserCredentialError as exc:
+        return json_response({
+            "ok": False, "code": "credentials_required", "needs_credentials": True,
+            "api_id": exc.api_id, "model": exc.model, "credential_api_id": exc.credential_api_id,
+            "settings_hash": "settings-models", "error": str(exc),
+        }, status_code=400)
+    except ValueError as exc:
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+
+
 @router.get("/api/scripts/{script_id}/worldbook")
 async def api_script_worldbook(script_id: int, limit: int | None = None, cursor: str | None = None, user=Depends(require_user)):
     try:
@@ -648,6 +687,20 @@ async def api_script_resplit(request: Request, script_id: int, user=Depends(requ
         ))
     except ValueError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@router.post("/api/scripts/{script_id}/unsubscribe")
+async def api_script_unsubscribe(script_id: int, user=Depends(require_user)):
+    """取消订阅来自公开库的剧本:只删 user_script_subscriptions 指针,不碰原剧本数据。"""
+    with connect() as db:
+        result = db.execute(
+            "DELETE FROM user_script_subscriptions WHERE user_id = %s AND script_id = %s",
+            (user["id"], script_id),
+        )
+        if result.rowcount == 0:
+            return json_response({"ok": False, "error": "未订阅该剧本"}, status_code=404)
+        db.commit()
+    return json_response({"ok": True, "unsubscribed": True, "script_id": script_id})
 
 
 @router.post("/api/scripts/{script_id}/delete")
@@ -1090,18 +1143,34 @@ async def api_update_script_overrides(request: Request, script_id: int, user=Dep
 
 @router.get("/api/scripts/{script_id}/gm-style")
 async def api_get_script_gm_style(script_id: int, user=Depends(require_user)):
-    """读剧本级 GM 叙事风格(owner 可读;用默认补全未设旋钮)。"""
+    """读剧本级 GM 叙事风格。owner 或订阅者均可读(只读展示);改仍仅 owner。
+
+    `gm_style` 返回的是【有效值】= 平台默认 → 用户个人默认 → 本剧本 override 叠加后的
+    结果(与运行时 resolve_for_state 同序),而不是只读"本剧本 override"。
+    修复用户反馈:设了个人默认风格的用户,打开导入剧本的风格面板却看到一排平台默认值,
+    误以为"导入剧本之后叙事风格还是默认数值、没生效"——实际运行时是生效的,只是面板显示的
+    是本剧本 override(空)的平台默认补全,没继承个人默认。`stored` 单独给出"本剧本真正
+    override 了哪些旋钮",前端可据此区分"继承"与"本剧本专属"。"""
     with connect() as db:
-        owned = db.execute(
-            "SELECT 1 FROM scripts WHERE id = %s AND owner_id = %s", (script_id, user["id"])
+        access = db.execute(
+            """SELECT 1 FROM scripts s WHERE s.id = %s AND (
+                 s.owner_id = %s
+                 OR s.id IN (SELECT script_id FROM user_script_subscriptions WHERE user_id = %s)
+               )""",
+            (script_id, user["id"], user["id"]),
         ).fetchone()
-    if not owned:
+    if not access:
         return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
-    from agents.gm.style_harness import normalize_profile
     from platform_app.knowledge.script_overrides import get_overrides_by_script_id
+    from agents.gm.style_harness import resolve_profile
+    from agents.gm.style_config import _read_user_gm_style
     data = get_overrides_by_script_id(script_id) or {}
     stored = data.get("gm_style") if isinstance(data.get("gm_style"), dict) else {}
-    return json_response({"ok": True, "gm_style": normalize_profile(stored), "stored": stored})
+    effective = resolve_profile(
+        user_default=_read_user_gm_style(user["id"]),
+        script_override=stored if isinstance(stored, dict) else None,
+    )
+    return json_response({"ok": True, "gm_style": effective, "stored": stored})
 
 
 @router.post("/api/scripts/{script_id}/gm-style")

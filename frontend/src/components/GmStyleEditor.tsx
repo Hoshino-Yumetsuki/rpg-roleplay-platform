@@ -102,9 +102,12 @@ export default function GmStyleEditor({ scope = 'user', scriptId = null, canWrit
     setErr('');
     setOkMsg('');
     try {
+      // 只提交「相对加载时基线有改动」的旋钮 — 剧本级面板现在显示的是【有效值】(已叠加
+      // 你的个人默认),若整盘 6 个旋钮都写进剧本 override,会把继承来的个人默认也"焊死"成
+      // 本剧本专属,之后改个人默认对本剧本就不生效了。只写改动的旋钮 → 未动的继续继承。
       const patch = {};
       KNOBS.forEach((k) => {
-        patch[k.key] = vals[k.key];
+        if (!base || vals[k.key] !== base[k.key]) patch[k.key] = vals[k.key];
       });
       const r =
         scope === 'script'
@@ -144,7 +147,7 @@ export default function GmStyleEditor({ scope = 'user', scriptId = null, canWrit
         variant="h3"
         description={
           scope === 'script'
-            ? '只对本剧本生效,覆盖你的个人默认。留默认即沿用平台默认行为。'
+            ? '当前显示的是本剧本的【有效风格】(已叠加你的个人默认)。只调你想为本剧本特别定制的旋钮,未调的继续跟随你的个人默认 / 平台默认。'
             : '你的全局默认 GM 风格,所有未单独设置的剧本都用它。剧本级 / 存档级设置会覆盖它。'
         }
         actions={

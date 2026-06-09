@@ -12,6 +12,7 @@ from platform_app.knowledge._character_cards_repo import (
     _db_select_chapter_facts,
     _db_select_character_cards,
     _db_set_character_card_enabled,
+    _db_set_protagonist,
 )
 from platform_app.knowledge._utils import _cursor_int, _require_script, _require_script_owner
 
@@ -166,4 +167,23 @@ def set_character_card_enabled(user_id: int, script_id: int, card_id: int, enabl
         row = _db_set_character_card_enabled(db, script_id, card_id, enabled)
     if not row:
         raise ValueError("character_card 不存在")
+    return card_to_dto(row) or {}
+
+
+def set_character_card_protagonist(user_id: int, script_id: int, card_id: int) -> dict[str, Any]:
+    """手动指定剧本主角(**仅 owner**)。清掉其它卡的主角标记,目标卡锁定为主角。
+
+    解决两件事:
+      1) canon importance 误判 → 把配角(如奶娘/亲近之人)标成主角,需要人工纠正;
+      2) 纠正后重新提取(canon_extract → _rerank_cards_by_canon_importance)会再次按 LLM
+         importance 覆盖回去 —— 这里写 metadata.protagonist_locked=true,重排逻辑见到锁
+         就跳过,人工指定的主角不再被覆盖。
+    v28 起返回统一 DTO。
+    """
+    init_db()
+    with connect() as db:
+        _require_script_owner(db, user_id, script_id)
+        row = _db_set_protagonist(db, script_id, int(card_id))
+    if not row:
+        raise ValueError("character_card 不存在或不属于该剧本")
     return card_to_dto(row) or {}

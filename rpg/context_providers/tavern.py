@@ -85,10 +85,15 @@ class TavernCharacterProvider(ContextProvider):
             ))
             facts.append("tavern_card_system_prompt=on")
 
-        # 2) 角色定义(姓名/人设/外貌/说话风格/范例对白)。
-        # 卡内 scenario(场景设定)**不再**作为预载「世界观」起手注入 —— 用户决策:世界观应随
-        # 对话推进由 agent 写入 DB、再经 harness 状态 provider 提供,而非起手硬塞静态设定。
+        # 2) 角色定义(姓名/人设/外貌/说话风格/范例对白) + 卡内 scenario 作为初始空间锚点。
+        # scenario 是角色卡声明的起始场景设定(如"地下酒馆包厢"/"魔法学院图书馆")，
+        # 注入为只读空间锚点让模型首轮就知道当前所在地，防止位置漂移。
+        # 注意:这是静态起始锚点;后续若玩家移动，模型应通过 player.current_location op 更新，
+        # 届时状态层的 current_location 优先级高于本层。
         body = [f"你现在扮演的角色：\n{_fmt_character(character)}"]
+        scenario = (tav.get("scenario") or character.get("scenario") or "").strip()
+        if scenario:
+            body.append(f"\n初始场景设定（空间锚点，对话开始时的所在地）：{scenario}")
         layers.append(self.make_layer(
             "tavern_character", f"扮演角色：{char_name}", "\n".join(body),
             sticky=True, priority=88,

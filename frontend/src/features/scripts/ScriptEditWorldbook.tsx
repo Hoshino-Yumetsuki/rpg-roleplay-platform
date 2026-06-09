@@ -182,17 +182,16 @@ export function WorldbookEditorView({ script }) {
   }, []);
 
   /* ────── 选行 → 打开 panel ────── */
+  // 复选框 selection 变化时:仅更新 selectedItems,不强制打开面板。
+  // 面板由 onRowClick(单行点击)和"详情"按钮负责打开,避免批量勾选时
+  // 右侧 480px 面板展开挤压左侧表格列宽。
+  // 当 selection 清空时仍关闭面板(取消全选 → 面板收起)。
   const onRowSelect = useCallback(
     (items) => {
       setSelectedItems(items);
-      const item = items[0];
-      if (!item) {
-        closePanel();
-        return;
-      }
-      openPanel(item, false);
+      if (items.length === 0) closePanel();
     },
-    [openPanel, closePanel],
+    [closePanel],
   );
 
   /* ────── inline edit (title / priority / enabled) ────── */
@@ -676,7 +675,8 @@ export function WorldbookEditorView({ script }) {
 
       <div style={{ display: 'flex', gap: 16, minHeight: 0 }}>
         {/* ── 主表格区 ── */}
-        <div style={{ flex: '1 1 0', minWidth: 0 }}>
+        {/* minWidth: 560 防止右侧面板展开时列宽被挤压到无法阅读 */}
+        <div style={{ flex: '1 1 0', minWidth: 560, overflow: 'auto' }}>
           <CSTable
             variant="container"
             stickyHeader

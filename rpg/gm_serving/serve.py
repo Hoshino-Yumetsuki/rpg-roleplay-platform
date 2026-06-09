@@ -30,6 +30,7 @@ def assemble_gm_context(db, *, save_id: int, user_id: int, user_input: str = "",
     from gm_serving import context_inject as CI
     from gm_serving import impact as IM
     from gm_serving import steering as ST
+    from gm_serving import settings as _set
     from tools_dsl.command_tools_kb import _save_ctx
 
     ctx = _save_ctx(db, save_id, user_id)
@@ -37,8 +38,12 @@ def assemble_gm_context(db, *, save_id: int, user_id: int, user_input: str = "",
         return {"error": "无权访问该存档", "injection_text": "", "kb_tools": []}
     script_id = ctx["script_id"]
 
+    save_settings = _set.read_settings(db, save_id)
+    steering_strength = save_settings.get("steering_strength", "guided")
+
     steer = ST.resolve_steering_target(
-        db, save_id=save_id, script_id=script_id, progress_chapter=ctx["progress_chapter"]
+        db, save_id=save_id, script_id=script_id, progress_chapter=ctx["progress_chapter"],
+        steering_strength=steering_strength,
     )
     inj = CI.build_injection(
         db, script_id=script_id, scene_summary=scene_summary,

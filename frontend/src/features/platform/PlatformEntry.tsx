@@ -55,6 +55,20 @@ import { SettingsPage } from '../settings/SettingsPage';
 import TavernPage from '../tavern/TavernPage';
 import { FeedbackPage } from './FeedbackPage';
 import { plPathToPage, plNavigate, plPageToPath } from '../../app/router';
+import { useBreakpoint } from '../../hooks/useResponsive';
+import { MobileRoot } from '../../mobile/MobileRoot';
+import '../../mobile.css';
+
+// 移动外壳灰度开关:迁移期默认关闭(零影响真机用户),开发用 ?m2=1 或 localStorage。
+const MOBILE_V2_ENABLED = (() => {
+  try {
+    const q = new URLSearchParams(location.search);
+    if (q.get('m2') === '1') { try { localStorage.setItem('rpg_mobile_v2', '1'); } catch (_) {} return true; }
+    if (q.get('m2') === '0') { try { localStorage.removeItem('rpg_mobile_v2'); } catch (_) {} return false; }
+    return localStorage.getItem('rpg_mobile_v2') === '1';
+  } catch (_) { return false; }
+})();
+const MOBILE_V2_MAX_WIDTH = 600;
 
 // AGE-02: splash gate
 import AdultSplash from '../../components/AdultSplash';
@@ -196,6 +210,9 @@ function PlatformApp() {
 
   const go = (id) => plNavigate(id);
 
+  const { width } = useBreakpoint();
+  const mobileShell = MOBILE_V2_ENABLED && width > 0 && width < MOBILE_V2_MAX_WIDTH;
+
   let body = null;
   if (page === 'profile') body = <ProfilePage />;
   else if (page === 'me') body = <MePage subPage="overview" />;
@@ -325,9 +342,13 @@ function PlatformApp() {
 
   return (
     <>
-      <PlatformShellCS page={page} setPage={go}>
-        {body}
-      </PlatformShellCS>
+      {mobileShell ? (
+        <MobileRoot page={page} setPage={go} />
+      ) : (
+        <PlatformShellCS page={page} setPage={go}>
+          {body}
+        </PlatformShellCS>
+      )}
       {splashNeeded && (
         <AdultSplash splashVersion={SPLASH_VERSION} onAcked={() => setSplashNeeded(false)} />
       )}
