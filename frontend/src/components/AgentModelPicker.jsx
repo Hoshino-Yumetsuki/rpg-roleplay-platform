@@ -16,25 +16,27 @@ import CSButton from '@cloudscape-design/components/button';
    UI 与持久化完全一致 —— 不再各写一套。
 
    props:
-     prefPrefix    : 偏好命名空间(如 "extractor" / "card_import")
-     header        : 容器标题(variant="container" 时)
-     description   : 标题下描述
-     defaultModel  : 用户未配时的默认候选 model_real_name
-     preferProvider: 用户已配 key 时优先选的 provider(如 "deepseek")
-     configHash    : 「去配 key」跳转的 hash(默认 settings-models)
-     variant       : "container"(带 CSContainer 外框) | "bare"(只渲染内容)
-     onChange?     : (api_id, model) => void  选择变化时回调(可选) */
+     prefPrefix       : 偏好命名空间(如 "extractor" / "card_import")
+     header           : 容器标题(variant="container" 时)
+     description      : 标题下描述
+     defaultModel     : 用户未配时的默认候选 model_real_name；不传则取后端 selected.real_name
+     preferProvider   : 用户已配 key 时优先选的 provider(如 "deepseek")
+     configHash       : 「去配 key」跳转的 hash(默认 settings-models)
+     variant          : "container"(带 CSContainer 外框) | "bare"(只渲染内容)
+     onChange?        : (api_id, model) => void  选择变化时回调(可选)
+     capabilityFilter?: string  只展示 capabilities 含此值的模型(如 "image_gen") */
 export default function AgentModelPicker({
   prefPrefix,
   header = '模型',
   description = '',
-  defaultModel = 'gemini-3.5-flash',
+  defaultModel = null,      // 不再硬编码；null 时从后端 selected 取默认值
   preferProvider = null,
   configHash = 'settings-models',
   variant = 'container',
   onChange = null,
-  persistOnMount = false,  // 无偏好时把解析出的默认(provider+model)一次性写入,保证"所见即所用"
-  fallbackPrefix = null,   // 本功能(prefPrefix)无偏好时,继承哪个偏好命名空间作默认(如 'gm'=用户默认模型);默认不继承
+  persistOnMount = false,   // 无偏好时把解析出的默认(provider+model)一次性写入,保证"所见即所用"
+  fallbackPrefix = null,    // 本功能(prefPrefix)无偏好时,继承哪个偏好命名空间作默认(如 'gm'=用户默认模型);默认不继承
+  capabilityFilter = null,  // 可选：只展示 capabilities 含此字符串的模型(如 "image_gen")
 }) {
   const { useState, useEffect } = React;
   const [apis, setApis] = useState([]);
@@ -56,7 +58,7 @@ export default function AgentModelPicker({
         if (cancelled) return;
         const list = models?.models?.apis || (Array.isArray(models?.apis) ? models.apis : []) || [];
         setApis(Array.isArray(list) ? list : []);
-        // AgentPlatform 是 Vertex 的 SA 凭证 — UI 里归一成 vertex_ai
+        // AgentPlatform 是 Vertex 的 SA 凭证 — UI 里归一成 vertex_ai（与后端 canonical 一致）
         const ids = new Set();
         for (const c of (creds?.items || creds?.credentials || [])) {
           if (c.enabled === false) continue;
@@ -65,6 +67,12 @@ export default function AgentModelPicker({
           ids.add(aid === 'AgentPlatform' ? 'vertex_ai' : aid);
         }
         setCredApiIds(ids);
+        // 后端 selected 是全局默认模型（由 /api/models 返回）；
+        // defaultModel prop 若未传（null），就从 selected 取。
+        const backendSelected = models?.selected;
+        const resolvedDefaultModel = defaultModel
+          || (backendSelected && (backendSelected.real_name || backendSelected.model_id))
+          || '';
         const p = (profile && profile.preferences) || {};
         const prefApi = p[`${prefPrefix}.api_id`];
         const prefModel = p[`${prefPrefix}.model_real_name`];
@@ -72,31 +80,38 @@ export default function AgentModelPicker({
         // 而不是落到便宜档/写死默认 —— 满足"默认是用户设置的默认模型"。
         const fbApi = fallbackPrefix ? p[`${fallbackPrefix}.api_id`] : '';
         const fbModel = fallbackPrefix ? p[`${fallbackPrefix}.model_real_name`] : '';
-        // Provider:本功能偏好 > 继承的默认 provider(若已配 key) > 偏好的 provider(若已配 key) > 用户首个已配 provider
+        // Provider:本功能偏好 > 继承的默认 provider(若已配 key) > 后端 selected provider(若已配 key)
+        //   > 偏好的 provider(若已配 key) > 用户首个已配 provider
+        const selectedApiId = backendSelected && (backendSelected.api_id || '');
         const chosenApi = prefApi
           || (fbApi && ids.has(fbApi) ? fbApi : null)
+          || (selectedApiId && ids.has(selectedApiId) ? selectedApiId : null)
           || (preferProvider && ids.has(preferProvider) ? preferProvider : null)
           || Array.from(ids)[0]
           || preferProvider || '';
         // Model 必须属于 chosenApi(否则会出现 Anthropic + gemini 这种错配):
-        //   本功能偏好 model > 继承的默认 model(若在该 provider 下) > defaultModel(若在该 provider 下)
-        //   > 该 provider 首个非 embedding 模型
+        //   本功能偏好 model > 继承的默认 model(若在该 provider 下) > resolvedDefaultModel
+        //   > 该 provider 首个非 embedding / 非 capabilityFilter 过滤后的模型
         const apiObj = list.find((x) => (x.api_id || x.id) === chosenApi);
-        const chosenModels = (apiObj?.models || apiObj?.entries || [])
+        let chosenModels = (apiObj?.models || apiObj?.entries || [])
           .filter((m) => !((m.capabilities || m.caps || []).length === 1 && (m.capabilities || m.caps || [])[0] === 'embedding'));
-        const fbModelValid = fbModel && chosenModels.some((m) => (m.real_name || m.id) === fbModel);
-        const hasDefault = chosenModels.some((m) => (m.real_name || m.id) === defaultModel);
+        // capabilityFilter 过滤（仅影响"默认首选"查找，不影响最终兜底）
+        const capFilteredModels = capabilityFilter
+          ? chosenModels.filter((m) => (m.capabilities || m.caps || []).includes(capabilityFilter))
+          : chosenModels;
+        const fbModelValid = fbModel && capFilteredModels.some((m) => (m.real_name || m.id) === fbModel);
+        const hasDefault = capFilteredModels.some((m) => (m.real_name || m.id) === resolvedDefaultModel);
         // 该 provider 下偏向便宜档(haiku/flash/mini/lite/small/nano),适合整理这种工具任务,
         // 避免默认落到旗舰(如 Opus)烧额度。
         const cheapRe = /haiku|flash|mini|lite|small|nano/i;
-        const cheap = chosenModels.find((m) => cheapRe.test(m.real_name || m.id || '') || cheapRe.test(m.display_name || ''));
-        const firstModel = chosenModels[0] ? (chosenModels[0].real_name || chosenModels[0].id) : '';
+        const cheap = capFilteredModels.find((m) => cheapRe.test(m.real_name || m.id || '') || cheapRe.test(m.display_name || ''));
+        const firstModel = capFilteredModels[0] ? (capFilteredModels[0].real_name || capFilteredModels[0].id) : '';
         const chosenModel = prefModel
           || (fbModelValid ? fbModel : null)
-          || (hasDefault ? defaultModel : null)
+          || (hasDefault ? resolvedDefaultModel : null)
           || (cheap ? (cheap.real_name || cheap.id) : null)
           || firstModel
-          || defaultModel;
+          || resolvedDefaultModel;
         setApiId(chosenApi);
         setModel(chosenModel);
         // 把解析出的当前 provider+model 告知父组件(父拿它提交),与展示完全一致,不依赖 persistOnMount。
@@ -152,7 +167,15 @@ export default function AgentModelPicker({
     return out;
   }, [apis, credApiIds]);
   const modelOptions = modelsOf(apiId)
-    .filter((m) => !isEmbeddingOnly(m))
+    .filter((m) => {
+      if (isEmbeddingOnly(m)) return false;
+      // capabilityFilter：只展示包含该 capability 的模型（如 "image_gen"）
+      if (capabilityFilter) {
+        const caps = m.capabilities || m.caps || [];
+        if (!caps.includes(capabilityFilter)) return false;
+      }
+      return true;
+    })
     .map((m) => ({
       value: m.real_name || m.id,
       label: `${m.display_name || m.real_name || m.id}${m.enabled === false ? ' (禁用)' : ''}`,

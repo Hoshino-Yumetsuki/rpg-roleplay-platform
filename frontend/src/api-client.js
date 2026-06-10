@@ -729,10 +729,12 @@
 
     // ---------- Models & APIs ----------
     models: {
+      // GET /api/models — 主入口；返回 {ok, models:{apis:[...]}, selected:{...}}
       list: () => GET(`${API_PREFIX}/models`),
-      // Wave 11-C: 新统一 catalog 端点,返回完整 ModelInfo Vec(10 provider)
+      // GET /api/models/catalog — 同源别名（Phase 0 由 Agent C 添加），返回完全相同 payload。
+      // ModelPicker.jsx 改用 list()；catalog() 保留供兼容老调用方。
       catalog: () => GET(`${API_PREFIX}/models/catalog`),
-      // Wave 11-C: 强制重拉所有 provider live /models,清 TTL cache
+      // 强制重拉所有 provider live /models,清 TTL cache
       refresh: () => POST(`${API_PREFIX}/models/refresh`, {}),
       select: (body) => POST(`${API_PREFIX}/models/select`, body),
       upsertApi: (body) => POST(`${API_PREFIX}/models/api`, body),

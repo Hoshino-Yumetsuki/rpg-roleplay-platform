@@ -13,45 +13,11 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+# 规范化逻辑集中在 model_aliases；此处再导出以兼容现有 from model_registry import normalize_api_id。
+from model_aliases import _API_ID_ALIASES, normalize_api_id  # noqa: F401
+
 BASE = Path(__file__).parent
 MODEL_CONFIG_FILE = BASE / "config" / "model_catalog.json"
-
-_API_ID_ALIASES = {
-    "OpenAI": "openai",
-    "openai": "openai",
-    "OpenRouter": "openrouter",
-    "openrouter": "openrouter",
-    "DeepSeek": "deepseek",
-    "deepseek": "deepseek",
-    "Anthropic": "anthropic",
-    "anthropic": "anthropic",
-    "AlibabaQwen": "dashscope",
-    "DashScope": "dashscope",
-    "dashscope": "dashscope",
-    "TencentHunyuan": "hunyuan",
-    "Hunyuan": "hunyuan",
-    "hunyuan": "hunyuan",
-    "XiaomiMimo": "xiaomi_mimo",
-    "MiMo": "xiaomi_mimo",
-    "xiaomi_mimo": "xiaomi_mimo",
-    "SiliconFlow": "siliconflow",
-    "siliconflow": "siliconflow",
-    "MiniMax": "minimax",
-    "minimax": "minimax",
-    "Doubao": "doubao",
-    "doubao": "doubao",
-    "AgentPlatform": "vertex_ai",
-    "agent_platform": "vertex_ai",
-    "vertex": "vertex_ai",
-    "vertex_ai": "vertex_ai",
-}
-
-
-def normalize_api_id(api_id: str | None) -> str:
-    value = str(api_id or "").strip()
-    if not value:
-        return ""
-    return _API_ID_ALIASES.get(value) or _API_ID_ALIASES.get(value.lower()) or value
 
 
 def default_api_for(api_id: str | None) -> dict[str, Any] | None:
@@ -59,51 +25,15 @@ def default_api_for(api_id: str | None) -> dict[str, Any] | None:
     return next((copy.deepcopy(api) for api in DEFAULT_MODEL_CATALOG["apis"] if normalize_api_id(api.get("id")) == target), None)
 
 
-# 已知下线/退役模型黑名单:provider 归一化 id -> 该 provider 下已被服务商下线的
-# model id/real_name 集合。这些模型调用时返回 404 NOT_FOUND,但可能残留在历史
-# 存储 catalog(DB model_entries)或用户 overlay(user_model_entries)里。盲取
-# "第一个 enabled 模型"(core.llm_backend.first_user_model 的兜底)会撞上它们,
-# 导致身份卡生成 / phase compact 等子代理对无偏好用户一律失败。在加载/迁移与
-# overlay 合成层统一剔除 —— 对未来其它下线模型同样健壮,无需逐个改存储数据。
-# key 为 "" 表示对所有 provider 生效。
-KNOWN_OFFLINE_MODELS: dict[str, set[str]] = {
-    # 已被 Google 下线的 Vertex 模型,调用返 404 NOT_FOUND:
-    # - gemini-1.5-pro-002:早期 1.5 快照,早已下线。
-    # - gemini-2.5-flash-preview-04-17 / gemini-2.5-pro-exp-03-25:带日期的 preview/exp
-    #   临时快照,GA 名(gemini-2.5-flash / gemini-2.5-pro)上线后即停服。
-    "vertex_ai": {
-        "gemini-1.5-pro-002",
-        "gemini-2.5-flash-preview-04-17",
-        "gemini-2.5-pro-exp-03-25",
-    },
-}
-
-
-def _is_offline_model(api_id: str | None, model: dict[str, Any]) -> bool:
-    aid = normalize_api_id(api_id)
-    tokens = {str(model.get("id") or "").strip(), str(model.get("real_name") or "").strip()}
-    tokens.discard("")
-    if not tokens:
-        return False
-    for scope in (aid, ""):
-        dead = KNOWN_OFFLINE_MODELS.get(scope)
-        if dead and (tokens & dead):
-            return True
-    return False
-
-
-def _filter_offline_models(models: Any, api_id: str | None) -> list[dict[str, Any]]:
-    """剔除已知下线模型。返回清理后的列表(只保留 dict 条目)。"""
-    return [m for m in (models or []) if isinstance(m, dict) and not _is_offline_model(api_id, m)]
-
-
 DEFAULT_MODEL_CATALOG: dict[str, Any] = {
     "schema_version": 1,
     "selected": {
         "api_id": "vertex_ai",
-        "model_id": "gemini-3.5-flash",
+        "model_id": "gemini-2.5-flash",
     },
     "apis": [
+        # vertex_ai: 完整保留真实可用 chat 模型 + 所有 embedding 模型。
+        # 这是系统默认 provider；fresh/未 sync 实例的 GM 依赖此保底列表。
         {
             "id": "vertex_ai",
             "display_name": "Vertex AI",
@@ -111,12 +41,10 @@ DEFAULT_MODEL_CATALOG: dict[str, Any] = {
             "enabled": True,
             "credential_ref": "rpg/vertex_sa.json",
             "models": [
-                {"id": "gemini-3.5-flash", "real_name": "gemini-3.5-flash", "display_name": "Gemini 3.5 Flash", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "audio_input", "file_input", "tools", "json_mode", "reasoning"]},
-                {"id": "gemini-3.1-pro",   "real_name": "gemini-3.1-pro",   "display_name": "Gemini 3.1 Pro", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "audio_input", "video_input", "file_input", "tools", "json_mode", "reasoning", "code_exec"]},
                 {"id": "gemini-2.5-flash", "real_name": "gemini-2.5-flash", "display_name": "Gemini 2.5 Flash", "enabled": True,
                  "capabilities": ["text", "streaming", "image_input", "audio_input", "file_input", "tools", "json_mode"]},
+                {"id": "gemini-2.5-pro",   "real_name": "gemini-2.5-pro",   "display_name": "Gemini 2.5 Pro", "enabled": True,
+                 "capabilities": ["text", "streaming", "image_input", "audio_input", "video_input", "file_input", "tools", "json_mode", "reasoning", "code_exec"]},
                 # 向量嵌入(RAG)— 768 维,与 DB 向量列原生一致。text-embedding-004 是系统默认。
                 {"id": "text-embedding-004", "real_name": "text-embedding-004", "display_name": "Text Embedding 004 · 默认", "enabled": True,
                  "capabilities": ["embedding"]},
@@ -124,20 +52,15 @@ DEFAULT_MODEL_CATALOG: dict[str, Any] = {
                  "capabilities": ["embedding"]},
             ],
         },
+        # 以下 provider 的 chat models 清空为 []；真实模型列表由用户配 key 后 sync 写入。
+        # embedding 模型条目保留（供 RAG 向量选择器在用户配 key 前就能看到条目）。
         {
             "id": "anthropic",
             "display_name": "Anthropic",
             "kind": "anthropic",
             "enabled": False,
             "credential_env": "ANTHROPIC_API_KEY",
-            "models": [
-                {"id": "claude-opus-4-7",   "real_name": "claude-opus-4-7",   "display_name": "Claude Opus 4.7", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "file_input", "tools", "json_mode", "reasoning", "computer_use", "code_exec"]},
-                {"id": "claude-sonnet-4-6", "real_name": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "file_input", "tools", "json_mode", "reasoning", "computer_use"]},
-                {"id": "claude-haiku-4-5",  "real_name": "claude-haiku-4-5",  "display_name": "Claude Haiku 4.5", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "tools", "json_mode"]},
-            ],
+            "models": [],
         },
         {
             "id": "openai",
@@ -147,12 +70,6 @@ DEFAULT_MODEL_CATALOG: dict[str, Any] = {
             "credential_env": "OPENAI_API_KEY",
             "base_url": "https://api.openai.com/v1",
             "models": [
-                {"id": "gpt-5.5",          "real_name": "gpt-5.5",          "display_name": "GPT-5.5", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "tools", "json_mode", "reasoning"]},
-                {"id": "gpt-5.5-pro",      "real_name": "gpt-5.5-pro",      "display_name": "GPT-5.5 Pro", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "audio_input", "tools", "json_mode", "reasoning", "code_exec", "web_search"]},
-                {"id": "gpt-5.5-thinking", "real_name": "gpt-5.5-thinking", "display_name": "GPT-5.5 Thinking", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "tools", "json_mode", "reasoning"]},
                 # 向量嵌入(RAG)— 支持 dimensions 降维到 768,与 DB 向量列对齐。
                 # (不收 ada-002:它不支持 dimensions,只能输出 1536 维,放不进 768 列。)
                 {"id": "text-embedding-3-small", "real_name": "text-embedding-3-small", "display_name": "Text Embedding 3 Small", "enabled": True,
@@ -168,14 +85,7 @@ DEFAULT_MODEL_CATALOG: dict[str, Any] = {
             "enabled": False,
             "credential_env": "OPENROUTER_API_KEY",
             "base_url": "https://openrouter.ai/api/v1",
-            "models": [
-                {"id": "anthropic/claude-opus-4-7", "real_name": "anthropic/claude-opus-4-7", "display_name": "Claude Opus 4.7", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "tools", "json_mode", "reasoning"]},
-                {"id": "openai/gpt-5.5",            "real_name": "openai/gpt-5.5",            "display_name": "GPT-5.5", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "tools", "json_mode", "reasoning"]},
-                {"id": "google/gemini-3.5-flash",   "real_name": "google/gemini-3.5-flash",   "display_name": "Gemini 3.5 Flash", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "tools", "json_mode"]},
-            ],
+            "models": [],
         },
         {
             "id": "deepseek",
@@ -194,14 +104,7 @@ DEFAULT_MODEL_CATALOG: dict[str, Any] = {
             "enabled": False,
             "credential_env": "SILICONFLOW_API_KEY",
             "base_url": "https://api.siliconflow.cn/v1",
-            "models": [
-                {"id": "deepseek-ai/DeepSeek-V4-Pro",   "real_name": "deepseek-ai/DeepSeek-V4-Pro",   "display_name": "DeepSeek V4 Pro", "enabled": True,
-                 "capabilities": ["text", "streaming", "tools", "json_mode", "reasoning", "code_exec"]},
-                {"id": "deepseek-ai/DeepSeek-V4-Flash", "real_name": "deepseek-ai/DeepSeek-V4-Flash", "display_name": "DeepSeek V4 Flash", "enabled": True,
-                 "capabilities": ["text", "streaming", "tools", "json_mode"]},
-                {"id": "Qwen/Qwen3.7-Max",              "real_name": "Qwen/Qwen3.7-Max",              "display_name": "Qwen 3.7-Max", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "tools", "json_mode", "reasoning", "code_exec"]},
-            ],
+            "models": [],
         },
         {
             "id": "minimax",
@@ -210,10 +113,7 @@ DEFAULT_MODEL_CATALOG: dict[str, Any] = {
             "enabled": False,
             "credential_env": "MINIMAX_API_KEY",
             "base_url": "https://api.minimax.chat/v1",
-            "models": [
-                {"id": "MiniMax-M1",  "real_name": "MiniMax-M1",  "display_name": "MiniMax M1",  "enabled": True, "capabilities": ["text", "streaming"]},
-                {"id": "abab6.5s-chat", "real_name": "abab6.5s-chat", "display_name": "abab 6.5s", "enabled": True, "capabilities": ["text", "streaming"]},
-            ],
+            "models": [],
         },
         {
             "id": "dashscope",
@@ -223,10 +123,6 @@ DEFAULT_MODEL_CATALOG: dict[str, Any] = {
             "credential_env": "DASHSCOPE_API_KEY",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "models": [
-                {"id": "qwen3.7-max",   "real_name": "qwen3.7-max",   "display_name": "Qwen 3.7-Max", "enabled": True,
-                 "capabilities": ["text", "streaming", "image_input", "tools", "json_mode", "reasoning"]},
-                {"id": "qwen3.6-flash", "real_name": "qwen3.6-flash", "display_name": "Qwen 3.6 Flash", "enabled": True,
-                 "capabilities": ["text", "streaming", "tools", "json_mode"]},
                 # 向量嵌入(RAG)— text-embedding-v3 支持 dimensions 降维到 768,经 compatible-mode
                 # 的 /embeddings(OpenAI 兼容)调用。
                 {"id": "text-embedding-v3", "real_name": "text-embedding-v3", "display_name": "Qwen Text Embedding v3", "enabled": True,
@@ -240,10 +136,7 @@ DEFAULT_MODEL_CATALOG: dict[str, Any] = {
             "enabled": False,
             "credential_env": "HUNYUAN_API_KEY",
             "base_url": "https://api.hunyuan.cloud.tencent.com/v1",
-            "models": [
-                {"id": "hunyuan-turbos-latest", "real_name": "hunyuan-turbos-latest", "display_name": "Hunyuan TurboS", "enabled": True, "capabilities": ["text", "streaming"]},
-                {"id": "hunyuan-large",         "real_name": "hunyuan-large",         "display_name": "Hunyuan Large",  "enabled": True, "capabilities": ["text", "streaming"]},
-            ],
+            "models": [],
         },
         {
             "id": "doubao",
@@ -252,10 +145,7 @@ DEFAULT_MODEL_CATALOG: dict[str, Any] = {
             "enabled": False,
             "credential_env": "ARK_API_KEY",
             "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-            "models": [
-                {"id": "doubao-1-5-pro-32k-250115",   "real_name": "doubao-1-5-pro-32k-250115",   "display_name": "Doubao 1.5 Pro",   "enabled": True, "capabilities": ["text", "streaming"]},
-                {"id": "doubao-1-5-lite-32k-250115",  "real_name": "doubao-1-5-lite-32k-250115",  "display_name": "Doubao 1.5 Lite",  "enabled": True, "capabilities": ["text", "streaming"]},
-            ],
+            "models": [],
         },
         {
             "id": "xiaomi_mimo",
@@ -265,9 +155,7 @@ DEFAULT_MODEL_CATALOG: dict[str, Any] = {
             "credential_env": "MIMO_API_KEY",
             "base_url": "",
             "metadata": {"status": "preview", "note": "MiMo 公共 API 暂未开放，base_url 待小米发布后填入"},
-            "models": [
-                {"id": "mimo-7b-rl", "real_name": "mimo-7b-rl", "display_name": "MiMo-7B-RL", "enabled": False, "capabilities": ["text"]},
-            ],
+            "models": [],
         },
     ],
 }
@@ -362,10 +250,9 @@ def apply_user_overlay(catalog: dict[str, Any], user_id: int | None) -> dict[str
     for raw_api_id, models in overlay.items():
         api_id = normalize_api_id(raw_api_id)
         existing = by_id.get(api_id)
-        cleaned = _filter_offline_models(list(models or []), api_id)
+        cleaned = [m for m in (models or []) if isinstance(m, dict)]
         if existing is not None:
-            # 用户同步清单覆盖全局 provider 的 models。但若清单里全是下线模型
-            # (如用户 1 的 vertex overlay 仅含 gemini-1.5-pro-002),清理后为空时
+            # 用户同步清单覆盖全局 provider 的 models。清理后为空时
             # **不**用空清单覆盖全局好模型,保留全局菜单 —— 否则该用户该 provider 视图
             # 变空,first_user_model 兜底无可用模型可回退。
             if cleaned:
@@ -584,11 +471,8 @@ def _migrate_catalog(data: dict[str, Any]) -> dict[str, Any]:
     _backfill_model_capabilities(catalog)
     for api in catalog.get("apis", []):
         models = api.get("models") or []
-        filtered = _filter_offline_models(models, api.get("id"))
-        # 只在还能留下至少一个模型时剔除;若某 provider 全是下线模型则保留原列表,
-        # 避免空 models 撑爆 first_enabled_model([])(degenerate,生产不会发生)。
-        if filtered or not models:
-            api["models"] = filtered
+        filtered = [m for m in models if isinstance(m, dict)]
+        api["models"] = filtered
     selected = selected_model_without_migration(catalog)
     catalog["selected"] = {
         "api_id": selected["api_id"],

@@ -23,6 +23,7 @@ from psycopg.types.json import Jsonb
 from utils.crypto import decrypt_api_key, encrypt_api_key
 
 from .db import connect, expose, init_db
+from model_aliases import normalize_api_id, _API_ID_ALIASES  # noqa: F401 — re-export for compat
 
 _PRIVATE_HOST_PREFIXES = (
     "127.", "10.", "192.168.", "169.254.",
@@ -31,34 +32,6 @@ _PRIVATE_HOST_PREFIXES = (
     "172.28.", "172.29.", "172.30.", "172.31.",
     "0.", "localhost", "::1", "fc", "fd", "fe80",
 )
-
-_API_ID_ALIASES = {
-    "OpenAI": "openai",
-    "OpenRouter": "openrouter",
-    "DeepSeek": "deepseek",
-    "Anthropic": "anthropic",
-    "AlibabaQwen": "dashscope",
-    "DashScope": "dashscope",
-    "TencentHunyuan": "hunyuan",
-    "Hunyuan": "hunyuan",
-    "XiaomiMimo": "xiaomi_mimo",
-    "MiMo": "xiaomi_mimo",
-    "SiliconFlow": "siliconflow",
-    "MiniMax": "minimax",
-    "Doubao": "doubao",
-    "AgentPlatform": "AgentPlatform",
-    "agent_platform": "AgentPlatform",
-    "vertex": "AgentPlatform",
-    "vertex_ai": "AgentPlatform",
-}
-
-
-def normalize_api_id(api_id: str) -> str:
-    """Canonicalize UI/provider aliases before storing user credentials."""
-    value = (api_id or "").strip()
-    if not value:
-        return ""
-    return _API_ID_ALIASES.get(value) or _API_ID_ALIASES.get(value.lower()) or value
 
 
 def _credential_aliases(api_id: str) -> list[str]:
@@ -162,7 +135,27 @@ def set_credential(user_id: int, api_id: str, plaintext_key: str, base_url_overr
             """,
             (user_id, api_id, encrypted, base_url_override or "", enabled, Jsonb({})),
         ).fetchone()
-    return {"ok": True, **(expose(row) or {}), "has_credential": True}
+    result = {"ok": True, **(expose(row) or {}), "has_credential": True}
+
+    # best-effort: 配 key 后自动拉该 provider 的真实模型列表并写入用户 overlay。
+    # lazy import 防循环依赖（model_probe → model_registry → ? ← credentials）。
+    # 失败只 log，绝不影响存 key 主流程。
+    try:
+        import logging as _logging
+        from model_probe import list_remote_models
+        from platform_app.user_models import replace_synced_models
+        sync_result = list_remote_models(api_id, user_id=user_id)
+        if sync_result.get("ok") and sync_result.get("models"):
+            replace_synced_models(user_id, api_id, sync_result["models"])
+    except Exception as _sync_exc:
+        try:
+            _logging.getLogger(__name__).warning(
+                "set_credential auto-sync failed (non-fatal): %s", _sync_exc
+            )
+        except Exception:
+            pass
+
+    return result
 
 
 def delete_credential(user_id: int, api_id: str) -> dict[str, Any]:

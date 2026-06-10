@@ -1015,6 +1015,7 @@ async def run_gm_phase(
     # 重开/刷新后聊天记录里仍可见(酒馆沉浸:工具调用 + 思考流不该生成完就消失)。每轮开头清零。
     state.data["_turn_tool_ops"] = []
     state.data["_turn_reasoning"] = []
+    state.data["_turn_images_generated"] = 0  # Phase 1 生图门控：每轮重置自主生图计数器
 
     async for event in _bridge_sync_generator_to_async(
         lambda: gm.respond_stream_with_tools(

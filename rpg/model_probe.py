@@ -719,6 +719,18 @@ def get_capabilities(api_id: str, model_real_name: str, catalog_override: list[s
     if _infer_embedding_capability(model_real_name) and "embedding" not in seen:
         out.append("embedding")
         seen.add("embedding")
+    # image_gen heuristic — 模型名含图像生成关键词时自动标记
+    _IMAGE_GEN_PATTERNS = (
+        "imagen", "seedream", "wanx",
+        "dall-e", "dalle",
+        "flux",
+        "stable-diffusion", "sd3",
+        "image",
+    )
+    _name_lower = (model_real_name or "").lower()
+    if "image_gen" not in seen and any(pat in _name_lower for pat in _IMAGE_GEN_PATTERNS):
+        out.append("image_gen")
+        seen.add("image_gen")
     # 默认值 — embedding 模型不应回到 text+streaming
     if not out:
         return ["text", "streaming"]

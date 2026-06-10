@@ -112,6 +112,15 @@ async def api_models(
     })
 
 
+# ModelPicker.jsx 调的是 /api/models/catalog（原来 404）,这里注册为 /api/models 的别名。
+# 直接复用同一个 handler,payload 完全相同。
+@router.get("/api/models/catalog")
+async def api_models_catalog(
+    api_user: dict[str, Any] | None = Depends(get_current_user),
+) -> JSONResponse:
+    return await api_models(api_user)
+
+
 @router.post("/api/models/health/refresh-all")
 async def api_models_health_refresh_all(
     request: Request,
