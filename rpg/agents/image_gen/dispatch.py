@@ -31,6 +31,7 @@ def generate_image_bytes(
     params: dict,
     api_key: str,
     base_url: str | None = None,
+    user_id: int | None = None,
 ) -> list[bytes]:
     """Route image generation to the correct provider adapter.
 
@@ -64,6 +65,14 @@ def generate_image_bytes(
         return dashscope.generate(
             prompt, params,
             api_id=normalized, model=model, api_key=api_key, base_url=base_url,
+        )
+
+    if normalized == "vertex_ai":
+        from agents.image_gen import vertex
+        return vertex.generate(
+            prompt, params,
+            api_id=normalized, model=model, api_key=api_key, base_url=base_url,
+            user_id=user_id,
         )
 
     raise ImageGenError(f"unsupported image provider: {normalized!r} (from api_id={api_id!r})")

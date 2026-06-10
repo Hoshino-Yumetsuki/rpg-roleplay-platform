@@ -196,7 +196,10 @@ async def handle_image_gen(payload: dict[str, Any]) -> None:
         except Exception as exc:
             log.warning("[image_jobs] resolve_api_key failed image_id=%s: %s", image_id, exc)
 
-    if not api_key:
+    from model_aliases import normalize_api_id as _norm_api
+    _is_vertex = _norm_api(api_id) == "vertex_ai"
+    if not api_key and not _is_vertex:
+        # vertex_ai 走平台/用户 Service Account(core.vertex_sa),无 BYOK key 字符串,放行
         _fail(image_id, "credentials_required")
         return
 
@@ -210,12 +213,13 @@ async def handle_image_gen(payload: dict[str, Any]) -> None:
 
         raw_results = await asyncio.to_thread(
             generate_image_bytes,
-            prompt,
-            params,
+            prompt=prompt,
+            params=params,
             api_id=api_id,
             model=model,
             api_key=api_key,
             base_url=base_url,
+            user_id=user_id,
         )
     except Exception as exc:
         log.exception("[image_jobs] generate_image_bytes failed image_id=%s", image_id)
