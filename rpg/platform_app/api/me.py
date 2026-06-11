@@ -25,6 +25,33 @@ def _detect_image_mime(data: bytes) -> tuple[str, str]:
         return "image/webp", "webp"
     raise ValueError("仅支持 PNG / JPEG / WebP 图片（魔数校验失败）")
 
+
+def _store_imported_card_image(user_id: int, card_id: int, blob: bytes) -> None:
+    """导入角色卡时把卡自带的原图(PNG/WEBP 卡本身即头像)存进 storage +
+    设 character_cards.avatar_path + 登记 user_assets(功能组件→文件库)。
+    非图片(魔数失败)会 raise，调用方 try/except 兜底。"""
+    import secrets as _secrets
+
+    from .. import storage as _storage
+    from ..assets_registry import register_asset as _register_asset
+    from ..db import connect as _connect
+
+    mime, ext = _detect_image_mime(blob)  # 非图 → ValueError
+    key, url = _storage.store_bytes(
+        blob, kind="ai_images", filename=f"card_{user_id}_{_secrets.token_hex(12)}.{ext}"
+    )
+    with _connect() as db:
+        db.execute(
+            "update character_cards set avatar_path = %s where id = %s and user_id = %s",
+            (url, card_id, user_id),
+        )
+    _register_asset(
+        user_id=user_id, kind="card_image", storage_key=key, url=url,
+        source="card_import", ref_kind="card", ref_id=card_id,
+        mime=mime, size=len(blob),
+    )
+
+
 router = APIRouter()
 
 
@@ -541,6 +568,7 @@ async def api_import_tavern_card(request: Request, user=Depends(require_user)):
 
     content_type = request.headers.get("content-type", "")
     ai_split = False  # 用户显式 opt-in「AI 整理字段」时才挂 LLM 兜底
+    image_bytes: bytes | None = None  # PNG/WEBP 卡的原图，导入后存为头像 + 登记文件库
     # 整理用模型统一走「设置 → 模型 → card_import」配置(apply_llm_structure 内部解析),
     # 不在导入请求里透传 per-import 模型。
     try:
@@ -557,6 +585,7 @@ async def api_import_tavern_card(request: Request, user=Depends(require_user)):
             fname = getattr(file_field, "filename", "") or ""
             if fname.lower().endswith(".png") or fname.lower().endswith(".webp"):
                 v2 = tavern_cards.parse_png_card(blob)
+                image_bytes = blob  # PNG/WEBP 卡本身即头像图
             else:
                 # treat as JSON
                 try:
@@ -579,6 +608,7 @@ async def api_import_tavern_card(request: Request, user=Depends(require_user)):
                 if len(blob) > 10 * 1024 * 1024:
                     raise ValueError("PNG 文件过大（解码后最大 10MB）")
                 v2 = tavern_cards.parse_png_card(blob)
+                image_bytes = blob  # PNG 卡本身即头像图
             elif body.get("json") is not None:
                 v2 = tavern_cards.parse_card(body["json"])
             elif body.get("json_string"):
@@ -598,6 +628,14 @@ async def api_import_tavern_card(request: Request, user=Depends(require_user)):
             except Exception:
                 pass
         card = user_cards.upsert_user_card(user["id"], payload)
+        # 导入的角色卡若带原图(PNG/WEBP 卡)→ 存为头像 + 登记进文件库(功能组件→资产)。失败不阻断导入。
+        if image_bytes and isinstance(card, dict) and card.get("id"):
+            try:
+                _store_imported_card_image(user["id"], int(card["id"]), image_bytes)
+                card = user_cards.get_user_card(user["id"], int(card["id"])) or card
+            except Exception as _img_exc:
+                import logging as _logging
+                _logging.getLogger(__name__).warning("[import-tavern] store card image failed: %s", _img_exc)
         return json_response({
             "ok": True, "card": card, "imported_from": "tavern_v2",
             "llm_structured": bool((payload.get("metadata") or {}).get("llm_structured_description")),
