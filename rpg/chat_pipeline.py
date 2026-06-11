@@ -149,6 +149,7 @@ def _sync_active_entities_from_bundle(state, bundle) -> None:
                 "source": (it.get("_source") or "context_inject"),
                 "card_id": nm,  # 用 name 做 card_id,前端可点开看卡
                 "identity": it.get("identity") or "",
+                "avatar_path": it.get("avatar_path") or "",
             })
     state.data["active_entities"] = active
 

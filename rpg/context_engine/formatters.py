@@ -70,6 +70,7 @@ def _active_character_cards(scan_text: str, chars: dict[str, Any], player_name: 
             "matched": matched[:4],
             "priority": 100 + len(matched) * 8,
             "text": _format_card(name, card),
+            "avatar_path": card.get("avatar_path", ""),
         })
     active.sort(key=lambda x: x["priority"], reverse=True)  # type: ignore[return-value]
     return active[:4]
@@ -252,6 +253,7 @@ def _strip_card_text(card: dict[str, Any]) -> dict[str, Any]:
         "matched": card.get("matched", []),
         "priority": card.get("priority", 0),
         "preview": _preview(card.get("text", "")),
+        "avatar_path": card.get("avatar_path", ""),
     }
 
 

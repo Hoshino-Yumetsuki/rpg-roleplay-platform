@@ -285,6 +285,7 @@ class NovelCharactersProvider(ContextProvider):
                     "priority": 95,  # 高于 grep 命中的(典型 100-130),让 anchor NPC 排前
                     "text": _format_card_local(npc_name, card),
                     "_source": "anchor_pending",
+                    "avatar_path": card.get("avatar_path", ""),
                 })
                 existing_npc_names.add(npc_name)
         except Exception as exc:

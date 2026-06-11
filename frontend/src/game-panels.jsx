@@ -6,6 +6,7 @@ import React from 'react';
 import { useState, useMemo } from 'react';
 import { Icon } from './game-icons.jsx';
 import { useTranslation } from 'react-i18next';
+import AvatarImg from './components/AvatarImg.jsx';
 
 const PANEL_TABS = [
   { id: "status", labelKey: "game.tabs.status", icon: "status" },
@@ -658,7 +659,7 @@ function _entityTypeLabel(kind, source, t) {
   return "—";
 }
 
-function CharacterCard({ name, info, subtitle, onEditStatus, onDelete }) {
+function CharacterCard({ name, info, subtitle, avatarPath, onEditStatus, onDelete }) {
   const { t } = useTranslation();
   // info: { tone | disposition, note?, role? }
   // 可选 props: onEditStatus(newValue)/onDelete() — 仅 relationships 区传入,
@@ -675,7 +676,7 @@ function CharacterCard({ name, info, subtitle, onEditStatus, onDelete }) {
   return (
     <div className="gp-card" draggable="true" onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="gp-card-head">
-        <div className="gp-card-avatar serif">{(name || "?").slice(0, 1)}</div>
+        <AvatarImg src={avatarPath || null} name={name} className="gp-card-avatar serif" />
         <div style={{minWidth: 0, flex: 1}}>
           <div className="gp-card-name">{name}</div>
           <div className="gp-card-tone">
@@ -789,6 +790,7 @@ function PanelCharacters({ state }) {
                   name={e.name || e.id}
                   info={{ disposition: e.disposition, note: e.role || "", role: e.role }}
                   subtitle={subtitle}
+                  avatarPath={e.avatar_path}
                 />
               );
             })}
@@ -853,6 +855,7 @@ function PanelCharacters({ state }) {
                 name={e.name || e.id}
                 info={{ disposition: e.disposition, note: e.role || "", role: e.role }}
                 subtitle={t('game.characters.pinned_suffix', { card_id: e.card_id })}
+                avatarPath={e.avatar_path}
               />
             ))}
           </div>
