@@ -326,14 +326,29 @@ def _attach_image_to_target(
                 if not card_id:
                     log.warning("[image_jobs] attach card_avatar missing card_id user=%s", user_id)
                     return
-                result = db.execute(
-                    """
-                    update character_cards
-                       set avatar_path = %s
-                     where id = %s and user_id = %s
-                    """,
-                    (url, card_id, int(user_id)),
-                )
+                script_id = int(attach.get("script_id") or 0)
+                if script_id:
+                    # NPC 卡(user_id=NULL,挂 script_id):owner 走 scripts.owner_id
+                    owns = db.execute(
+                        "select 1 from scripts where id = %s and owner_id = %s",
+                        (script_id, int(user_id)),
+                    ).fetchone()
+                    if not owns:
+                        log.warning("[image_jobs] attach card_avatar(npc) script owner failed script_id=%s user=%s", script_id, user_id)
+                        return
+                    result = db.execute(
+                        "update character_cards set avatar_path = %s where id = %s and script_id = %s",
+                        (url, card_id, script_id),
+                    )
+                else:
+                    result = db.execute(
+                        """
+                        update character_cards
+                           set avatar_path = %s
+                         where id = %s and user_id = %s
+                        """,
+                        (url, card_id, int(user_id)),
+                    )
                 if result.rowcount == 0:
                     log.warning(
                         "[image_jobs] attach card_avatar ownership failed card_id=%s user=%s",

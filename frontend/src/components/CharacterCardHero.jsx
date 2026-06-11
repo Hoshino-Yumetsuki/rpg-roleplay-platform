@@ -1,5 +1,6 @@
 import React from 'react';
 import MediaStudio from './MediaStudio.jsx';
+import ImageLightbox from './ImageLightbox.jsx';
 
 /* CharacterCardHero — 图片优先的角色卡头图（电影海报 / 角色档案）。
    大图占主导 + 渐变压暗 + 衬线名字叠图；悬停浮现"更换/查看"；
@@ -10,7 +11,7 @@ import MediaStudio from './MediaStudio.jsx';
      editable  : 是否可编辑（owner，默认 true）
      onChanged(url) : 头像变更后回调（刷新卡）
 */
-export default function CharacterCardHero({ card, editable = true, onChanged }) {
+export default function CharacterCardHero({ card, editable = true, onChanged, scriptId = null }) {
   const { useState, useRef, useEffect, useCallback } = React;
   const [studio, setStudio] = useState(false);
   const [light, setLight] = useState(false);
@@ -50,7 +51,9 @@ export default function CharacterCardHero({ card, editable = true, onChanged }) 
     if (!file || !/^image\//.test(file.type) || !raw.id) return;
     setUploading(true);
     try {
-      const r = await api.cards.uploadAvatar(raw.id, file);
+      const r = scriptId
+        ? await api.cards.scriptUploadCardAvatar(scriptId, raw.id, file)
+        : await api.cards.uploadAvatar(raw.id, file);
       if (r && r.url) onChanged && onChanged(r.url);
     } catch (_) { try { window.__apiToast && window.__apiToast('上传失败', { kind: 'danger' }); } catch (e) {} }
     finally { setUploading(false); }
@@ -104,17 +107,19 @@ export default function CharacterCardHero({ card, editable = true, onChanged }) 
       )}
 
       {studio && (
-        <MediaStudio open onClose={() => setStudio(false)} target={{ type: 'card_avatar', id: raw.id }}
+        <MediaStudio open onClose={() => setStudio(false)} target={{ type: 'card_avatar', id: raw.id, scriptId }}
           name={name} defaultPrompt={[name, raw.appearance, raw.identity].filter(Boolean).join('，')}
           onApplied={(u) => { setStudio(false); onChanged && onChanged(u); }} />
       )}
 
-      {light && url && (
-        <div className="mlb-backdrop" onClick={() => setLight(false)} role="dialog" aria-modal="true">
-          <img src={url} alt={name} style={{ maxWidth: '92vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 10, boxShadow: '0 12px 60px rgba(0,0,0,.7)' }} onClick={(e) => e.stopPropagation()} />
-          <button onClick={() => setLight(false)} aria-label="关闭" style={{ position: 'absolute', top: 20, right: 24, width: 38, height: 38, borderRadius: 99, border: 0, background: 'rgba(255,255,255,.14)', color: '#fff', fontSize: 19, cursor: 'pointer' }}>×</button>
-        </div>
-      )}
+      <ImageLightbox
+        open={light && !!url} src={url} alt={name}
+        onClose={() => setLight(false)}
+        onCrop={editable ? (async (blob) => {
+          await uploadFile(new File([blob], 'crop.png', { type: 'image/png' }));
+        }) : undefined}
+        cropHint="拖动调整裁剪区域，应用后将更新该角色形象" />
+      {/* lightbox 由 ImageLightbox(portal 到 body)接管,根治 sticky 列困住 fixed 的 z-index bug */}
     </>
   );
 }

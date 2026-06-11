@@ -658,6 +658,12 @@
       setAvatarUrl: (id, url) => POST(`${API_PREFIX}/me/character-cards/` + id + "/avatar-url", { url }),
       // MediaStudio 图库：从已有资产 URL 设人设图（插 card_persona_images + 设为 current）
       setPersonaImageUrl: (id, url) => POST(`${API_PREFIX}/me/character-cards/` + id + "/persona-images/url", { url }),
+      // NPC 角色卡头像（剧本 owner 管）：上传 / 从图库 URL 设置
+      scriptUploadCardAvatar: (sid, cid, file) => {
+        const fd = new FormData(); fd.append("file", file);
+        return _send(`${API_PREFIX}/scripts/` + sid + "/character-cards/" + cid + "/avatar", { method: "POST", body: fd });
+      },
+      scriptSetCardAvatarUrl: (sid, cid, url) => POST(`${API_PREFIX}/scripts/` + sid + "/character-cards/" + cid + "/avatar-url", { url }),
     },
 
     // ---------- Chat history (SillyTavern JSONL import) ----------

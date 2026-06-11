@@ -31,11 +31,12 @@ export default function MediaStudio({ open, onClose, target, name, defaultPrompt
 
   const api = (typeof window !== 'undefined' && window.api) || {};
   const t = (target && target.type) || 'card_avatar';
+  const scriptId = (target && target.scriptId) || null;   // NPC 卡:剧本 owner 走 script 端点
   const kind = t === 'script_cover' ? 'cover' : t === 'user_avatar' ? 'avatar' : t === 'persona' ? 'persona' : 'card';
   const attach = t === 'user_avatar' ? { type: 'user_avatar' }
     : t === 'persona' ? { type: 'persona_image', id: target.id }
     : t === 'script_cover' ? { type: 'script_cover', id: target.id }
-    : { type: 'card_avatar', id: target.id };
+    : (scriptId ? { type: 'card_avatar', id: target.id, script_id: scriptId } : { type: 'card_avatar', id: target.id });
 
   useEffect(() => {
     if (open) { setPrompt(defaultPrompt || ''); setErr(''); setCredsMissing(false); setPreview(''); setPendingFile(null); setLibSel(null); setTab(TAB.GEN); }
@@ -93,6 +94,7 @@ export default function MediaStudio({ open, onClose, target, name, defaultPrompt
       if (t === 'user_avatar') r = await api.account.avatar(pendingFile);
       else if (t === 'persona') r = await api.cards.uploadPersonaImage(target.id, pendingFile);
       else if (t === 'script_cover') r = await api.scripts.uploadCover(target.id, pendingFile);
+      else if (scriptId) r = await api.cards.scriptUploadCardAvatar(scriptId, target.id, pendingFile);
       else r = await api.cards.uploadAvatar(target.id, pendingFile);
       const url = (r && (r.url || r.avatar_url));
       if (url) done(url); else fail(r && r.error);
@@ -109,6 +111,7 @@ export default function MediaStudio({ open, onClose, target, name, defaultPrompt
       if (t === 'user_avatar') r = await api.account.setAvatarUrl(url);
       else if (t === 'persona') r = await api.cards.setPersonaImageUrl(target.id, url);
       else if (t === 'script_cover') r = await api.scripts.setCoverUrl(target.id, url);
+      else if (scriptId) r = await api.cards.scriptSetCardAvatarUrl(scriptId, target.id, url);
       else r = await api.cards.setAvatarUrl(target.id, url);
       if (r && r.ok !== false) done(url); else fail(r && r.error);
     } catch (e) { fail((e && e.message) || ''); }

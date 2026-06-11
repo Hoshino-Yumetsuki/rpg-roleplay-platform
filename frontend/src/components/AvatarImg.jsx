@@ -1,4 +1,5 @@
 import React from 'react';
+import ImageLightbox from './ImageLightbox.jsx';
 
 /* AvatarImg — 通用头像组件（v2）
    有 src → 渲 <img>，onError 回退到首字母 div；
@@ -25,6 +26,7 @@ export default function AvatarImg({
   alt,
   zoomable = false,
   aspectRatio = null,
+  onCrop = null,          // 可选：提供则放大预览里出现「裁剪」按钮，应用后回调裁剪 Blob
 }) {
   const { useState, useEffect, useCallback } = React;
   const [imgError, setImgError] = useState(false);
@@ -99,7 +101,7 @@ export default function AvatarImg({
 
   // 有 src 且尚未出错 → 渲 img
   if (src && !imgError) {
-    const canZoom = zoomable && src;
+    const canZoom = (zoomable || !!onCrop) && src;
 
     return (
       <>
@@ -122,57 +124,11 @@ export default function AvatarImg({
           onClick={canZoom ? openLightbox : undefined}
         />
 
-        {canZoom && lightboxOpen && (
-          <div
-            onClick={closeLightbox}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 9000,
-              background: 'rgba(0,0,0,0.85)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            role="dialog"
-            aria-modal="true"
-            aria-label={altText || '图片预览'}
-          >
-            <img
-              src={src}
-              alt={altText}
-              style={{
-                maxWidth: '92vw',
-                maxHeight: '92vh',
-                objectFit: 'contain',
-                borderRadius: 8,
-                boxShadow: '0 8px 40px rgba(0,0,0,0.7)',
-                display: 'block',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            />
-            <button
-              onClick={closeLightbox}
-              aria-label="关闭"
-              style={{
-                position: 'absolute',
-                top: 20,
-                right: 24,
-                background: 'rgba(255,255,255,0.13)',
-                border: 0,
-                color: '#fff',
-                borderRadius: 99,
-                width: 36,
-                height: 36,
-                fontSize: 18,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                lineHeight: 1,
-              }}
-            >×</button>
-          </div>
+        {canZoom && (
+          <ImageLightbox
+            open={lightboxOpen} src={src} alt={altText}
+            onClose={closeLightbox}
+            onCrop={onCrop || undefined} />
         )}
       </>
     );

@@ -11,6 +11,7 @@ import { fmtBytes, ResizableSplit } from '../platform-app.jsx';
 import AgentModelPicker from '../components/AgentModelPicker.jsx';
 import AvatarImg from '../components/AvatarImg.jsx';
 import CharacterCardHero from '../components/CharacterCardHero.jsx';
+import ImageLightbox from '../components/ImageLightbox.jsx';
 import GenerateImageModal from '../components/GenerateImageModal.jsx';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSHeader from '@cloudscape-design/components/header';
@@ -893,6 +894,61 @@ function PersonaImageGallery({ cardId, onAvatarRefresh }) {
   );
 }
 
+/* 人设图缩略条 — 内联在卡详情左侧媒体列(海报下方)的精简画廊。
+   点缩略图 → ImageLightbox 预览 + 裁剪(裁剪后存为新的当前人设图);hover 显「设为当前」。
+   空(无人设图)时不渲染,不占位;完整管理仍在「人设图」tab。 */
+function PersonaThumbStrip({ cardId, onAvatarRefresh }) {
+  const [images, setImages] = useStatePL(null);
+  const [preview, setPreview] = useStatePL(null);
+
+  const load = useCallbackPL(async () => {
+    try {
+      const r = await window.api.cards.personaImages(cardId);
+      setImages(Array.isArray(r) ? r : (r?.images || r?.items || []));
+    } catch (_) { setImages([]); }
+  }, [cardId]);
+  useEffectPL(() => { load(); }, [load]);
+
+  const setCurrent = async (img) => {
+    if (img.is_current) return;
+    try {
+      await window.api.cards.personaSetCurrent(cardId, img.id);
+      await load();
+      onAvatarRefresh && onAvatarRefresh(img.image_url);
+      window.__apiToast?.('已设为当前人设图', { kind: 'ok', duration: 1500 });
+    } catch (e) { window.__apiToast?.('操作失败', { kind: 'danger', detail: e?.message }); }
+  };
+
+  const onCrop = async (blob) => {
+    const r = await window.api.cards.uploadPersonaImage(cardId, new File([blob], 'crop.png', { type: 'image/png' }));
+    const url = r && (r.url || r.image_url);
+    await load();
+    if (url && onAvatarRefresh) onAvatarRefresh(url);
+    window.__apiToast?.('裁剪后的人设图已存为当前', { kind: 'ok', duration: 2000 });
+    setPreview(null);
+  };
+
+  if (!images || images.length === 0) return null;
+
+  return (
+    <div className="pstrip">
+      <div className="pstrip__head">人设图 <span className="pstrip__count">{images.length}</span></div>
+      <div className="pstrip__row">
+        {images.map((img) => (
+          <div key={img.id} className={`pstrip__cell${img.is_current ? ' is-current' : ''}`}>
+            <img src={img.image_url} alt="" loading="lazy" onClick={() => setPreview(img.image_url)} title="点击预览 / 裁剪" />
+            {img.is_current
+              ? <span className="pstrip__badge">当前</span>
+              : <button className="pstrip__set" onClick={() => setCurrent(img)}>设为当前</button>}
+          </div>
+        ))}
+      </div>
+      <ImageLightbox open={!!preview} src={preview} onClose={() => setPreview(null)}
+        onCrop={onCrop} cropHint="裁剪后将存为新的当前人设图" />
+    </div>
+  );
+}
+
 /* 角色卡详情面板 —— 选中后在列表下方展开(对齐剧本/存档)。
    Tabs:角色信息(KeyValuePairs)/ 设定(只读展示)/ 角色设置(内联编辑表单)。 */
 function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
@@ -1048,6 +1104,8 @@ function CardDetailPanel({ card, kind, onSave, onDuplicate, onDelete }) {
             editable
             onChanged={(u) => setAvatarUrl(u)}
           />
+          {/* 海报下方内联人设图缩略条(仅 persona/pc;无图时不渲染)——点开预览支持裁剪 */}
+          {isPersonaOrPc && <PersonaThumbStrip cardId={raw.id ?? card.id} onAvatarRefresh={(u) => setAvatarUrl(u)} />}
         </div>
         <div className="msplit__body">
       <CSTabs activeTabId={tab} onChange={({ detail }) => setTab(detail.activeTabId)} tabs={[
@@ -1644,8 +1702,11 @@ function CardEditModal({ card, isNew, kind, onClose, onSave, targetScriptOptions
   const { t } = useTranslation();
   const [form, setForm] = useStatePL(() => cardFormInit(card));
   const [submitting, setSubmitting] = useStatePL(false);
+  const [avatarUrl, setAvatarUrl] = useStatePL(card?._raw?.avatar_path || card?.avatar_path || null);
   const u = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const nameOk = !!form.name.trim();
+  const editCardId = card?._raw?.id || card?.id || null;
+  const editScriptId = kind === 'npc' ? (card?._raw?.script_id || targetScriptId || null) : null;
 
   const doSave = async () => {
     if (!nameOk || submitting) return;
@@ -1679,11 +1740,18 @@ function CardEditModal({ card, isNew, kind, onClose, onSave, targetScriptOptions
             <CSContainer header={<CSHeader variant="h2">{t('cards.editor.summary_title')}</CSHeader>}>
               <CSSpaceBetween size="m">
                 {/* 当前头像预览 */}
-                {(card?._raw?.avatar_path || card?.avatar_path) && (
-                  <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 4 }}>
-                    <AvatarImg src={card._raw?.avatar_path || card.avatar_path} name={form.name || '?'} size={72} shape="rounded" zoomable />
+                {/* 头像编辑(海报 + MediaStudio 生成/上传/图库 + 预览裁剪);新卡需先保存才有 id */}
+                {!isNew && editCardId ? (
+                  <div style={{ maxWidth: 260, margin: '0 auto 4px' }}>
+                    <CharacterCardHero
+                      card={{ id: editCardId, name: form.name, identity: form.identity, appearance: form.appearance, avatar_path: avatarUrl }}
+                      editable scriptId={editScriptId}
+                      onChanged={(uu) => { setAvatarUrl(uu); try { window.dispatchEvent(new CustomEvent('rpg-user-cards-updated')); } catch (_) {} }}
+                    />
                   </div>
-                )}
+                ) : (isNew ? (
+                  <CSBox color="text-body-secondary" fontSize="body-s" textAlign="center">{t('cards.editor.avatar_after_save', { defaultValue: '保存后可设置头像' })}</CSBox>
+                ) : null)}
                 <CSStatusIndicator type={nameOk ? 'success' : 'pending'}>{t('cards.editor.name_required_status')}</CSStatusIndicator>
                 {kind === 'npc' && isNew && targetScriptOptions.length > 0 && (
                   <CSFormField label={t('cards.editor.target_script')} description={t('cards.editor.target_script_desc')}>
