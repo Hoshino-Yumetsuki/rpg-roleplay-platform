@@ -683,7 +683,8 @@ def _selfheal_player_from_save_snapshot(state: GameState, api_user: dict[str, An
     # 把 game_saves.player 写回 runtime state（保留 history / scene / 战斗等运行态）
     state.data.setdefault("player", {})
     for key in ("name", "role", "background", "current_location",
-                "source_kind", "source_id", "appearance", "personality", "speech_style"):
+                "source_kind", "source_id", "appearance", "personality", "speech_style",
+                "avatar_path"):
         if saved_player.get(key):
             state.data["player"][key] = saved_player[key]
     # 也修 player_character（如果 game_saves 有且 runtime 空）

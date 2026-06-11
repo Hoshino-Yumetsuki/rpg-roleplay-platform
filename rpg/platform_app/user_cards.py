@@ -153,7 +153,8 @@ def upsert_persona(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                     update character_cards set
                       name = %(name)s, slug = %(slug)s, identity = %(identity)s,
                       background = %(background)s, appearance = %(appearance)s,
-                      personality = %(personality)s, avatar_path = %(avatar_path)s,
+                      personality = %(personality)s,
+                      avatar_path = case when %(avatar_path)s = '' then character_cards.avatar_path else %(avatar_path)s end,
                       tags = %(tags)s, metadata = %(metadata)s, is_default = %(is_default)s,
                       row_version = row_version + 1, updated_at = now()
                     where id = %(id)s and user_id = %(user_id)s and card_type = 'persona'
@@ -188,7 +189,8 @@ def upsert_persona(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                     do update set
                       name = excluded.name, identity = excluded.identity,
                       background = excluded.background, appearance = excluded.appearance,
-                      personality = excluded.personality, avatar_path = excluded.avatar_path,
+                      personality = excluded.personality,
+                      avatar_path = case when excluded.avatar_path = '' then character_cards.avatar_path else excluded.avatar_path end,
                       tags = excluded.tags, metadata = excluded.metadata,
                       is_default = excluded.is_default,
                       row_version = character_cards.row_version + 1, updated_at = now()
@@ -406,7 +408,7 @@ def upsert_user_card(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                   tags=%(tags)s, metadata=%(metadata)s,
                   token_budget=%(token_budget)s, priority=%(priority)s,
                   importance=%(importance)s, enabled=%(enabled)s, scope=%(scope)s,
-                  avatar_path=%(avatar_path)s,
+                  avatar_path = case when %(avatar_path)s = '' then character_cards.avatar_path else %(avatar_path)s end,
                   row_version = row_version + 1, updated_at = now()
                 where id = %(id)s and user_id = %(user_id)s and card_type = 'pc'
                 """,
@@ -444,7 +446,7 @@ def upsert_user_card(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                   tags=excluded.tags, metadata=excluded.metadata,
                   token_budget=excluded.token_budget, priority=excluded.priority,
                   importance=excluded.importance, enabled=excluded.enabled, scope=excluded.scope,
-                  avatar_path=excluded.avatar_path,
+                  avatar_path = case when excluded.avatar_path = '' then character_cards.avatar_path else excluded.avatar_path end,
                   row_version = character_cards.row_version + 1, updated_at = now()
                 returning *
                 """,

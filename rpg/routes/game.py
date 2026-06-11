@@ -183,7 +183,8 @@ async def api_new(
     if source_meta:
         state.data["player"]["source_kind"] = source_kind
         state.data["player"]["source_id"] = int(source_meta.get("id") or 0)
-        for field in ("appearance", "personality", "speech_style"):
+        # 玩家游戏内头像 = 所选角色卡(PC卡)的 avatar_path,绝非账户头像。
+        for field in ("appearance", "personality", "speech_style", "avatar_path"):
             if source_meta.get(field):
                 state.data["player"][field] = source_meta[field]
     state.save()

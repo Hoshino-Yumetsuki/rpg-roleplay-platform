@@ -126,6 +126,22 @@ def _sync_active_entities_from_bundle(state, bundle) -> None:
     # 玩家始终第一位
     p = (state.data.get("player") or {})
     if p.get("name"):
+        # 玩家游戏内头像 = 所选角色卡(PC卡)的 avatar_path(绝非账户头像)。
+        # 老存档 player state 没存头像 → 用 source_id 一次性回查所选卡并写回,后续轮免查。
+        _player_avatar = p.get("avatar_path") or ""
+        if not _player_avatar and p.get("source_id"):
+            try:
+                from platform_app.db import connect as _connect
+                with _connect() as _db:
+                    _r = _db.execute(
+                        "select avatar_path from character_cards where id = %s",
+                        (int(p.get("source_id") or 0),),
+                    ).fetchone()
+                _player_avatar = ((_r.get("avatar_path") if _r else "") or "")
+                if _player_avatar:
+                    p["avatar_path"] = _player_avatar  # 写回 runtime player state,下轮免查
+            except Exception:
+                _player_avatar = ""
         active.append({
             "id": "player",
             "name": p["name"],
@@ -133,6 +149,7 @@ def _sync_active_entities_from_bundle(state, bundle) -> None:
             "disposition": "self",
             "source": "player",
             "card_id": "",
+            "avatar_path": _player_avatar,
         })
     for lyr in layers:
         if lyr.get("id") != "npc_cards":

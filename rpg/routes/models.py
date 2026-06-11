@@ -97,7 +97,7 @@ def _inject_capabilities(catalog: dict[str, Any]) -> dict[str, Any]:
 async def api_models(
     api_user: dict[str, Any] | None = Depends(get_current_user),
 ) -> JSONResponse:
-    from app import _redact_catalog, selected_model
+    from app import _redact_catalog, selected_model, _resolve_user_default_model_view
     from model_registry import load_catalog_for_user
     # 安全:每用户视图 = 全局菜单 + 该用户私有 overlay(同步模型 / 自建中转站)。
     _uid = int(api_user["id"]) if api_user and api_user.get("id") else None
@@ -105,10 +105,12 @@ async def api_models(
     is_admin = bool(api_user and api_user.get("role") == "admin")
     redacted = _redact_catalog(catalog, is_admin, user_id=_uid)
     enriched = _inject_capabilities(_inject_pricing(redacted))
+    # selected 必须是「该用户的 gm 偏好」(与 _get_gm 实际所用一致),否则前端 ModelPopover/底部标签
+    # 会用全局默认(常是用户没配 key 的 gemini)→ 表现为「当前模型莫名跳 gemini」。缺偏好才回退全局。
     return JSONResponse({
         "ok": True,
         "models": _inject_health(enriched),
-        "selected": selected_model(catalog),
+        "selected": _resolve_user_default_model_view(api_user, catalog) or selected_model(catalog),
     })
 
 

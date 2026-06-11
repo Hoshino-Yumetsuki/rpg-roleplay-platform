@@ -1207,7 +1207,8 @@ function GameSettingsModal({ open, onClose, saveTitle, permission, saveId }) {
   const [narrativeFont, setNarrativeFontState] = useStateA(_readNarrativeFont);
   const [autosave, setAutosaveState] = useStateA(_readAutosave);
   const [showUsage, setShowUsageState] = useStateA(_readShowUsage);
-  const [steerStrength, setSteerStrength] = useStateA("guided");
+  // null = 尚未从后端拉到本档真实值;加载期不高亮任何档,避免先闪默认「软引导」再跳真值(被误读成"自己回跳")
+  const [steerStrength, setSteerStrength] = useStateA(null);
 
   // sync density state with external RPG_setDensity calls
   useEffectA(() => {
@@ -1222,7 +1223,8 @@ function GameSettingsModal({ open, onClose, saveTitle, permission, saveId }) {
     const base = (window.__API_BASE || '');
     fetch(`${base}/api/saves/${saveId}/settings`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.ok && d.settings?.steering_strength) setSteerStrength(d.settings.steering_strength); })
+      // 成功就落定真值(缺字段才回退默认),失败保持 null 不假装默认 → 不会误显回跳
+      .then(d => { if (d?.ok && d.settings) setSteerStrength(d.settings.steering_strength || "guided"); })
       .catch(() => {});
   }, [open, saveId]);
 
