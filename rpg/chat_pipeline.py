@@ -1096,15 +1096,19 @@ async def run_gm_phase(
                 pass
         elif etype == "tool_call":
             # R3/B4:小负载转发(tool 名 + args 摘要),供前端可折叠工具流;不淹没沉浸正文。
+            # anchor=本工具触发时已产出的正文长度 → 前端按它把工具内联到正文对应位置(Claude 风,
+            # 不再永远置顶)。len(response) 与前端累积的 content 长度一致(同一 token 流)。
             _t_args = _summarize_tool_args(event.get("arguments", {}))
+            _anchor = len(response)
             yield ("tool_call", {
                 "server_id": event.get("server_id", ""),
                 "tool": event.get("tool", ""),
                 "args_summary": _t_args,
+                "anchor": _anchor,
             })
             try:
                 state.data.setdefault("_turn_tool_ops", []).append({
-                    "tool": event.get("tool", ""), "args": _t_args,
+                    "tool": event.get("tool", ""), "args": _t_args, "anchor": _anchor,
                     "ok": None, "result": None, "error": None, "_pending": True,
                 })
             except Exception:

@@ -397,21 +397,24 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
         {history.map((m, i) => {
           const commitId = m && (m.commit_id || m.node_id);
           if (m.role === 'assistant') {
-            const toolOps = m && m._toolOps;
+            // 工具调用按 anchor 内联进正文(Claude 风,不再永远置顶)。
+            // 流式累积在 _toolOps;重载从持久化的 tool_ops 取(record_turn 落库的字段)。
+            const rawToolOps = (m && (m._toolOps || m.tool_ops)) || null;
+            const toolOps = Array.isArray(rawToolOps) && rawToolOps.length > 0 ? rawToolOps : null;
             const isStreaming = !m.streaming_done && i === total - 1 && running;
             const hasContent = !!(m.content && String(m.content).trim());
             // 思考流是独立可折叠块,与正文分区共存(绝不互斥)。
             // 「思考中…」spinner 只在:本条仍在流式 && 正文还没到 时显示;
             // 一旦正文到达或流结束,退回静态「思考过程」折叠条(无 spinner)。
             const thinkingSpinner = isStreaming && !hasContent;
+            // 流式 _thinking;重载 reasoning(record_turn 落库字段)。
+            const thinkingText = m._thinking || m.reasoning;
             return (
               <React.Fragment key={`a-${i}`}>
-                {Array.isArray(toolOps) && toolOps.length > 0 && <ToolCallBlock ops={toolOps} />}
-                {(m._thinking || thinkingSpinner) && (
-                  <TavernThinkingBlock text={m._thinking} thinking={thinkingSpinner} />
+                {(thinkingText || thinkingSpinner) && (
+                  <TavernThinkingBlock text={thinkingText} thinking={thinkingSpinner} />
                 )}
-                {/* 正文永远走正常散文样式(NarrativeBlock),不再把整条消息渲染成思考气泡。
-                    不传 thinking → 关掉 NarrativeBlock 的互斥思考分支。 */}
+                {/* 正文走 NarrativeBlock;工具卡片由 renderTool 按 anchor 内联到正文对应位置。 */}
                 <NarrativeBlock
                   text={m.content} ts={m.ts}
                   msgIndex={i} saveId={saveId} commitId={commitId}
@@ -419,6 +422,8 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
                   images={imagesByKey[String(i)] || (i === lastAsstIdx ? imagesByKey['__last'] : undefined)}
                   streaming={isStreaming}
                   meta={i === total - 1 ? lastMeta : null}
+                  toolOps={toolOps}
+                  renderTool={(ops) => <ToolCallBlock ops={ops} />}
                 />
               </React.Fragment>
             );
@@ -855,12 +860,15 @@ export default function TavernApp() {
         on_tool_call: (data) => {
           if (!isCurrentRun()) return;
           resetIdle();
-          const op = { tool: (data && data.tool) || '?', args: (data && (data.args_summary || data.args)) || null, _pending: true };
           setHistory((h) => {
             let arr = h;
             if (!openedAssistant) { openedAssistant = true; arr = [...h, { role: 'assistant', content: '', ts, streaming: true }]; }
             const last = arr[arr.length - 1];
             if (!last || last.role !== 'assistant') return arr;
+            // anchor=本工具触发时正文长度 → 渲染按它把工具内联到正文对应位置(不再置顶)。
+            // 优先用本地 content 长度(精确),回退后端 anchor。
+            const anchor = (last.content || '').length || (data && Number.isFinite(data.anchor) ? data.anchor : 0);
+            const op = { tool: (data && data.tool) || '?', args: (data && (data.args_summary || data.args)) || null, anchor, _pending: true };
             return [...arr.slice(0, -1), { ...last, _toolOps: [...(last._toolOps || []), op] }];
           });
         },

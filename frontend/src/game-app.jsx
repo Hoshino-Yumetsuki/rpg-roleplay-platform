@@ -655,9 +655,45 @@ function stripStateOpsForDisplay(text) {
   return stripNarrativeOps(text);
 }
 
+// 把工具调用按 anchor(触发时的正文长度)内联进正文 —— Claude 风,工具卡片出现在它实际发生
+// 的文本位置,而不是永远置顶。anchor 是【原始 content】的偏移(与后端 len(response) 一致),
+// 故先按 anchor 切原始文本、每段再 stripStateOpsForDisplay,避免 strip 改变长度造成错位。
+// renderTool(opsAtAnchor) 由调用方提供(酒馆传 ToolCallBlock)。同一 anchor 的多个工具合并成一组。
+function renderNarrativeWithInlineTools(rawText, toolOps, renderTool, streaming, MdBlock) {
+  const text = rawText || "";
+  const ops = toolOps
+    .map((o) => ({ op: o, a: Math.max(0, Math.min(Number.isFinite(o && o.anchor) ? o.anchor : text.length, text.length)) }))
+    .sort((x, y) => x.a - y.a);
+  const groups = [];
+  for (const it of ops) {
+    const g = groups[groups.length - 1];
+    if (g && g.anchor === it.a) g.ops.push(it.op);
+    else groups.push({ anchor: it.a, ops: [it.op] });
+  }
+  const nodes = [];
+  let prev = 0;
+  groups.forEach((g, gi) => {
+    const chunk = stripStateOpsForDisplay(text.slice(prev, g.anchor));
+    if (chunk.trim()) {
+      nodes.push(MdBlock
+        ? <MdBlock key={`tx-${gi}`} text={chunk} streaming={false} className="rpg-md" />
+        : <p key={`tx-${gi}`}>{chunk}</p>);
+    }
+    nodes.push(<React.Fragment key={`tl-${gi}`}>{renderTool(g.ops)}</React.Fragment>);
+    prev = g.anchor;
+  });
+  const tail = stripStateOpsForDisplay(text.slice(prev));
+  if (tail.trim() || nodes.length === 0) {
+    nodes.push(MdBlock
+      ? <MdBlock key="tx-tail" text={tail} streaming={!!streaming} className="rpg-md" />
+      : <p key="tx-tail">{tail}{streaming && <span className="gc-cursor" />}</p>);
+  }
+  return nodes;
+}
+
 // 酒馆模式复用:speakerName/speakerAvatar/tag 可选覆盖默认的 GM/主代理 标签。
 // 不传时与 Game Console 行为完全一致(默认 tag="GM", subtitle="主代理")。
-function NarrativeBlock({ text, streaming, ts, msgIndex, saveId, commitId, thinking, speakerName, speakerAvatar, tag, hideMeta, meta, images }) {
+function NarrativeBlock({ text, streaming, ts, msgIndex, saveId, commitId, thinking, speakerName, speakerAvatar, tag, hideMeta, meta, images, toolOps, renderTool }) {
   const displayText = stripStateOpsForDisplay(text);
   // task 90: 用 RpgMarkdown.Block 渲染 markdown (** / # / list / code / link...)
   // window.RpgMarkdown 由 markdown-render.jsx 提供,加载顺序在 game-app.jsx 之前。
@@ -701,10 +737,13 @@ function NarrativeBlock({ text, streaming, ts, msgIndex, saveId, commitId, think
         </div>
       )}
       <div className="gc-msg-body serif">
-        {MdBlock
-          ? <MdBlock text={displayText || ""} streaming={!!streaming} className="rpg-md" />
-          : (displayText || "").split(/\n\n+/).map((p, i) =>
-              <p key={i}>{p}{streaming && i === (displayText || "").split(/\n\n+/).length - 1 && <span className="gc-cursor" />}</p>
+        {(Array.isArray(toolOps) && toolOps.length > 0 && typeof renderTool === 'function')
+          ? renderNarrativeWithInlineTools(text, toolOps, renderTool, streaming, MdBlock)
+          : (MdBlock
+              ? <MdBlock text={displayText || ""} streaming={!!streaming} className="rpg-md" />
+              : (displayText || "").split(/\n\n+/).map((p, i) =>
+                  <p key={i}>{p}{streaming && i === (displayText || "").split(/\n\n+/).length - 1 && <span className="gc-cursor" />}</p>
+                )
             )
         }
         <ChatImageGroup images={images} />
@@ -1740,4 +1779,4 @@ function TopBar({ state, saveUpdatedAt, onOpenTweaks, onOpenSearch, onOpenHistor
 
 }
 
-export { LeftRail, RunSteps, ThinkingPill, ChatArea, NarrativeBlock, PlayerBlock, TopBar, HistoryDrawer, SearchDrawer, GameToastStack, GameSettingsModal, SaveImagesStrip };
+export { LeftRail, RunSteps, ThinkingPill, ChatArea, NarrativeBlock, PlayerBlock, TopBar, HistoryDrawer, SearchDrawer, GameToastStack, GameSettingsModal, SaveImagesStrip, renderNarrativeWithInlineTools };
