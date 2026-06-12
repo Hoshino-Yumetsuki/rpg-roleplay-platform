@@ -555,6 +555,14 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
 
     # ── 记录对话 ──────────────────────────────────────────────────
     def record_turn(self, player_input: str, gm_response: str):
+        # 不把空 assistant 回复记进历史:provider(moonshot/kimi 等)会对空 assistant 消息 400,
+        # 一旦记入,之后每轮重放都炸(history_messages 也会再过滤一道兜底)。空回复=本轮无产出,
+        # 玩家输入由前端恢复草稿,不该污染历史。带 tool_ops/reasoning 的工具轮不算空,照常记。
+        _has_aux = bool(self.data.get("_turn_tool_ops") or self.data.get("_turn_reasoning"))
+        if not str(gm_response or "").strip() and not _has_aux:
+            self.data.pop("_turn_tool_ops", None)
+            self.data.pop("_turn_reasoning", None)
+            return
         self.data["history"].append({"role": "user",      "content": player_input})
         _asst = {"role": "assistant", "content": gm_response}
         # 工具流 + 思考流:本轮 pipeline 累积在 _turn_tool_ops / _turn_reasoning 临时键,这里落到
@@ -600,7 +608,12 @@ class GameState(ApplyOpsMixin, RulesGameplayMixin, PendingMixin):
           3. None → 退化到只返最近 limit_turns 轮原文
         """
         max_msgs = limit_turns * 2
-        recent = list(self.data["history"][-max_msgs:])
+        # 丢弃 content 为空/纯空白的历史消息:某些 provider(moonshot/kimi 等)对**空 assistant
+        # 消息**直接 400「the message ... role 'assistant' must not be empty」→ 整轮失败,且历史
+        # 一旦混入空 assistant(上一轮空回复/失败被记进 history),之后每轮重放都炸。这里在喂给
+        # backend 前过滤,兼修已被污染的存档(非破坏性,只过滤不改库)。
+        recent = [m for m in self.data["history"][-max_msgs:]
+                  if isinstance(m, dict) and str(m.get("content") or "").strip()]
         if save_id is None:
             save_id = self.data.get("_active_save_id")
         if save_id is None:
