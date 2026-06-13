@@ -15,7 +15,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 # enqueue 时可选任务种类
-TASK_KINDS = ("extractor", "phase_digest", "acceptance_verifier", "black_swan")
+TASK_KINDS = ("extractor", "phase_digest", "acceptance_verifier", "black_swan", "image_gen")
 
 _INSERT_SQL = """
 INSERT INTO chat_postproc_tasks

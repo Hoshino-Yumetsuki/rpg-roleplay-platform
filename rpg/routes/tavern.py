@@ -52,14 +52,56 @@ def _invalidate_cache(api_user: dict[str, Any]) -> None:
         pass
 
 
+def _snapshot_card_ids(save: dict[str, Any]) -> tuple[int | None, int | None]:
+    """从 game_saves.state_snapshot->'tavern' 取角色/persona 卡 id(读侧 fallback)。
+
+    LLM 工具(set_tavern_character / set_tavern_persona / import_character_card)只 mutate
+    state JSON;单写者落库已会把列追平,但**存量存档**(列在 create 时为 NULL、卡靠工具自举)
+    的列可能仍是 NULL → 走列的读卡路径 404。此处从 state JSON 兜底回退,使存量数据自愈,
+    不写数据迁移。"""
+    import json as _j
+
+    snap = save.get("state_snapshot")
+    if isinstance(snap, str):
+        try:
+            snap = _j.loads(snap or "{}")
+        except Exception:
+            snap = {}
+    if not isinstance(snap, dict):
+        return (None, None)
+    tav = snap.get("tavern")
+    if not isinstance(tav, dict):
+        return (None, None)
+
+    def _as_id(v: Any) -> int | None:
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            return None
+        return iv if iv > 0 else None
+
+    return (_as_id(tav.get("character_card_id")), _as_id(tav.get("persona_card_id")))
+
+
 def _expose_save(save: dict[str, Any]) -> dict[str, Any]:
-    """统一对外存档字段(create_tavern_save 返回的 expose(row) 已含全部列)。"""
+    """统一对外存档字段(create_tavern_save 返回的 expose(row) 已含全部列)。
+
+    读侧 fallback:列为 NULL 时回退读 state_snapshot->'tavern' 的对应卡 id,两边都空才 None。
+    根治『DB 列 NULL 而 JSON 有卡』导致的 card 404(存量存档自愈)。"""
+    char_col = save.get("tavern_character_card_id")
+    persona_col = save.get("tavern_persona_card_id")
+    if char_col is None or persona_col is None:
+        snap_char, snap_persona = _snapshot_card_ids(save)
+        if char_col is None:
+            char_col = snap_char
+        if persona_col is None:
+            persona_col = snap_persona
     return {
         "id": save.get("id"),
         "title": save.get("title"),
         "save_kind": save.get("save_kind"),
-        "tavern_character_card_id": save.get("tavern_character_card_id"),
-        "tavern_persona_card_id": save.get("tavern_persona_card_id"),
+        "tavern_character_card_id": char_col,
+        "tavern_persona_card_id": persona_col,
         "archived_at": save.get("archived_at"),
         "updated_at": save.get("updated_at"),
         "created_at": save.get("created_at"),
@@ -191,10 +233,12 @@ def _list_chats(user_id: int, archived: bool) -> list[dict[str, Any]]:
     with connect() as db:
         rows = db.execute(
             f"""
-            select id, title, state_snapshot, archived_at, updated_at, created_at
-            from game_saves
-            where user_id = %s and save_kind = 'tavern' and {arch_clause}
-            order by updated_at desc, id desc
+            select gs.id, gs.title, gs.state_snapshot, gs.archived_at, gs.updated_at, gs.created_at,
+                   cc.avatar_path as card_avatar
+            from game_saves gs
+            left join character_cards cc on cc.id = gs.tavern_character_card_id
+            where gs.user_id = %s and gs.save_kind = 'tavern' and gs.{arch_clause}
+            order by gs.updated_at desc, gs.id desc
             limit 200
             """,
             (user_id,),
@@ -232,6 +276,7 @@ def _list_chats(user_id: int, archived: bool) -> list[dict[str, Any]]:
                 "id": r.get("id"),
                 "title": r.get("title"),
                 "character_name": char_name,
+                "avatar_path": r.get("card_avatar") or (character or {}).get("avatar_path") or "",
                 "last_snippet": last_snippet,
                 "updated_at": r.get("updated_at"),
                 "archived_at": r.get("archived_at"),

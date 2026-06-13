@@ -33,15 +33,22 @@ from tools_dsl.command_dispatcher import (  # noqa: E402
 from tools_dsl.command_tools_register import force_reset_for_tests  # noqa: E402
 
 # user 级 mutate 工具清单 (必须禁 LLM origin)
+# 仍对 llm_chat + llm_set 全锁的 user 级 mutate(切档/分支/偏好/模型/导入/删除/MCP)。
 USER_MUTATE_TOOLS = {
     "activate_save", "rename_save", "delete_save",
     "activate_branch", "delete_branch", "continue_branch",
-    "create_persona", "delete_persona",
-    "create_character_card", "delete_character_card",
+    "delete_persona",
+    "delete_character_card",
     "set_preference", "select_model",
     "start_script_import", "cancel_import_job",
     "resplit_script", "delete_script", "probe_models",
     "mcp_server_enable", "mcp_server_start", "mcp_server_stop",
+}
+
+# 控制台助手退役后放开酒馆/游戏 agent 完整接口(用户决策):这几个「创建/克隆角色卡·persona」
+# 工具现在**允许 llm_chat**,但仍禁 **llm_set**(玩家 /set 不该跨 save 创建持久资源)。
+CHAT_ALLOWED_MUTATE_TOOLS = {
+    "create_persona", "create_character_card", "clone_npc_to_user_card",
 }
 
 # user 级 read 工具 (允许 LLM 调用)
@@ -73,9 +80,10 @@ class UserMutateOriginsAreLocked(unittest.TestCase):
             )
 
     def test_mutate_tools_reject_llm_set(self):
-        """玩家 /set 命令不能跨 save mutate (玩家在 save_A 里 /set 不该影响 save_B)。"""
+        """玩家 /set 命令不能跨 save mutate (玩家在 save_A 里 /set 不该影响 save_B)。
+        放开了 llm_chat 的建卡/克隆工具同样必须仍禁 llm_set。"""
         registry = get_registry()
-        for name in USER_MUTATE_TOOLS:
+        for name in USER_MUTATE_TOOLS | CHAT_ALLOWED_MUTATE_TOOLS:
             spec = registry.get(name)
             self.assertIsNotNone(spec, f"工具 {name} 未注册")
             self.assertNotIn(
@@ -147,12 +155,17 @@ class CrossSaveDispatchRejection(unittest.TestCase):
         self.assertFalse(r.ok)
         self.assertIn("origin_forbidden", r.error or "")
 
-    def test_create_persona_blocked_from_llm_chat(self):
-        """LLM 不能创建持久 persona (跨所有 save 可见)。"""
-        r = self._call_as_llm_chat("create_persona",
-                                    {"name": "LLM 自造 persona", "summary": "x"})
-        self.assertFalse(r.ok)
-        self.assertIn("origin_forbidden", r.error or "")
+    def test_create_persona_now_allowed_from_llm_chat(self):
+        """策略变更(用户决定):控制台助手退役后,酒馆/游戏 agent 即唯一 agent 面,获得
+        完整接口 —— create_persona / create_character_card / clone_npc_to_user_card 的 origin
+        闸放开 llm_chat。跨**用户**隔离不受影响:仍由 user_id 的 SQL 过滤强制(见
+        CrossUserDispatchRejection);破坏性删除(delete_*)仍被 dispatcher 硬拦 llm_chat。"""
+        for tool in ("create_persona", "create_character_card", "clone_npc_to_user_card"):
+            spec = get_registry().get(tool)
+            self.assertIsNotNone(spec, tool)
+            self.assertIn("llm_chat", spec.origins, f"{tool} 应对 llm_chat 放开")
+        # 破坏性删除仍禁 llm_chat
+        self.assertNotIn("llm_chat", get_registry().get("delete_character_card").origins)
 
     def test_start_script_import_blocked_from_llm_chat(self):
         """LLM 不能启动 LLM 调用任务 (触发外部费用)。"""

@@ -240,6 +240,13 @@ def _t_get_script_chapters(user_id: int, script_id: int | None, args: dict, stat
 
 
 def _t_list_script_npcs(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
+    """列出剧本的 NPC 角色卡(精简清单)。
+
+    历史 bug:之前查的是 v28 起已不存在的 `script_character_cards` 表 + `summary` 列,
+    在线上 100% UndefinedTable 抛错 → LLM「提取不到 NPC 角色卡」。NPC 卡的权威表是
+    `character_cards`(card_type='npc',按 script_id 归属)。这里只返回挑卡所需的精简字段;
+    要完整人设(背景/外貌/性格/语气/范例对白)走 get_script_character_card。
+    """
     sid = script_id or args.get("script_id")
     if not sid:
         return "失败: script_id 必填"
@@ -250,11 +257,41 @@ def _t_list_script_npcs(user_id: int, script_id: int | None, args: dict, state: 
             if not _user_can_read_script(db, int(sid), user_id):
                 return f"失败 (权限): 剧本 #{int(sid)} 不属于当前用户或未订阅"
             rows = db.execute(
-                "select id, name, summary from script_character_cards "
-                "where script_id = %s order by name limit 80",
+                "select id, name, full_name, identity, importance, "
+                "       first_revealed_chapter, "
+                "       (avatar_path is not null and avatar_path <> '') as has_avatar "
+                "from character_cards "
+                "where script_id = %s and card_type = 'npc' and coalesce(enabled, true) "
+                "order by importance desc nulls last, name "
+                "limit 80",
                 (int(sid),),
             ).fetchall() or []
-        return json.dumps([dict(r) for r in rows], ensure_ascii=False, indent=2)
+        if not rows:
+            return (
+                f"(剧本 #{int(sid)} 暂无 NPC 角色卡。可能该剧本尚未提取/生成角色卡——"
+                "可让用户在剧本编辑器里生成,或用 get_script_chapters / get_chapter_facts 看剧情自行勾勒。)"
+            )
+        return json.dumps([dict(r) for r in rows], ensure_ascii=False, indent=2, default=str)
+    except Exception as exc:
+        return f"失败: {type(exc).__name__}: {exc}"
+
+
+def _t_get_script_character_card(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
+    """读取剧本内某张 NPC 角色卡的完整人设(先用 list_script_npcs 拿 id)。"""
+    sid = script_id or args.get("script_id")
+    card_id = args.get("card_id")
+    if not sid:
+        return "失败: script_id 必填"
+    if not card_id:
+        return "失败: card_id 必填(先调 list_script_npcs 拿到角色卡 id)"
+    try:
+        from platform_app import knowledge as _know
+        card = _know.get_character_card(user_id, int(sid), int(card_id))
+        if not card:
+            return f"失败: 剧本 #{int(sid)} 内找不到角色卡 #{int(card_id)}"
+        return json.dumps(card, ensure_ascii=False, indent=2, default=str)
+    except ValueError as exc:
+        return f"失败 (权限): {exc}"
     except Exception as exc:
         return f"失败: {type(exc).__name__}: {exc}"
 
@@ -393,9 +430,16 @@ def register_query_tools() -> None:
          {"type": "object", "properties": {"script_id": {"type": "integer"}}},
          _t_get_script_chapters),
         ("list_script_npcs",
-         "列出剧本附带的 NPC 角色卡。",
+         "列出剧本附带的 NPC 角色卡(精简清单:id/名字/身份/重要度)。要完整人设走 get_script_character_card。",
          {"type": "object", "properties": {"script_id": {"type": "integer"}}},
          _t_list_script_npcs),
+        ("get_script_character_card",
+         "读取剧本内某张 NPC 角色卡的完整人设(背景/外貌/性格/语气/范例对白等)。先用 list_script_npcs 拿 card_id。",
+         {"type": "object", "properties": {
+             "script_id": {"type": "integer"},
+             "card_id": {"type": "integer"},
+         }, "required": ["card_id"]},
+         _t_get_script_character_card),
     ]
     for name, desc, schema, exec_ in script_specs:  # type: ignore[assignment]
         if not registry.has(name):

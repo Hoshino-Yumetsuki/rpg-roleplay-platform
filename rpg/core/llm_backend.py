@@ -119,6 +119,24 @@ def first_user_model(user_id: int | None, api_id: str | None = None) -> tuple[st
     return None
 
 
+def _model_in_catalog(user_id: int, model_real_name: str) -> bool:
+    """用户视图 catalog 里是否存在该 model_real_name。
+    替代已删除的 KNOWN_OFFLINE_MODELS 黑名单:用"是否在真实 catalog 里"校验偏好有效性。
+    任何异常视为"不确定,允许通过"(返回 True),避免过度拦截。
+    """
+    try:
+        from model_registry import load_catalog_for_user
+        catalog = load_catalog_for_user(int(user_id))
+        for api in catalog.get("apis", []):
+            for m in api.get("models", []) or []:
+                rn = m.get("real_name") or m.get("id")
+                if rn and str(rn) == str(model_real_name):
+                    return True
+        return False
+    except Exception:
+        return True  # 查询失败 → 保守放行
+
+
 def resolve_preferred_model(
     user_id: int | None,
     pref_key: str = "set_parser.model_real_name",
@@ -134,6 +152,10 @@ def resolve_preferred_model(
 
     内部使用 request-scoped cache（core.request_cache），一个请求内
     相同 user_id 只查一次 DB；非请求上下文每次直接查。
+
+    catalog 校验:取到偏好的 model_real_name 后，用 load_catalog_for_user 验证该模型
+    是否存在于用户视图 catalog 里；不存在则视为无效偏好（下线/迁移），回退到
+    first_user_model(user_id)。替代已删除的 KNOWN_OFFLINE_MODELS 黑名单职责。
     """
     if not user_id:
         return None
@@ -141,7 +163,14 @@ def resolve_preferred_model(
         from core.request_cache import get_user_prefs_cached
 
         prefs = get_user_prefs_cached(int(user_id))
-        return prefs.get(pref_key) or None
+        model_name = prefs.get(pref_key) or None
+        if not model_name:
+            return None
+        # catalog 存在性校验:偏好的模型不在用户 catalog 里 → 回退
+        if not _model_in_catalog(int(user_id), model_name):
+            result = first_user_model(int(user_id))
+            return result[1] if result else None
+        return model_name
     except Exception:
         return None
 
@@ -161,6 +190,10 @@ def resolve_preferred_api(
 
     内部使用 request-scoped cache，同一请求内 user_id 相同时复用
     preferences dict，不重复 SELECT。
+
+    catalog 校验:若对应 model_real_name 偏好不在 catalog 里（已由
+    resolve_preferred_model 判为无效），api_id 偏好也应一并回退。
+    model_key 由调用方命名空间推断（将 pref_key 的 api_id 替换为 model_real_name）。
     """
     if not user_id:
         return None
@@ -168,7 +201,16 @@ def resolve_preferred_api(
         from core.request_cache import get_user_prefs_cached
 
         prefs = get_user_prefs_cached(int(user_id))
-        return prefs.get(pref_key) or None
+        api_id = prefs.get(pref_key) or None
+        if not api_id:
+            return None
+        # 同步校验对应 model 偏好是否有效（model key = 同命名空间下的 model_real_name）
+        model_key = pref_key.replace("api_id", "model_real_name")
+        model_name = prefs.get(model_key) or None
+        if model_name and not _model_in_catalog(int(user_id), model_name):
+            result = first_user_model(int(user_id))
+            return result[0] if result else None
+        return api_id
     except Exception:
         return None
 

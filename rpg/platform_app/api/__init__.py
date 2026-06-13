@@ -14,11 +14,13 @@ from .library import router as _library_router
 from .me import router as _me_router
 from .platform import router as _platform_router
 from .policy import router as _policy_router
+from .images import router as _images_router
 from .saves import router as _saves_router
 from .script_edit import router as _script_edit_router
 from .scripts import router as _scripts_router
 from .settings import router as _settings_router
 from .splash import router as _splash_router
+from .storage_routes import router as _storage_router
 from .worldline_memory import router as _wm_router
 
 router.include_router(_auth_router)
@@ -36,6 +38,8 @@ router.include_router(_splash_router)
 router.include_router(_feedback_router)
 router.include_router(_policy_router)
 router.include_router(_federation_router)
+router.include_router(_images_router)
+router.include_router(_storage_router)
 
 # re-export 跨模块用的符号 (让外部 `from platform_app.api import ...` 仍然工作)
 from ..security import public_user

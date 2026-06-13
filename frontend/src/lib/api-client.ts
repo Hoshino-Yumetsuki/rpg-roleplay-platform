@@ -358,6 +358,8 @@
       },
       // task 50：BE 有 avatar reset 但 FE 没 wrapper（直接 raw POST 也行，加 wrapper 更清晰）
       avatarReset: () => POST(`${API_PREFIX}/profile/avatar/reset`, {}),
+      // MediaStudio 图库：从已有资产 URL 设个人头像（不重新上传）
+      setAvatarUrl: (url) => POST(`/api/profile/avatar-url`, { url }),
       visibility: (body) => POST(`${API_PREFIX}/profile/visibility`, body),
       exportData: (body) => POST(`${API_PREFIX}/account/export`, body || {}),
       // 账号数据迁移(免部署 → 本地):聚合剧本/存档/角色卡/偏好为单个 zip
@@ -606,6 +608,13 @@
         // 别名: rebuild jobs 跟 import-jobs 同一张表 / 同一 SSE 路由
         return this.streamImport(jobId, handlers);
       },
+      // W3-C1: 手动上传剧本封面 → POST multipart /api/scripts/{id}/cover → {ok, url}
+      uploadCover: (id, file) => {
+        const fd = new FormData(); fd.append("file", file);
+        return _send(`/api/scripts/` + id + "/cover", { method: "POST", body: fd });
+      },
+      // MediaStudio 图库：从已有资产 URL 设封面（不重新上传）
+      setCoverUrl: (id, url) => POST(`/api/scripts/` + id + "/cover-url", { url }),
       // v44: Git 模式版本控制 / fork / 共享剧本同步
       fork: (sid, body) => POST(`${API_PREFIX}/scripts/` + sid + '/fork', body || {}),
       commits: (sid, q) => GET(`${API_PREFIX}/scripts/` + sid + '/commits', q),
@@ -755,6 +764,31 @@
       // 按需 AI 复核全部 NPC 卡(合并同人/锁定主角/删非人名)。model 由公用选择器传入(可空,后端读偏好兜底)。
       auditCards: (sid, api_id, model) =>
         POST(`${API_PREFIX}/scripts/` + sid + '/audit-cards', { api_id, model }),
+      // Phase 4 — 人设图自动维护(persona/pc 类卡)
+      personaAutoSync: (id, enabled) => POST(`${API_PREFIX}/me/character-cards/` + id + '/auto-image-sync', { enabled: !!enabled }),
+      personaGenerate: (id) => POST(`${API_PREFIX}/me/character-cards/` + id + '/generate-persona-image', {}),
+      personaImages: (id) => GET(`${API_PREFIX}/me/character-cards/` + id + '/persona-images'),
+      personaSetCurrent: (id, imageId) => POST(`${API_PREFIX}/me/character-cards/` + id + '/persona-images/' + imageId + '/set-current', {}),
+      // W3-C1: 手动上传头像
+      uploadAvatar: (id, file) => {
+        const fd = new FormData(); fd.append('file', file);
+        return _send(`${API_PREFIX}/me/character-cards/` + id + '/avatar', { method: 'POST', body: fd });
+      },
+      // W3-C1: 手动上传人设图
+      uploadPersonaImage: (id, file) => {
+        const fd = new FormData(); fd.append('file', file);
+        return _send(`${API_PREFIX}/me/character-cards/` + id + '/persona-images/upload', { method: 'POST', body: fd });
+      },
+      // MediaStudio 图库：从已有资产 URL 设头像
+      setAvatarUrl: (id, url) => POST(`${API_PREFIX}/me/character-cards/` + id + '/avatar-url', { url }),
+      // MediaStudio 图库：从已有资产 URL 设人设图
+      setPersonaImageUrl: (id, url) => POST(`${API_PREFIX}/me/character-cards/` + id + '/persona-images/url', { url }),
+      // NPC 角色卡头像
+      scriptUploadCardAvatar: (sid, cid, file) => {
+        const fd = new FormData(); fd.append('file', file);
+        return _send(`${API_PREFIX}/scripts/` + sid + '/character-cards/' + cid + '/avatar', { method: 'POST', body: fd });
+      },
+      scriptSetCardAvatarUrl: (sid, cid, url) => POST(`${API_PREFIX}/scripts/` + sid + '/character-cards/' + cid + '/avatar-url', { url }),
     },
 
     // ---------- Chat history (SillyTavern JSONL import) ----------
@@ -812,17 +846,29 @@
     },
 
     // ---------- Library / files ----------
+    // W3-C1: S5 文件库在线服务化(只读管理,不支持手动上传)。
+    // GET /api/library?kind=X → {items:[{id,kind,url,source,ref_kind,ref_id,size,created_at,...}]}
+    // GET /api/library/asset/{id} → 单个资产(owner 校验)
+    // GET /api/library/asset/{id}/download → 带 Content-Disposition 的下载
+    // POST /api/library/asset/{id}/delete {confirm:true} → 删除(关联检查由后端做)
     library: {
-      list: (q) => GET(`${API_PREFIX}/library`, q),
-      upload: (file, path) => {
+      list: (kind) => GET(`/api/library`, kind ? { kind } : undefined),
+      get: (id) => GET(`/api/library/asset/` + encodeURIComponent(id)),
+      downloadUrl: (id) => BASE + `/api/library/asset/` + encodeURIComponent(id) + `/download`,
+      deleteAsset: (id, confirm) => {
+        const fd_body = { confirm: confirm === undefined ? true : !!confirm };
+        return _send(`/api/library/asset/` + encodeURIComponent(id) + `/delete`, { method: "POST", body: fd_body });
+      },
+      // 旧接口保留(内部用,别再从 UI 调)
+      _legacyUpload: (file, path) => {
         const fd = new FormData();
         fd.append('file', file);
         if (path) fd.append('path', path);
         return _send(`${API_PREFIX}/library/upload`, { method: 'POST', body: fd });
       },
-      mkdir: (body) => POST(`${API_PREFIX}/library/mkdir`, body),
-      delete: (body) => POST(`${API_PREFIX}/library/delete`, body),
-      downloadUrl: (path) =>
+      _legacyMkdir: (body) => POST(`${API_PREFIX}/library/mkdir`, body),
+      _legacyDelete: (body) => POST(`${API_PREFIX}/library/delete`, body),
+      _legacyDownloadUrl: (path) =>
         BASE + `${API_PREFIX}/library/download?path=` + encodeURIComponent(path),
     },
 
@@ -866,10 +912,12 @@
 
     // ---------- Models & APIs ----------
     models: {
+      // GET /api/models — 主入口；返回 {ok, models:{apis:[...]}, selected:{...}}
       list: () => GET(`${API_PREFIX}/models`),
-      // Wave 11-C: 新统一 catalog 端点,返回完整 ModelInfo Vec(10 provider)
+      // GET /api/models/catalog — 同源别名（Phase 0 由 Agent C 添加），返回完全相同 payload。
+      // ModelPicker.jsx 改用 list()；catalog() 保留供兼容老调用方。
       catalog: () => GET(`${API_PREFIX}/models/catalog`),
-      // Wave 11-C: 强制重拉所有 provider live /models,清 TTL cache
+      // 强制重拉所有 provider live /models,清 TTL cache
       refresh: () => POST(`${API_PREFIX}/models/refresh`, {}),
       select: (body) => POST(`${API_PREFIX}/models/select`, body),
       upsertApi: (body) => POST(`${API_PREFIX}/models/api`, body),
@@ -885,6 +933,18 @@
       report: (q) => GET(`${API_PREFIX}/models/report`, q),
       capabilities: () => GET(`${API_PREFIX}/models/capabilities`),
       capabilityLabels: () => GET(`${API_PREFIX}/models/capabilities/labels`),
+    },
+
+    // ---------- Images (AI 生图, Phase 1/2) ----------
+    // POST /api/images/generate → {image_id, status:'pending'}
+    // GET  /api/images/{id}    → {id, status, url, error, kind}
+    // GET  /api/images/file/{name} → FileResponse(静态文件)
+    // GET  /api/images/list?save_id=X → [{id,url,kind,prompt,status,created_at}]
+    images: {
+      generate: (body) => POST(`/api/images/generate`, body),
+      get: (id) => GET(`/api/images/` + encodeURIComponent(id)),
+      file: (name) => BASE + `/api/images/file/` + encodeURIComponent(name),
+      list: (saveId) => GET(`/api/images/list?save_id=` + encodeURIComponent(saveId)),
     },
 
     // ---------- Tools / MCP / Skills ----------

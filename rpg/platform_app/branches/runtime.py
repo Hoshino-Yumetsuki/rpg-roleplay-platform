@@ -15,6 +15,7 @@ from platform_app.branches._helpers import (
     load_state,
     rough_summary,
     round_preview,
+    tavern_card_cols,
     write_runtime_snapshot,
 )
 from platform_app.branches._runtime_repo import _db_mark_checkout_dirty
@@ -174,6 +175,10 @@ def persist_runtime_state(
         elif _snapshot_quality(state_data) + 5 < _snapshot_quality(db_snapshot):
             state_data = db_snapshot
             state_path = Path(save.get("state_path") or state_path)
+        # 同步酒馆角色/persona 卡列与 state JSON 对齐(LLM 工具只 mutate JSON,不写列;
+        # 单写者落库时顺带把列追平,根治走列读卡的 404)。COALESCE 保护:只在 snapshot 有
+        # 有效卡 id 时覆盖,缺失/非酒馆存档保留旧列,绝不清成 NULL。
+        _tav_char, _tav_persona = tavern_card_cols(state_data)
         db.execute(
             """
             update game_saves
@@ -181,11 +186,13 @@ def persist_runtime_state(
                 active_commit_id = %s,
                 active_branch_node_id = %s,
                 active_branch_ref_id = %s,
+                tavern_character_card_id = coalesce(%s, tavern_character_card_id),
+                tavern_persona_card_id = coalesce(%s, tavern_persona_card_id),
                 row_version = row_version + 1,
                 updated_at = now()
             where id = %s
             """,
-            (Jsonb(state_data), commit_id, commit_id, ref_id, save_id),
+            (Jsonb(state_data), commit_id, commit_id, ref_id, _tav_char, _tav_persona, save_id),
         )
         snap_hash = _state_snapshot_hash(state_data)
         turn = int(state_data.get("turn", 0)) if isinstance(state_data, dict) else 0

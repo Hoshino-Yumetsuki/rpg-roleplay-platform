@@ -13,6 +13,8 @@ v28 migration: user_personas 和 user_character_cards 已合并入 character_car
 """
 from __future__ import annotations
 
+import hashlib
+import logging
 import re
 from typing import Any
 
@@ -22,7 +24,46 @@ from platform_app.api._card_dto import card_to_dto
 
 from .db import connect, init_db
 
+log = logging.getLogger(__name__)
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  人设 hash（Phase 4）
+# ══════════════════════════════════════════════════════════════════════
+def compute_persona_hash(card: dict) -> str:
+    """计算人设相关字段的 SHA-256 指纹，用于检测人设是否变化。
+
+    字段顺序：name | identity | appearance | personality | background。
+    缺字段时当空串处理；分隔符使用 ASCII NUL(\\x00)，避免字段内容拼接歧义。
+    """
+    parts = [
+        str(card.get("name") or ""),
+        str(card.get("identity") or ""),
+        str(card.get("appearance") or ""),
+        str(card.get("personality") or ""),
+        str(card.get("background") or ""),
+    ]
+    raw = "\x00".join(parts).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
 _SLUG_RE = re.compile(r"[^0-9A-Za-z_一-鿿]+")
+
+# ── avatar_path 前缀白名单（防外部 URL 注入）──────────────────────────
+_AVATAR_PATH_PREFIXES: tuple[str, ...] = (
+    "/api/storage/",
+    "/api/images/file/",
+    "/api/profile/avatar/file/",
+)
+
+
+def _safe_avatar_path(v: object) -> str:
+    """只允许空串或以白名单前缀开头的 avatar_path；否则置空（丢弃外部 URL）。"""
+    s = str(v or "").strip()
+    if not s:
+        return ""
+    if any(s.startswith(prefix) for prefix in _AVATAR_PATH_PREFIXES):
+        return s
+    return ""
 _VALID_SCOPES = {"private", "global", "public"}
 
 
@@ -45,6 +86,45 @@ def _normalize_list(value: Any) -> list[Any]:
         # 允许逗号/分号/中文顿号分隔
         return [p.strip() for p in re.split(r"[,，;；、]", value) if p.strip()]
     return [value]
+
+
+def build_persona_prompt(card: dict[str, Any]) -> str:
+    """从角色卡【全字段】拼一个尽量完整的人设图生成提示词(中文逗号分隔,过滤空字段)。
+
+    用户诉求:人设图提示词要包含角色卡的所有信息。这里覆盖 name/full_name/aliases/
+    identity/appearance/personality/background/speech_style/current_status/secrets/tags
+    (appearance/identity 等视觉相关字段靠前;sample_dialogue=对白,与画面无关,略)。
+    工具调用路径由 LLM 自行决定拼哪些字段,不走此函数。
+    """
+    if not isinstance(card, dict):
+        return "character"
+
+    def _s(k: str) -> str:
+        v = card.get(k)
+        return str(v).strip() if v not in (None, "") else ""
+
+    parts: list[str] = []
+    name = _s("name") or _s("full_name")
+    if name:
+        parts.append(name)
+    if _s("identity"):
+        parts.append(_s("identity"))
+    if _s("appearance"):
+        parts.append(_s("appearance"))
+    for k in ("personality", "background", "speech_style", "current_status", "secrets"):
+        if _s(k):
+            parts.append(_s(k))
+    aliases = card.get("aliases")
+    if isinstance(aliases, (list, tuple)) and aliases:
+        parts.append("，".join(str(a) for a in aliases if a))
+    tags = card.get("tags")
+    if isinstance(tags, (list, tuple)) and tags:
+        parts.append("，".join(str(t) for t in tags if t))
+    elif isinstance(tags, str) and tags.strip():
+        parts.append(tags.strip())
+
+    prompt = "，".join(p for p in parts if p)
+    return prompt or name or "character"
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -91,7 +171,7 @@ def upsert_persona(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         "background": (payload.get("background") or "").strip(),
         "appearance": (payload.get("appearance") or "").strip(),
         "personality": (payload.get("personality") or "").strip(),
-        "avatar_path": (payload.get("avatar_path") or "").strip(),
+        "avatar_path": _safe_avatar_path(payload.get("avatar_path")),
         "tags": Jsonb(_normalize_list(payload.get("tags"))),
         "metadata": Jsonb(payload.get("metadata") or {}),
         "is_default": is_default,
@@ -112,7 +192,8 @@ def upsert_persona(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                     update character_cards set
                       name = %(name)s, slug = %(slug)s, identity = %(identity)s,
                       background = %(background)s, appearance = %(appearance)s,
-                      personality = %(personality)s, avatar_path = %(avatar_path)s,
+                      personality = %(personality)s,
+                      avatar_path = case when %(avatar_path)s = '' then character_cards.avatar_path else %(avatar_path)s end,
                       tags = %(tags)s, metadata = %(metadata)s, is_default = %(is_default)s,
                       row_version = row_version + 1, updated_at = now()
                     where id = %(id)s and user_id = %(user_id)s and card_type = 'persona'
@@ -147,7 +228,8 @@ def upsert_persona(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                     do update set
                       name = excluded.name, identity = excluded.identity,
                       background = excluded.background, appearance = excluded.appearance,
-                      personality = excluded.personality, avatar_path = excluded.avatar_path,
+                      personality = excluded.personality,
+                      avatar_path = case when excluded.avatar_path = '' then character_cards.avatar_path else excluded.avatar_path end,
                       tags = excluded.tags, metadata = excluded.metadata,
                       is_default = excluded.is_default,
                       row_version = character_cards.row_version + 1, updated_at = now()
@@ -166,6 +248,11 @@ def upsert_persona(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 " where user_id = %s and card_type = 'persona'",
                 (int(row["id"]), user_id),
             )
+    # Phase 4 钩子：检测 persona_hash 变化，按需入队生图（失败只 log）
+    if row:
+        _card_dto_for_hook = card_to_dto(row, persona_role_alias=True) or {}
+        new_hash = compute_persona_hash(_card_dto_for_hook)
+        _maybe_enqueue_persona_image(user_id, int(row["id"]), new_hash, _card_dto_for_hook)
     return card_to_dto(row, persona_role_alias=True) or {}
 
 
@@ -177,6 +264,79 @@ def delete_persona(user_id: int, persona_id: int) -> dict[str, Any]:
             (persona_id, user_id),
         ).fetchone()
     return {"ok": True, "deleted": bool(cur), "id": persona_id}
+
+
+def set_auto_image_sync(user_id: int, card_id: int, enabled: bool) -> dict[str, Any]:
+    """开启/关闭指定卡的人设图自动同步开关。仅 owner 可操作。"""
+    init_db()
+    with connect() as db:
+        result = db.execute(
+            "update character_cards set auto_image_sync = %s where id = %s and user_id = %s",
+            (bool(enabled), int(card_id), user_id),
+        )
+    if result.rowcount == 0:
+        raise ValueError("card 不存在或无权访问")
+    return {"ok": True, "card_id": int(card_id), "auto_image_sync": bool(enabled)}
+
+
+def _maybe_enqueue_persona_image(
+    user_id: int,
+    card_id: int,
+    new_hash: str,
+    row: Any,
+) -> None:
+    """upsert 后钩子：若 persona_hash 有变化则更新 hash，并在 auto_image_sync=true 时入队生图。
+
+    此函数捕获所有异常，失败只 log，不影响 upsert 主流程的返回。
+    """
+    try:
+        with connect() as db:
+            old_row = db.execute(
+                "select persona_hash, auto_image_sync from character_cards where id = %s",
+                (int(card_id),),
+            ).fetchone()
+            if old_row is None:
+                return
+            old_hash: str = str(old_row.get("persona_hash") or "")
+            auto_sync: bool = bool(old_row.get("auto_image_sync"))
+
+            # 无论是否触发生图，都更新 persona_hash
+            if old_hash != new_hash:
+                db.execute(
+                    "update character_cards set persona_hash = %s where id = %s",
+                    (new_hash, int(card_id)),
+                )
+
+        if old_hash != new_hash and auto_sync:
+            # 用角色卡【全字段】拼生图提示串(不再只 4 字段)
+            prompt = build_persona_prompt(dict(row) if isinstance(row, dict) else {"name": str(row.get("name") or "")})
+            try:
+                from platform_app.image_jobs import enqueue_image_generation
+                enqueue_image_generation(
+                    user_id,
+                    prompt=prompt,
+                    kind="persona",
+                    attach={
+                        "type": "persona_image",
+                        "id": int(card_id),
+                        "persona_hash": new_hash,
+                        "source": "auto_sync",
+                    },
+                )
+                log.info(
+                    "[user_cards] persona_image enqueued card_id=%s user=%s",
+                    card_id, user_id,
+                )
+            except Exception as enq_exc:
+                log.warning(
+                    "[user_cards] enqueue_image_generation failed card_id=%s user=%s: %s",
+                    card_id, user_id, enq_exc,
+                )
+    except Exception as exc:
+        log.warning(
+            "[user_cards] _maybe_enqueue_persona_image failed card_id=%s user=%s: %s",
+            card_id, user_id, exc,
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -255,6 +415,7 @@ def upsert_user_card(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         "importance": int(payload.get("importance") or 100),  # PC 默认 100,前端高级页可调
         "enabled": bool(payload.get("enabled", True)),
         "scope": _normalize_scope(payload.get("scope")),
+        "avatar_path": _safe_avatar_path(payload.get("avatar_path")),
     }
 
     # SEC(M-13): metadata JSONB 限长(character_book 经 JSON body 路径可达 nginx 50MB),防存储放大。
@@ -281,6 +442,7 @@ def upsert_user_card(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                   tags=%(tags)s, metadata=%(metadata)s,
                   token_budget=%(token_budget)s, priority=%(priority)s,
                   importance=%(importance)s, enabled=%(enabled)s, scope=%(scope)s,
+                  avatar_path = case when %(avatar_path)s = '' then character_cards.avatar_path else %(avatar_path)s end,
                   row_version = row_version + 1, updated_at = now()
                 where id = %(id)s and user_id = %(user_id)s and card_type = 'pc'
                 """,
@@ -297,14 +459,16 @@ def upsert_user_card(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                   user_id, slug, card_type, source, first_revealed_chapter,
                   name, full_name, aliases, identity, background, appearance, personality,
                   speech_style, current_status, secrets, sample_dialogue,
-                  tags, metadata, token_budget, priority, importance, enabled, scope
+                  tags, metadata, token_budget, priority, importance, enabled, scope,
+                  avatar_path
                 ) values (
                   %(user_id)s, %(slug)s, 'pc', 'user', 1,
                   %(name)s, %(full_name)s, %(aliases)s, %(identity)s, %(background)s,
                   %(appearance)s, %(personality)s,
                   %(speech_style)s, %(current_status)s, %(secrets)s, %(sample_dialogue)s,
                   %(tags)s, %(metadata)s, %(token_budget)s, %(priority)s,
-                  %(importance)s, %(enabled)s, %(scope)s
+                  %(importance)s, %(enabled)s, %(scope)s,
+                  %(avatar_path)s
                 )
                 on conflict(user_id, slug, card_type) where card_type in ('pc','persona')
                 do update set
@@ -316,11 +480,17 @@ def upsert_user_card(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                   tags=excluded.tags, metadata=excluded.metadata,
                   token_budget=excluded.token_budget, priority=excluded.priority,
                   importance=excluded.importance, enabled=excluded.enabled, scope=excluded.scope,
+                  avatar_path = case when excluded.avatar_path = '' then character_cards.avatar_path else excluded.avatar_path end,
                   row_version = character_cards.row_version + 1, updated_at = now()
                 returning *
                 """,
                 {**fields, "user_id": user_id},
             ).fetchone()
+    # Phase 4 钩子：pc/persona 卡检测 persona_hash 变化，按需入队生图（失败只 log）
+    if row:
+        _card_dto_for_hook = card_to_dto(row) or {}
+        new_hash = compute_persona_hash(_card_dto_for_hook)
+        _maybe_enqueue_persona_image(user_id, int(row["id"]), new_hash, _card_dto_for_hook)
     return card_to_dto(row) or {}
 
 
@@ -451,4 +621,18 @@ def clone_public_card(user_id: int, card_id: int) -> dict[str, Any]:
         if not new:
             raise ValueError("你已导入过这张角色卡")
         db.execute("update character_cards set clone_count = clone_count + 1 where id = %s", (int(card_id),))
+        # 复制人设图历史行 —— image_url 引用同一站内资产(物理文件不重存,满足「公开卡人设图/历史不存两次」)
+        try:
+            db.execute(
+                """
+                insert into card_persona_images
+                    (card_id, image_url, persona_hash, card_row_version, source, status, is_current, prompt_snapshot)
+                select %(newid)s, image_url, persona_hash, card_row_version, 'cloned', status, is_current, prompt_snapshot
+                  from card_persona_images
+                 where card_id = %(src)s
+                """,
+                {"newid": int(new["id"]), "src": int(card_id)},
+            )
+        except Exception as _persona_clone_exc:
+            log.warning("[user_cards] clone persona images failed new=%s src=%s: %s", new["id"], card_id, _persona_clone_exc)
     return {"ok": True, "card_id": int(new["id"])}

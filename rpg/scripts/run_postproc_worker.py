@@ -106,11 +106,19 @@ async def _handle_black_swan(payload: dict[str, Any]) -> None:
     )
 
 
+async def _handle_image_gen(payload: dict[str, Any]) -> None:
+    """生图 job：调 image_jobs.handle_image_gen（内部已 asyncio.to_thread 卸载阻塞的
+    provider 调用/轮询，不会冻住单线程 worker 事件循环）。"""
+    from platform_app.image_jobs import handle_image_gen as _h
+    await _h(payload)
+
+
 TASK_HANDLERS = {
     "extractor": _handle_extractor,
     "phase_digest": _handle_phase_digest,
     "acceptance_verifier": _handle_acceptance_verifier,
     "black_swan": _handle_black_swan,
+    "image_gen": _handle_image_gen,
 }
 
 

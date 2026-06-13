@@ -2,10 +2,11 @@
 /* ============================================================
  *  RPG Roleplay · Data Loader
  *  -----------------------------------------------------------
- *  Bridges the real backend (window.api) with the window.MOCK_*
- *  globals. On load it fills those globals from /api/*. When the
- *  backend is unreachable the globals stay on the empty baseline
- *  from mock-data.ts (no fabricated demo content).
+ *  Bridges the real backend (window.api) with the Claude Design
+ *  mock globals (window.MOCK_*). On first load it tries to fill
+ *  the globals from /api/*. Static designer fallback values are
+ *  only allowed in explicit offline preview; authenticated pages
+ *  must render loading/empty states instead of mock records.
  *
  *  Pages can wait for `window.RPG_DATA_READY` (a Promise) or the
  *  `rpg-data-ready` DOM event before rendering — the included
@@ -26,6 +27,56 @@ function deepCopy(o) {
   } catch (_) {
     return o;
   }
+}
+
+function useDesignerFallback() {
+  try { return new URLSearchParams(location.search).has("offline"); } catch (_) { return false; }
+}
+
+function emptyPlatformFallback(platform) {
+  const p = deepCopy(platform || {});
+  p.saves = [];
+  p.scripts = [];
+  p.recent_assets = [];
+  p.stats = { scripts: 0, saves: 0, branches: null, assets: null, api_calls: null };
+  return p;
+}
+
+function emptyGameStateFallback() {
+  return {
+    player: { name: "", role: "", background: "", current_location: "", inventory: [] },
+    world: {
+      time: "",
+      weather: "",
+      known_events: [],
+      timeline: { anchor_state: null, current_label: "", current_phase: "", pending_jump: null, anchors: [] },
+    },
+    relationships: {},
+    permissions: { mode: "full_access", pending_writes: [], pending_questions: [] },
+    worldline: { user_variables: {}, constraints: [], last_projection: "" },
+    memory: {
+      mode: "normal",
+      main_quest: "",
+      current_objective: "",
+      pinned: [],
+      facts: [],
+      notes: [],
+      last_retrieval: "",
+      last_context: {},
+    },
+    suggestions: [],
+    history: [],
+    turn: 0,
+    ruleset: {},
+    player_character: {},
+    scene: {},
+    encounter: {},
+    dice_log: [],
+    content_pack: {},
+    active_entities: {},
+    app: {},
+    models: {},
+  };
 }
 
 function fmtBytes(n) {
@@ -112,24 +163,23 @@ async function hydratePlatform() {
     platform.recent_assets = [];
     return { platform, authed };
   }
+  // 登录态禁止保留 designer baseline：接口慢/失败时宁可显示空态或 loading，
+  // 也不能把示例剧本、示例存档、示例统计误渲染成用户数据。
+  Object.assign(platform, emptyPlatformFallback(platform));
   try {
     const scripts = await window.api.scripts.list();
     // task 24：后端走 page_payload 返 {items, page}；旧代码只看 .scripts 漏掉新条目。
     // 统一兼容形态：数组 / {items} / {scripts}。
     const scriptList = Array.isArray(scripts) ? scripts : scripts?.items || scripts?.scripts || [];
     platform.scripts = scriptList.map(normalizeScript);
-  } catch (e) {
-    /* keep baseline */
-  }
+  } catch (e) { platform.scripts = []; }
   try {
     const saves = await window.api.saves.list();
     // task 24: 同 scripts，兼容 {items} / {saves} / 数组
     const list = Array.isArray(saves) ? saves : saves?.items || saves?.saves || [];
     // 登录用户 → 真实 saves，哪怕是空数组也要覆盖（防止 mock 11/12/13/14 残留）
     platform.saves = list.map(normalizeSave);
-  } catch (e) {
-    /* keep baseline */
-  }
+  } catch (e) { platform.saves = []; }
   try {
     const lib = await window.api.library.list({ path: '' });
     const entries = (lib && (lib.entries || lib.items)) || [];
@@ -143,9 +193,7 @@ async function hydratePlatform() {
     } else {
       platform.recent_assets = [];
     }
-  } catch (e) {
-    /* keep baseline */
-  }
+  } catch (e) { platform.recent_assets = []; }
   // task 12：把统计派生成「真实数据 + 缺失标 null」，不再回退到 mock 12/38/67/21.4K。
   // ProfilePage 读这里的 stats；缺的字段（branches 没汇总接口、api_calls 需 usage 接口）置 null，
   // 渲染层判断 null → 显示「—」而不是 mock 数字。
@@ -223,7 +271,7 @@ function normalizeSave(s) {
 }
 
 // 深合并：对象走递归合并，数组/标量整体替换。
-// 用途：backend /api/state 只回部分字段时，缺失的子对象/嵌套字段保留 baseline，
+// 用途：backend /api/state 只回部分字段时，缺失的子对象/嵌套字段保留调用方给的安全骨架，
 // 避免下游组件 `state.world.timeline.current_label` 这种链式访问炸 undefined。
 function deepMergeInto(target, source) {
   if (!source || typeof source !== 'object' || Array.isArray(source)) return target;
@@ -249,14 +297,16 @@ function deepMergeInto(target, source) {
 }
 
 async function hydrateGameState() {
-  if (!window.api) return BASELINE.state;
+  const allowMockFallback = !window.api || useDesignerFallback();
+  const fallback = () => allowMockFallback ? deepCopy(BASELINE.state) : emptyGameStateFallback();
+  if (!window.api) return fallback();
   try {
     const data = await window.api.game.state();
-    if (!data || data.error) return BASELINE.state;
-    // 深合并：backend 返回的 partial state 覆盖到 baseline 上，缺的字段不会冲掉
+    if (!data || data.error) return fallback();
+    // 深合并：backend 返回的 partial state 覆盖到安全骨架上，缺的字段不会冲掉
     // 老的 apply() 是「整段替换」语义，backend 没有 inventory/timeline 等子字段时
     // 会让 PanelStatus / ConfirmStrip 等链式访问炸 undefined（Game Console 白屏）。
-    const merged = deepCopy(BASELINE.state);
+    const merged = allowMockFallback ? deepCopy(BASELINE.state) : emptyGameStateFallback();
     deepMergeInto(merged, {
       player: data.player,
       world: data.world,
@@ -286,7 +336,7 @@ async function hydrateGameState() {
     };
     return merged;
   } catch (e) {
-    return BASELINE.state;
+    return fallback();
   }
 }
 

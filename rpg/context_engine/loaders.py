@@ -53,7 +53,7 @@ def _load_characters_db(script_id: int | None, book_id: int | None) -> dict[str,
     sql = (
         "select script_id, name, full_name, aliases, identity, background, "
         "appearance, personality, speech_style, current_status, secrets, "
-        "sample_dialogue, token_budget, priority, first_revealed_chapter "
+        "sample_dialogue, token_budget, priority, first_revealed_chapter, avatar_path "
         "from character_cards where " + " and ".join(where_clauses) +
         " and card_type = 'npc' "
         "order by priority desc, id asc"
@@ -77,6 +77,7 @@ def _load_characters_db(script_id: int | None, book_id: int | None) -> dict[str,
             "priority": int(r["priority"] or 100),
             "token_budget": int(r["token_budget"] or 450),
             "first_revealed_chapter": int(r["first_revealed_chapter"] or 0),
+            "avatar_path": r["avatar_path"] or "",
         }
     return out
 

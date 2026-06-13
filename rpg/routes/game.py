@@ -22,33 +22,29 @@ _CLIENT_SAFE_RUNTIME_PREFIXES = (
     "Vertex AI 调用被拒(403)。",
 )
 
-_CLIENT_SAFE_AUTH_MARKERS = (
-    "incorrect api key",
-    "invalid api key",
-    "please pass a valid api key",
-    "401 unauthorized",
-)
-
 
 def _client_safe_error(exc: Exception) -> str:
     """把未预期异常转成对客户端安全的泛化文案 + error_id。
 
     str(exc) 可能含 DB 表名/连接串、文件路径、第三方 SDK 内部细节(乃至凭据上下文),
     绝不能直透进 SSE 给玩家。原始异常带 error_id 写服务端日志,客户端只拿 id 便于排障对账。
+    已知提供商错误(余额/key/限流)走 agents.provider_errors 统一分类,给可行动文案。
     """
-    error_id = _secrets.token_hex(4)
+    from agents.provider_errors import classify_provider_error
+
+    # 字母前缀:token_hex(4) 约 2% 概率全是数字(如 65969875),紧跟「余额/配额已用尽」
+    # 文案会被用户误读成「本轮消耗了 6500 万 token」(生产实况:用户 @拾酒 据此问"token 消耗
+    # 这么大吗")。前缀 E 让它一眼是排障标识、不是数量。日志侧同 id,对账不受影响。
+    error_id = "E" + _secrets.token_hex(4)
     raw_message = str(exc).strip()
     if isinstance(exc, RuntimeError) and raw_message.startswith(_CLIENT_SAFE_RUNTIME_PREFIXES):
         _log.warning("[chat] client-safe stream error (error_id=%s): %s", error_id, raw_message)
         return f"{raw_message}\n\n如果已经上传,请重新测试凭证或切换到已配置的模型。(错误码 {error_id})"
-    raw_lower = raw_message.lower()
-    if any(marker in raw_lower for marker in _CLIENT_SAFE_AUTH_MARKERS):
-        _log.warning("[chat] client-safe auth stream error (error_id=%s): %s", error_id, type(exc).__name__)
-        return (
-            "当前模型的 API Key 无效或已过期。"
-            "请到「设置 → API 设置」重新测试凭证，或切换到已配置的模型。"
-            f"(错误码 {error_id})"
-        )
+    known = classify_provider_error(exc)
+    if known:
+        category, message = known
+        _log.warning("[chat] client-safe %s stream error (error_id=%s): %s", category, error_id, type(exc).__name__)
+        return f"{message}(错误码 {error_id})"
     _log.exception("[chat] unhandled stream error (error_id=%s)", error_id)
     return f"本轮处理出错,请重试(错误码 {error_id})"
 
@@ -189,7 +185,8 @@ async def api_new(
     if source_meta:
         state.data["player"]["source_kind"] = source_kind
         state.data["player"]["source_id"] = int(source_meta.get("id") or 0)
-        for field in ("appearance", "personality", "speech_style"):
+        # 玩家游戏内头像 = 所选角色卡(PC卡)的 avatar_path,绝非账户头像。
+        for field in ("appearance", "personality", "speech_style", "avatar_path"):
             if source_meta.get(field):
                 state.data["player"][field] = source_meta[field]
     state.save()
@@ -213,6 +210,7 @@ async def api_opening(
         _ensure_loaded,
         _get_gm,
         _payload,
+        _payload_sse,
         _persist_runtime_checkpoint,
         _resolve_persist_target,
         _sse,
@@ -258,7 +256,7 @@ async def api_opening(
 
         yield _sse("stage", {"phase": "building_context", "label": "组装上下文…"})
         bundle = await asyncio.to_thread(_retrieve_and_build)
-        yield _sse("status", _payload(api_user))
+        yield _sse("status", _payload_sse(api_user))
         yield _sse("stage", {"phase": "generating", "label": "GM 构思开场中…"})
         text = ""
         try:
@@ -300,10 +298,10 @@ async def api_opening(
                     _persist_runtime_checkpoint(state, api_user)
             except Exception:
                 _persist_runtime_checkpoint(state, api_user)
-            yield _sse("done", {"status": _payload(api_user)})
+            yield _sse("done", {"status": _payload_sse(api_user)})
         except Exception as exc:
             yield _sse("error", {"message": _client_safe_error(exc), "partial": text})
-            yield _sse("done", {"interrupted": True, "status": _payload(api_user)})
+            yield _sse("done", {"interrupted": True, "status": _payload_sse(api_user)})
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
@@ -529,6 +527,7 @@ async def api_chat(
         _mark_context_run,
         _message_with_attachments,
         _payload,
+        _payload_sse,
         _persist_chat_turn,
         _persist_runtime_checkpoint,
         _resolve_persist_target,
@@ -616,12 +615,12 @@ async def api_chat(
         if command_text:
             if changed:
                 _persist_runtime_checkpoint(state, api_user)
-                yield _sse("status", _payload(api_user))
+                yield _sse("status", _payload_sse(api_user))
             # #13 沉浸感: 斜杠命令回执是确定性后端字符串(非 GM 叙事),不再以
             # token 流出(会被前端当正文累加进主聊天 transcript),改 system_receipt
             # 事件 → 前端 toast。changed=True 时侧栏已由上面的 status 事件刷新。
             yield _sse("system_receipt", {"text": command_text, "changed": changed})
-            yield _sse("done", {"status": _payload(api_user), "interrupted": False, "command": True})
+            yield _sse("done", {"status": _payload_sse(api_user), "interrupted": False, "command": True})
             return
 
         sub_gm = _get_sub_gm(api_user)
@@ -642,7 +641,7 @@ async def api_chat(
                 pipeline_ctx,
                 resolve_persist_target=_resolve_persist_target,
                 persist_runtime_checkpoint=_persist_runtime_checkpoint,
-                payload_fn=_payload,
+                payload_fn=_payload_sse,
                 is_set_parser_enabled=_is_set_parser_enabled,
                 active_script_id=_active_script_id,
             ):
@@ -655,7 +654,7 @@ async def api_chat(
             async for evt, data in run_context_phase(
                 pipeline_ctx,
                 resolve_persist_target=_resolve_persist_target,
-                payload_fn=_payload,
+                payload_fn=_payload_sse,
                 active_script_id=_active_script_id,
                 clarify_threshold=_clarify_threshold,
                 persist_chat_turn=_persist_chat_turn,
@@ -730,7 +729,7 @@ async def api_chat(
             if not _is_tavern:
                 async for evt, data in run_rules_phase(
                     pipeline_ctx,
-                    payload_fn=_payload,
+                    payload_fn=_payload_sse,
                     persist_chat_turn=_persist_chat_turn,
                     persist_runtime_checkpoint=_persist_runtime_checkpoint,
                     resolve_persist_target=_resolve_persist_target,
@@ -748,7 +747,7 @@ async def api_chat(
             # Phase 4: GM 主响应 (token + tool_call + extractor + acceptance)
             async for evt, data in run_gm_phase(
                 pipeline_ctx,
-                payload_fn=_payload,
+                payload_fn=_payload_sse,
                 persist_chat_turn=_persist_chat_turn,
                 mark_context_run=_mark_context_run,
                 current_run_id_fn=_current_run_id,
@@ -767,7 +766,7 @@ async def api_chat(
             # Phase 5: 持久化 + done
             async for evt, data in persist_turn_phase(
                 pipeline_ctx,
-                payload_fn=_payload,
+                payload_fn=_payload_sse,
                 persist_chat_turn=_persist_chat_turn,
                 build_usage_payload=_build_usage_payload,
             ):
@@ -780,7 +779,7 @@ async def api_chat(
                 duration_ms=int((time.time() - _chat_start_time) * 1000),
             )
             yield _sse("error", {"message": _client_safe_error(exc), "partial": pipeline_ctx.response or response})
-            yield _sse("done", {"interrupted": True, "status": _payload(api_user)})
+            yield _sse("done", {"interrupted": True, "status": _payload_sse(api_user)})
 
     async def _stream_with_done_guard():
         # BUGFIX(工具调用后一直转圈):保证任何退出路径(early_return 未发 done / 中途异常 /
@@ -795,7 +794,7 @@ async def api_chat(
         finally:
             if not _done_seen:
                 try:
-                    yield _sse("done", {"status": _payload(api_user), "interrupted": True})
+                    yield _sse("done", {"status": _payload_sse(api_user), "interrupted": True})
                 except Exception:
                     yield _sse("done", {"interrupted": True})
 

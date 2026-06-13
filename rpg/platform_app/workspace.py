@@ -1036,6 +1036,7 @@ def scripts_page(user_id: int, limit: int | str | None = None, cursor: str | Non
                    s.embed_api_id, s.embed_model,
                    s.forked_from_script_id, s.forked_at_commit_id, s.sharing_mode,
                    s.current_pin_script_id, s.current_pin_commit_id, s.head_commit_id,
+                   s.cover_image_url,
                    (s.owner_id != %s) as is_subscribed
             from scripts s
             where (

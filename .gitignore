@@ -43,6 +43,8 @@ rpg/platform_data/master.key
 rpg/platform_data/library/
 rpg/platform_data/upload_chunks/
 rpg/platform_data/scripts/
+# 本地 e2e 时 RPG_DATA_ROOT 覆盖产生的顶层存储目录（仅本地测试图片，勿提交）
+/platform_data/
 
 # ──────────────────────────────────────────────────────────────────
 #  本地虚拟环境

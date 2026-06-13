@@ -19,9 +19,10 @@ import { createPortal } from 'react-dom';
 
 import { Icon } from '@/features/console/GameIcons';
 import { useResizable } from '@/hooks/useResponsive';
-import { NarrativeBlock, PlayerBlock, GameToastStack } from '@/features/console/GameApp';
+import { NarrativeBlock, PlayerBlock, GameToastStack, SaveImagesStrip, useSaveImages } from '@/features/console/GameApp';
 import { Composer } from '@/features/console/GameComposer';
 import { TavernImportModal, CardSheet, CardEditFields, cardFormInit, cardFormPayload } from '@/features/cards/CardsPage';
+import AvatarImg from '@/components/AvatarImg.jsx';
 
 /* ── 相对时间 ─────────────────────────────────────────────────────── */
 export function relTime(ts) {
@@ -90,7 +91,7 @@ export function TavernChatItem({ chat, active, onOpen, onRename, onArchive, onDe
       role="button"
       tabIndex={0}
     >
-      <div className="tv-chat-avatar serif">{initial}</div>
+      <AvatarImg src={chat.avatar_path || null} name={chat.character_name || chat.title || '?'} size={36} shape="circle" className="tv-chat-avatar" />
       <div className="tv-chat-main">
         <div className="tv-chat-title-row">
           {editing ? (
@@ -313,10 +314,48 @@ export function ToolCallBlock({ ops }) {
   );
 }
 
-export function TavernChatArea({ history, running, saveId, charName, charInitial, personaName, hasError, errorMsg, onRetry, lastMeta, elapsedLabel }) {
+/* ── 思考流折叠块(reasoning)─────────────────────────────────────────
+ * 与正文(NarrativeBlock)上下分区共存,绝不互斥:正文永远以正常散文样式渲染,
+ * 思考流单独折叠成一行(默认折叠,标签「思考过程」),展开看完整推理文本。
+ * thinking=true(本轮 content 尚未到达)时显示「思考中…」+ spinner;一旦正文开始
+ * 到达就把 spinner 收掉、退回可折叠条。流结束(streaming=false)绝不再显示 spinner。
+ * 复用 mobile ThinkingBlock 的同构形态(分区共存),非 NarrativeBlock 的互斥旧逻辑。 */
+export function TavernThinkingBlock({ text, thinking }) {
+  const [open, setOpen] = useState(false);
+  const t = (text == null ? '' : String(text));
+  if (!t.trim() && !thinking) return null;
+  return (
+    <div className={`tvp-thinking${open ? ' open' : ''}`}>
+      <button
+        type="button"
+        className="tvp-thinking-toggle"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {thinking
+          ? <span className="gc-spinner spin" aria-hidden="true" />
+          : <Icon name={open ? 'chevron_down' : 'chevron_right'} size={11} />}
+        <span className="tvp-thinking-label">{thinking ? '思考中…' : '思考过程'}</span>
+      </button>
+      {open && t.trim() && (
+        <div className="tvp-thinking-body">{t}</div>
+      )}
+    </div>
+  );
+}
+
+export function TavernChatArea({ history, running, saveId, charName, charInitial, charAvatar, personaName, hasError, errorMsg, onRetry, lastMeta, elapsedLabel }) {
   const ref = useRef(null);
   const atBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
+
+  // 内嵌聊天图片:最后一条助手消息绝对索引 + 图片按消息分发(复用游戏端 hook)
+  const total0 = Array.isArray(history) ? history.length : 0;
+  let lastAsstIdx = -1;
+  for (let _i = total0 - 1; _i >= 0; _i--) { if (history[_i] && history[_i].role === 'assistant') { lastAsstIdx = _i; break; } }
+  const lastKeyRef = useRef(null);
+  lastKeyRef.current = lastAsstIdx >= 0 ? String(lastAsstIdx) : null;
+  const imagesByKey = useSaveImages(saveId, lastKeyRef);
 
   useEffect(() => {
     const el = ref.current;
@@ -330,8 +369,16 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
 
+  // ① 自己刚发(末条=玩家)→ 滚到底;② 否则双守卫:已上滚 或 实时距底>360 → 不跟随(GM 输出完成不拽回)
   useEffect(() => {
-    if (!ref.current || !atBottomRef.current) return;
+    const el = ref.current;
+    if (!el) return;
+    const last = history && history[history.length - 1];
+    if (last && last.role === 'user') {
+      atBottomRef.current = true;
+    } else if (!atBottomRef.current || (el.scrollHeight - el.scrollTop - el.clientHeight) > 360) {
+      return;
+    }
     const id = requestAnimationFrame(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; });
     return () => cancelAnimationFrame(id);
   }, [history.length, running]);
@@ -351,17 +398,33 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
         {history.map((m, i) => {
           const commitId = m && (m.commit_id || m.node_id);
           if (m.role === 'assistant') {
-            const toolOps = m && m._toolOps;
+            // 工具调用按 anchor 内联进正文(Claude 风,不再永远置顶)。
+            // 流式累积在 _toolOps;重载从持久化的 tool_ops 取(record_turn 落库的字段)。
+            const rawToolOps = (m && (m._toolOps || m.tool_ops)) || null;
+            const toolOps = Array.isArray(rawToolOps) && rawToolOps.length > 0 ? rawToolOps : null;
+            const isStreaming = !m.streaming_done && i === total - 1 && running;
+            const hasContent = !!(m.content && String(m.content).trim());
+            // 思考流是独立可折叠块,与正文分区共存(绝不互斥)。
+            // 「思考中…」spinner 只在:本条仍在流式 && 正文还没到 时显示;
+            // 一旦正文到达或流结束,退回静态「思考过程」折叠条(无 spinner)。
+            const thinkingSpinner = isStreaming && !hasContent;
+            // 流式 _thinking;重载 reasoning(record_turn 落库字段)。
+            const thinkingText = m._thinking || m.reasoning;
             return (
               <React.Fragment key={`a-${i}`}>
-                {Array.isArray(toolOps) && toolOps.length > 0 && <ToolCallBlock ops={toolOps} />}
+                {(thinkingText || thinkingSpinner) && (
+                  <TavernThinkingBlock text={thinkingText} thinking={thinkingSpinner} />
+                )}
+                {/* 正文走 NarrativeBlock;工具卡片由 renderTool 按 anchor 内联到正文对应位置。 */}
                 <NarrativeBlock
                   text={m.content} ts={m.ts}
                   msgIndex={i} saveId={saveId} commitId={commitId}
-                  thinking={m._thinking}
-                  hideMeta
-                  streaming={!m.streaming_done && i === total - 1 && running}
+                  tag={charName} speakerName="" speakerAvatar={charAvatar || charInitial}
+                  images={imagesByKey[String(i)] || (i === lastAsstIdx ? imagesByKey['__last'] : undefined)}
+                  streaming={isStreaming}
                   meta={i === total - 1 ? lastMeta : null}
+                  toolOps={toolOps}
+                  renderTool={(ops) => <ToolCallBlock ops={ops} />}
                 />
               </React.Fragment>
             );
@@ -396,6 +459,7 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
             </div>
           </div>
         )}
+        {/* 图片已内嵌进对应角色消息气泡(useSaveImages + ChatImageGroup),不再底部独立 strip */}
       </div>
       {showJump && (
         <button
@@ -797,12 +861,15 @@ export default function TavernApp() {
         on_tool_call: (data) => {
           if (!isCurrentRun()) return;
           resetIdle();
-          const op = { tool: (data && data.tool) || '?', args: (data && (data.args_summary || data.args)) || null, _pending: true };
           setHistory((h) => {
             let arr = h;
             if (!openedAssistant) { openedAssistant = true; arr = [...h, { role: 'assistant', content: '', ts, streaming: true }]; }
             const last = arr[arr.length - 1];
             if (!last || last.role !== 'assistant') return arr;
+            // anchor=本工具触发时正文长度 → 渲染按它把工具内联到正文对应位置(不再置顶)。
+            // 优先用本地 content 长度(精确),回退后端 anchor。
+            const anchor = (last.content || '').length || (data && Number.isFinite(data.anchor) ? data.anchor : 0);
+            const op = { tool: (data && data.tool) || '?', args: (data && (data.args_summary || data.args)) || null, anchor, _pending: true };
             return [...arr.slice(0, -1), { ...last, _toolOps: [...(last._toolOps || []), op] }];
           });
         },
@@ -960,6 +1027,7 @@ export default function TavernApp() {
 
   const charName = (character && character.name) || (activeChat && activeChat.character_name) || '角色';
   const charInitial = charName.trim().slice(0, 1);
+  const charAvatar = (character && character.avatar_path) || (activeChat && activeChat.avatar_path) || null;
   const personaName = (persona && persona.name) || '你';
   const exportUrl = activeId != null ? window.api.tavern.exportJsonl(activeId) : null;
 
@@ -1013,7 +1081,8 @@ export default function TavernApp() {
         ) : (
           <TavernChatArea
             history={history} running={running}
-            charName={charName} charInitial={charInitial} personaName={personaName}
+            saveId={activeId}
+            charName={charName} charInitial={charInitial} charAvatar={charAvatar} personaName={personaName}
             hasError={hasError} onRetry={onRetry}
           />
         )}
@@ -1030,6 +1099,8 @@ export default function TavernApp() {
               attachments={[]} removeAttachment={() => {}}
               showSlash={false} showPlus={false} showModel={false} showPerm={false}
               toggleSlash={() => {}} togglePlus={() => {}} toggleModel={() => {}} togglePerm={() => {}}
+              saveId={activeId != null ? String(activeId) : null}
+              imageGenKind="chat"
             />
           </div>
         )}

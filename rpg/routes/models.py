@@ -97,7 +97,7 @@ def _inject_capabilities(catalog: dict[str, Any]) -> dict[str, Any]:
 async def api_models(
     api_user: dict[str, Any] | None = Depends(get_current_user),
 ) -> JSONResponse:
-    from app import _redact_catalog, selected_model
+    from app import _redact_catalog, selected_model, _resolve_user_default_model_view
     from model_registry import load_catalog_for_user
     # 安全:每用户视图 = 全局菜单 + 该用户私有 overlay(同步模型 / 自建中转站)。
     _uid = int(api_user["id"]) if api_user and api_user.get("id") else None
@@ -105,11 +105,22 @@ async def api_models(
     is_admin = bool(api_user and api_user.get("role") == "admin")
     redacted = _redact_catalog(catalog, is_admin, user_id=_uid)
     enriched = _inject_capabilities(_inject_pricing(redacted))
+    # selected 必须是「该用户的 gm 偏好」(与 _get_gm 实际所用一致),否则前端 ModelPopover/底部标签
+    # 会用全局默认(常是用户没配 key 的 gemini)→ 表现为「当前模型莫名跳 gemini」。缺偏好才回退全局。
     return JSONResponse({
         "ok": True,
         "models": _inject_health(enriched),
-        "selected": selected_model(catalog),
+        "selected": _resolve_user_default_model_view(api_user, catalog) or selected_model(catalog),
     })
+
+
+# ModelPicker.jsx 调的是 /api/models/catalog（原来 404）,这里注册为 /api/models 的别名。
+# 直接复用同一个 handler,payload 完全相同。
+@router.get("/api/models/catalog")
+async def api_models_catalog(
+    api_user: dict[str, Any] | None = Depends(get_current_user),
+) -> JSONResponse:
+    return await api_models(api_user)
 
 
 @router.post("/api/models/health/refresh-all")
@@ -391,7 +402,12 @@ async def api_models_remote_sync(
     api = find_api(catalog, api_id) or {}
     default_api = default_api_for(api_id) or {}
     meta_api = {**default_api, **api}
-    base_url = (body or {}).get("base_url") or meta_api.get("base_url", "")
+    # 用户凭证里的 base_url_override 是「把内置 provider(如 OpenAI)指向自建中转站」的权威意图,
+    # 必须**优先**于 body / catalog 默认。否则:普通用户的 base_url 被 _redact_catalog 抹成空、
+    # 前端 body 传空 → 这里回退到 catalog 官方端点(api.openai.com),拿用户中转站的 key 打官方
+    # → 永远「不可访问」,拉到的也不是中转站的真实模型(用户反馈:拉取的模型不对)。
+    # 与生成路径一致(openai_compat.py 早已 base_url_override 优先)。base_url_override 在
+    # set_credential 落库时已做 SSRF 校验(强制公网 https),这里再校验一次也会通过。
     cred_base = ""
     try:
         from platform_app.user_credentials import get_credential
@@ -399,8 +415,7 @@ async def api_models_remote_sync(
         cred_base = (_cred or {}).get("base_url_override") or ""
     except Exception:
         cred_base = ""
-    if not base_url:
-        base_url = cred_base
+    base_url = cred_base or (body or {}).get("base_url") or meta_api.get("base_url", "")
     # SEC(H-2): body.base_url 由请求方控制,过去直接进 OpenAI client → SSRF 打内网/云元数据。
     # 解析 host→IP 校验,拒私网/保留地址(catalog/已存凭证的公网 base_url 会正常通过)。
     if base_url:

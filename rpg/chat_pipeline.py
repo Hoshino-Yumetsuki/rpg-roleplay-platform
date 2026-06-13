@@ -126,6 +126,22 @@ def _sync_active_entities_from_bundle(state, bundle) -> None:
     # 玩家始终第一位
     p = (state.data.get("player") or {})
     if p.get("name"):
+        # 玩家游戏内头像 = 所选角色卡(PC卡)的 avatar_path(绝非账户头像)。
+        # 老存档 player state 没存头像 → 用 source_id 一次性回查所选卡并写回,后续轮免查。
+        _player_avatar = p.get("avatar_path") or ""
+        if not _player_avatar and p.get("source_id"):
+            try:
+                from platform_app.db import connect as _connect
+                with _connect() as _db:
+                    _r = _db.execute(
+                        "select avatar_path from character_cards where id = %s",
+                        (int(p.get("source_id") or 0),),
+                    ).fetchone()
+                _player_avatar = ((_r.get("avatar_path") if _r else "") or "")
+                if _player_avatar:
+                    p["avatar_path"] = _player_avatar  # 写回 runtime player state,下轮免查
+            except Exception:
+                _player_avatar = ""
         active.append({
             "id": "player",
             "name": p["name"],
@@ -133,6 +149,7 @@ def _sync_active_entities_from_bundle(state, bundle) -> None:
             "disposition": "self",
             "source": "player",
             "card_id": "",
+            "avatar_path": _player_avatar,
         })
     for lyr in layers:
         if lyr.get("id") != "npc_cards":
@@ -149,6 +166,7 @@ def _sync_active_entities_from_bundle(state, bundle) -> None:
                 "source": (it.get("_source") or "context_inject"),
                 "card_id": nm,  # 用 name 做 card_id,前端可点开看卡
                 "identity": it.get("identity") or "",
+                "avatar_path": it.get("avatar_path") or "",
             })
     state.data["active_entities"] = active
 
@@ -1019,6 +1037,7 @@ async def run_gm_phase(
     # 重开/刷新后聊天记录里仍可见(酒馆沉浸:工具调用 + 思考流不该生成完就消失)。每轮开头清零。
     state.data["_turn_tool_ops"] = []
     state.data["_turn_reasoning"] = []
+    state.data["_turn_images_generated"] = 0  # Phase 1 生图门控：每轮重置自主生图计数器
 
     async for event in _bridge_sync_generator_to_async(
         lambda: gm.respond_stream_with_tools(
@@ -1081,15 +1100,19 @@ async def run_gm_phase(
                 pass
         elif etype == "tool_call":
             # R3/B4:小负载转发(tool 名 + args 摘要),供前端可折叠工具流;不淹没沉浸正文。
+            # anchor=本工具触发时已产出的正文长度 → 前端按它把工具内联到正文对应位置(Claude 风,
+            # 不再永远置顶)。len(response) 与前端累积的 content 长度一致(同一 token 流)。
             _t_args = _summarize_tool_args(event.get("arguments", {}))
+            _anchor = len(response)
             yield ("tool_call", {
                 "server_id": event.get("server_id", ""),
                 "tool": event.get("tool", ""),
                 "args_summary": _t_args,
+                "anchor": _anchor,
             })
             try:
                 state.data.setdefault("_turn_tool_ops", []).append({
-                    "tool": event.get("tool", ""), "args": _t_args,
+                    "tool": event.get("tool", ""), "args": _t_args, "anchor": _anchor,
                     "ok": None, "result": None, "error": None, "_pending": True,
                 })
             except Exception:

@@ -212,7 +212,10 @@ async def api_revoke_all_sessions(request: Request):
 # ------------------------------------------------------------
 #  PROFILE supplements
 # ------------------------------------------------------------
-_UPLOAD_ROOT = Path(__file__).resolve().parent.parent / "platform_data" / "avatars"
+# 头像落盘统一走 storage 模块（S1 基座）
+from .storage import AVATARS_DIR as _AVATARS_DIR
+from .storage import resolve_path as _storage_resolve_path
+from .storage import store_bytes as _storage_store_bytes
 
 
 @router.post("/api/profile/avatar")
@@ -225,13 +228,13 @@ async def api_upload_avatar(request: Request):
     ext = os.path.splitext(f.filename or "")[-1].lower()
     if ext not in {".png", ".jpg", ".jpeg", ".webp"}:
         return _bad("仅支持 PNG / JPG / WEBP")
-    _UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
-    safe_name = f"u{user['id']}_{int(time.time())}{ext}"
-    dest = _UPLOAD_ROOT / safe_name
     data = await f.read()
     if len(data) > 2 * 1024 * 1024:
         return _bad("文件超过 2 MB")
-    dest.write_bytes(data)
+    safe_name = f"u{user['id']}_{int(time.time())}{ext}"
+    # 落盘走 storage.store_bytes（统一根 AVATARS_DIR）
+    _storage_key, _new_url = _storage_store_bytes(data, kind="avatars", filename=safe_name)
+    # 对外 URL 仍用旧路径保持向后兼容，前端老 URL 不破
     avatar_url = f"/api/profile/avatar/file/{safe_name}"
     init_db()
     with connect() as db:
@@ -239,7 +242,56 @@ async def api_upload_avatar(request: Request):
             "update users set avatar_url = %s, updated_at = now() where id = %s",
             (avatar_url, user["id"]),
         )
+    # 登记 user_assets（失败只 log，不影响上传主流程）
+    try:
+        from platform_app.assets_registry import register_asset  # lazy import
+        _mime = (
+            "image/png" if ext == ".png"
+            else "image/jpeg" if ext in {".jpg", ".jpeg"}
+            else "image/webp"
+        )
+        register_asset(
+            user_id=int(user["id"]),
+            kind="avatar",
+            storage_key=f"avatars/{safe_name}",
+            url=avatar_url,
+            source="avatar_upload",
+            ref_kind="user",
+            ref_id=int(user["id"]),
+            mime=_mime,
+            size=len(data),
+        )
+    except Exception as _reg_exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "[frontend_routes] register_asset(avatar) failed user=%s: %s",
+            user["id"], _reg_exc,
+        )
     return json_response({"ok": True, "avatar_url": avatar_url})
+
+
+@router.post("/api/profile/avatar-url")
+async def api_set_avatar_url(request: Request):
+    """从图库 URL 设置个人头像（不重新上传，URL 已是合法资产）。
+
+    URL 前缀白名单：复用 _safe_avatar_path；非法 URL → 400。
+    """
+    from platform_app.user_cards import _safe_avatar_path
+
+    user = require_user(request)
+    body = await request.json()
+    raw_url = str(body.get("url") or "").strip()
+    safe_url = _safe_avatar_path(raw_url)
+    if not safe_url:
+        return json_response({"ok": False, "error": "不合法的图片 URL（仅允许站内资产路径）"}, status_code=400)
+
+    init_db()
+    with connect() as db:
+        db.execute(
+            "update users set avatar_url = %s, updated_at = now() where id = %s",
+            (safe_url, user["id"]),
+        )
+    return json_response({"ok": True, "url": safe_url})
 
 
 @router.post("/api/profile/avatar/reset")
@@ -252,11 +304,17 @@ async def api_reset_avatar(request: Request):
 
 
 @router.get("/api/profile/avatar/file/{name}")
-async def api_avatar_file(name: str):
+async def api_avatar_file(name: str, request: Request):
+    # 鉴权链接:必须登录(cookie)才能取图,未登录 → 401(同 /api/storage、/api/images/file)。
+    require_user(request)
     # Basic safety: only allow our generated naming pattern.
     if "/" in name or "\\" in name or name.startswith("."):
         raise HTTPException(404)
-    path = _UPLOAD_ROOT / name
+    # 服务改走 storage.resolve_path（统一根 AVATARS_DIR），老 URL 保持兼容
+    try:
+        path = _storage_resolve_path(f"avatars/{name}")
+    except ValueError:
+        raise HTTPException(404)
     if not path.exists():
         raise HTTPException(404)
     return FileResponse(str(path))

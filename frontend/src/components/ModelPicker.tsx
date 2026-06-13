@@ -1,71 +1,97 @@
 // @ts-nocheck
 import React from 'react';
-import { getCaps, normalizeProviderId } from './catalog-helpers';
+import { getCaps } from './catalog-helpers';
 
 /**
- * ModelPicker — Wave 11-D
+ * ModelPicker — Wave 11-D (Phase 0 revision)
  *
  * props:
- *   value    : string                              当前 model id
- *   onChange : (model_id: string, provider: ProviderId) => void
- *   filter?  : { capability?: keyof ModelCapabilities, kind?: "chat"|"embedding" }
+ *   value    : string                              当前 model real_name
+ *   onChange : (real_name: string, api_id: string) => void
+ *   filter?  : { capability?: string, kind?: "chat"|"embedding" }
  *
- * 拉 /api/models/catalog，5 分钟内存缓存。
- * 按 ProviderId 分组，顶部 capability filter chip，弃用 model 划线警告，
+ * 拉 GET /api/models（window.api.models.list()），5 分钟内存缓存。
+ * 按 api_id 分组（后端 canonical：vertex_ai / openai / anthropic 等）。
+ * 顶部 capability filter chip，弃用 model 划线警告，
  * pricing + context window + source 标注。
  * 选中态 cyan border，搜索框 fuzzy。
  */
 
-// typed import — Wave 11-D (barrel index.ts in @/types/rust/catalog/)
-// import type { ModelInfo, ProviderId, ModelCapabilities, CatalogSource } from "@/types/rust/catalog/";
-
-// ── 5 分钟内存缓存 ────────────────────────────────────────────────────────────
-/** @type {{ data: ModelInfo[] | null, ts: number }} */
-const _cache = { data: null, ts: 0 };
+// ── 5 分钟内存缓存 ─────────────────────────────────────────────────────────────
+// 缓存后端 /api/models 完整响应（含 apis 嵌套结构 + selected）
+/** @type {{ resp: object | null, ts: number }} */
+const _cache = { resp: null, ts: 0 };
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * 拉 GET /api/models，返回完整响应对象。
+ * 形状：{ok, models:{apis:[{id, display_name, kind, enabled, models:[...]}]}, selected:{...}}
+ */
 async function fetchCatalog() {
   const now = Date.now();
-  if (_cache.data && now - _cache.ts < CACHE_TTL_MS) return _cache.data;
+  if (_cache.resp && now - _cache.ts < CACHE_TTL_MS) return _cache.resp;
   try {
-    const res = await (window.api && window.api.models && window.api.models.catalog
-      ? window.api.models.catalog()
-      : fetch('/api/models/catalog', { credentials: 'include' }).then((r) => r.json()));
-    const arr = res && Array.isArray(res.models) ? res.models : [];
-    _cache.data = arr;
+    const res = await (window.api && window.api.models && window.api.models.list
+      ? window.api.models.list()
+      : fetch('/api/models', { credentials: 'include' }).then((r) => r.json()));
+    _cache.resp = res || {};
     _cache.ts = now;
-    return arr;
+    return _cache.resp;
   } catch (_) {
-    return _cache.data || [];
+    return _cache.resp || {};
   }
 }
 
-// ── Provider 显示名 ───────────────────────────────────────────────────────────
+/**
+ * 从完整响应中提取扁平化的 [{apiId, apiLabel, model}] 列表，
+ * model 形如 {id, real_name, display_name, enabled, capabilities}。
+ */
+function extractEntries(resp) {
+  const apis = (resp && resp.models && Array.isArray(resp.models.apis))
+    ? resp.models.apis
+    : (Array.isArray(resp && resp.apis) ? resp.apis : []);
+  const entries = [];
+  for (const api of apis) {
+    const apiId = api.id || api.api_id || '';
+    const apiLabel = api.display_name || api.name || apiId;
+    const models = Array.isArray(api.models) ? api.models : [];
+    for (const m of models) {
+      entries.push({ apiId, apiLabel, model: m });
+    }
+  }
+  return entries;
+}
+
+// ── Provider 正规化：后端 canonical → 显示名 ────────────────────────────────
+// canonical id 来自后端（小写，如 vertex_ai / openai / anthropic）
+// 直接用 api.id（后端给什么用什么），这里只定义显示名映射。
 const PROVIDER_LABELS = {
-  OpenAI: 'OpenAI',
-  Anthropic: 'Anthropic',
-  GoogleAIStudio: 'Google AI Studio',
-  AgentPlatform: 'Agent Platform',
-  OpenRouter: 'OpenRouter',
-  DeepSeek: 'DeepSeek',
-  XAi: 'xAI',
-  XiaomiMimo: 'MiMo',
-  AlibabaQwen: 'Qwen',
-  TencentHunyuan: 'Hunyuan',
+  vertex_ai:    'Vertex AI',
+  openai:       'OpenAI',
+  anthropic:    'Anthropic',
+  deepseek:     'DeepSeek',
+  dashscope:    'Qwen (DashScope)',
+  doubao:       '豆包 (Doubao)',
+  hunyuan:      '混元 (Hunyuan)',
+  minimax:      'MiniMax',
+  siliconflow:  'SiliconFlow',
+  openrouter:   'OpenRouter',
+  xiaomi_mimo:  'MiMo',
 };
 
-// 固定分组顺序
+// 固定分组顺序（后端 canonical api id）
 const PROVIDER_ORDER = [
-  'Anthropic',
-  'OpenAI',
-  'GoogleAIStudio',
-  'AgentPlatform',
-  'OpenRouter',
-  'DeepSeek',
-  'XAi',
-  'XiaomiMimo',
-  'AlibabaQwen',
-  'TencentHunyuan',
+  'anthropic',
+  'openai',
+  'vertex_ai',
+  'deepseek',
+  'dashscope',
+  'doubao',
+  'hunyuan',
+  'minimax',
+  'siliconflow',
+  'openrouter',
+  'xiaomi_mimo',
 ];
 
 // ── Capability filter chip 定义 ───────────────────────────────────────────────
@@ -295,29 +321,31 @@ if (typeof document !== 'undefined' && !document.getElementById(MP_STYLE_ID)) {
 /**
  * @param {{
  *   value: string,
- *   onChange: (model_id: string, provider: ProviderId) => void,
- *   filter?: { capability?: keyof ModelCapabilities, kind?: "chat"|"embedding" }
+ *   onChange: (real_name: string, api_id: string) => void,
+ *   filter?: { capability?: string, kind?: "chat"|"embedding" }
  * }} props
+ *
+ * value / onChange 均使用 real_name（后端 model_entries.real_name），
+ * 即 m.real_name || m.id（两者在后端等价）。
  */
 function ModelPicker({ value, onChange, filter }) {
   const { useState, useEffect, useMemo } = React;
 
-  const [models, setModels] = useState(/** @type {ModelInfo[]} */ ([]));
+  // entries: [{apiId, apiLabel, model}]
+  const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [capFilter, setCapFilter] = useState(
-    /** @type {keyof ModelCapabilities | null} */ (
-      filter && filter.capability ? filter.capability : null
-    ),
+    (filter && filter.capability) ? filter.capability : null
   );
 
   // 首次加载 catalog
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetchCatalog().then((data) => {
+    fetchCatalog().then((resp) => {
       if (!alive) return;
-      setModels(data);
+      setEntries(extractEntries(resp));
       setLoading(false);
     });
     return () => {
@@ -325,51 +353,50 @@ function ModelPicker({ value, onChange, filter }) {
     };
   }, []);
 
-  // Wave 11.5-A: 通过 catalog-helpers.getCaps 归一化,兼容老 array shape。
-  const _getCaps = getCaps;
-
   // 应用 filter prop 的 capability + kind
   const baseFiltered = useMemo(() => {
-    let list = models;
+    let list = entries;
     if (filter && filter.kind === 'embedding') {
-      list = list.filter((m) => _getCaps(m).includes('embedding'));
+      list = list.filter(({ model: m }) => getCaps(m).includes('embedding'));
     } else if (filter && filter.kind === 'chat') {
-      list = list.filter((m) => !_getCaps(m).includes('embedding'));
+      list = list.filter(({ model: m }) => !getCaps(m).includes('embedding'));
     }
     return list;
-  }, [models, filter]);
+  }, [entries, filter]);
 
   // 应用 capability chip + 搜索
   const displayed = useMemo(() => {
     let list = baseFiltered;
     if (capFilter) {
-      list = list.filter((m) => _getCaps(m).includes(capFilter));
+      list = list.filter(({ model: m }) => getCaps(m).includes(capFilter));
     }
     if (search.trim()) {
       const q = search.trim();
-      list = list.filter((m) => fuzzyMatch(m.id, q) || fuzzyMatch(m.display_name || '', q));
+      list = list.filter(({ model: m }) =>
+        fuzzyMatch(m.real_name || m.id || '', q) ||
+        fuzzyMatch(m.id || '', q) ||
+        fuzzyMatch(m.display_name || '', q)
+      );
     }
     return list;
   }, [baseFiltered, capFilter, search]);
 
-  // 按 provider 分组
-  // Wave 11.5-A: 老 catalog 数据可能带 "vertex"/"vertex_ai",normalize 到 "AgentPlatform"。
-  const _normProvider = normalizeProviderId;
+  // 按 api_id 分组（后端 canonical id，小写）
   const grouped = useMemo(() => {
     const map = {};
-    for (const m of displayed) {
-      const p = _normProvider(m.provider) || 'Unknown';
-      if (!map[p]) map[p] = [];
-      map[p].push(m);
+    const labelMap = {};
+    for (const { apiId, apiLabel, model } of displayed) {
+      const key = apiId || 'unknown';
+      if (!map[key]) { map[key] = []; labelMap[key] = apiLabel; }
+      map[key].push(model);
     }
     // 按固定顺序排列，再追加未知 provider
     const result = [];
     for (const p of PROVIDER_ORDER) {
-      if (map[p] && map[p].length > 0) result.push({ provider: p, models: map[p] });
+      if (map[p] && map[p].length > 0) result.push({ apiId: p, label: labelMap[p], models: map[p] });
     }
     for (const p of Object.keys(map)) {
-      if (!PROVIDER_ORDER.includes(p) && map[p].length > 0)
-        result.push({ provider: p, models: map[p] });
+      if (!PROVIDER_ORDER.includes(p) && map[p].length > 0) result.push({ apiId: p, label: labelMap[p], models: map[p] });
     }
     return result;
   }, [displayed]);
@@ -442,54 +469,46 @@ function ModelPicker({ value, onChange, filter }) {
       {/* 模型列表 */}
       <div className="mp-list">
         {loading && <div className="mp-loading">加载模型目录…</div>}
-        {!loading && grouped.length === 0 && <div className="mp-empty">没有符合条件的模型</div>}
-        {!loading &&
-          grouped.map(({ provider, models: grpModels }) => (
-            <div key={provider}>
-              <div className="mp-group-head">
-                {PROVIDER_LABELS[provider] || provider}
-                <span
-                  style={{
-                    color: 'var(--muted-3,#4d4842)',
-                    fontWeight: 'normal',
-                    textTransform: 'none',
-                    letterSpacing: 0,
-                  }}
+        {!loading && grouped.length === 0 && (
+          <div className="mp-empty">没有符合条件的模型</div>
+        )}
+        {!loading && grouped.map(({ apiId, label, models: grpModels }) => (
+          <div key={apiId}>
+            <div className="mp-group-head">
+              {PROVIDER_LABELS[apiId] || label || apiId}
+              <span style={{ color: 'var(--muted-3,#4d4842)', fontWeight: 'normal', textTransform: 'none', letterSpacing: 0 }}>
+                {grpModels.length}
+              </span>
+            </div>
+            {grpModels.map((m) => {
+              const realName = m.real_name || m.id || '';
+              const isSelected = realName === value || m.id === value;
+              const isDeprecated = !!m.deprecated_at;
+              return (
+                <div
+                  key={realName || m.id}
+                  className={
+                    'mp-model-row' +
+                    (isSelected ? ' mp-selected' : '') +
+                    (isDeprecated ? ' mp-deprecated' : '')
+                  }
+                  onClick={() => onChange && onChange(realName, apiId)}
+                  title={isDeprecated && m.retiring_at
+                    ? `已弃用。停服时间: ${m.retiring_at}`
+                    : isDeprecated ? '已弃用'
+                    : realName}
                 >
-                  {grpModels.length}
-                </span>
-              </div>
-              {grpModels.map((m) => {
-                const isSelected = m.id === value;
-                const isDeprecated = !!m.deprecated_at;
-                return (
-                  <div
-                    key={m.id}
-                    className={
-                      'mp-model-row' +
-                      (isSelected ? ' mp-selected' : '') +
-                      (isDeprecated ? ' mp-deprecated' : '')
-                    }
-                    onClick={() => onChange && onChange(m.id, m.provider)}
-                    title={
-                      isDeprecated && m.retiring_at
-                        ? `已弃用。停服时间: ${m.retiring_at}`
-                        : isDeprecated
-                          ? '已弃用'
-                          : m.id
-                    }
-                  >
-                    {/* 名称 + id + deprecated 警告 */}
-                    <div className="mp-model-cell">
-                      <span className="mp-model-name">{m.display_name || m.id}</span>
-                      <span className="mp-model-id">{m.id}</span>
-                      {isDeprecated && (
-                        <span className="mp-deprecated-tag">
-                          弃用于 {m.deprecated_at}
-                          {m.retiring_at && ` · 停服 ${m.retiring_at}`}
-                        </span>
-                      )}
-                    </div>
+                  {/* 名称 + real_name + deprecated 警告 */}
+                  <div className="mp-model-cell">
+                    <span className="mp-model-name">{m.display_name || realName}</span>
+                    <span className="mp-model-id">{realName}</span>
+                    {isDeprecated && (
+                      <span className="mp-deprecated-tag">
+                        弃用于 {m.deprecated_at}
+                        {m.retiring_at && ` · 停服 ${m.retiring_at}`}
+                      </span>
+                    )}
+                  </div>
 
                     {/* pricing */}
                     <div className="mp-price-cell">

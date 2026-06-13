@@ -34,14 +34,40 @@ class FrontendGateWiring(unittest.TestCase):
         for ln in resolve_lines:
             self.assertIn("authed", ln, f"resolve 行必须传 authed：{ln.strip()}")
 
-    def test_platform_html_gates_on_authed(self):
-        src = (FRONTEND / "Platform.html").read_text(encoding="utf-8")
-        self.assertIn("info.authed", src, "Platform.html 必须用 info.authed 判断")
+    def test_authenticated_loader_does_not_fall_back_to_mock_data(self):
+        src = (FRONTEND / "src" / "data-loader.js").read_text(encoding="utf-8")
+        self.assertIn("emptyPlatformFallback", src)
+        self.assertIn("emptyGameStateFallback", src)
+        self.assertIn("useDesignerFallback", src)
+        self.assertIn("const allowMockFallback = !window.api || useDesignerFallback();", src)
+        self.assertIn(
+            "const merged = allowMockFallback ? deepCopy(BASELINE.state) : emptyGameStateFallback();",
+            src,
+            "登录态 /api/state partial merge 必须用空骨架，不能用 mock baseline",
+        )
+        self.assertIn("Object.assign(platform, emptyPlatformFallback(platform));", src)
+        self.assertIn("catch (e) { platform.scripts = []; }", src)
+        self.assertIn("catch (e) { platform.saves = []; }", src)
+        self.assertIn("catch (e) { platform.recent_assets = []; }", src)
+
+    def test_game_console_title_mock_only_for_anonymous_preview(self):
+        src = (FRONTEND / "src" / "game-app.jsx").read_text(encoding="utf-8")
+        self.assertIn("allowMockTitle", src)
+        self.assertIn("window.RPG_AUTH && window.RPG_AUTH.authed", src)
+        self.assertIn("window.MOCK_NOVEL && window.MOCK_NOVEL.script_title", src)
+
+    def test_platform_entry_gates_on_authed(self):
+        html = (FRONTEND / "Platform.html").read_text(encoding="utf-8")
+        src = (FRONTEND / "src" / "entries" / "platform.jsx").read_text(encoding="utf-8")
+        self.assertIn("src/entries/platform.jsx", html)
+        self.assertIn("info.authed", src, "Platform entry 必须用 info.authed 判断")
         self.assertIn("Login.html", src, "未登录必须跳 Login.html")
         self.assertIn("offline", src, "?offline=1 设计预览旁路必须保留")
 
-    def test_game_console_html_gates_on_authed(self):
-        src = (FRONTEND / "Game Console.html").read_text(encoding="utf-8")
+    def test_game_console_entry_gates_on_authed(self):
+        html = (FRONTEND / "Game Console.html").read_text(encoding="utf-8")
+        src = (FRONTEND / "src" / "entries" / "game-console.jsx").read_text(encoding="utf-8")
+        self.assertIn("src/entries/game-console.jsx", html)
         self.assertIn("info.authed", src)
         self.assertIn("Login.html", src)
 
@@ -55,7 +81,9 @@ class FrontendGateWiring(unittest.TestCase):
         src = (FRONTEND / "src" / "platform-app.jsx").read_text(encoding="utf-8")
         # 安全：必须有开放重定向防护
         self.assertIn("__nextOrDefault", src)
-        self.assertRegex(src, r"\[a-z\]\[a-z0-9\+\.\\-\]\*:|\^\\/\\/", "next= 必须拒绝绝对 URL/协议相对 URL")
+        self.assertIn("new URL(raw, location.href)", src)
+        self.assertIn("u.origin !== location.origin", src, "next= 必须拒绝跨源 URL")
+        self.assertIn("u.pathname + u.search + u.hash", src)
 
 
 class BackendAnonContract(unittest.TestCase):

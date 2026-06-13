@@ -29,6 +29,8 @@ import './markdown-render.css';
 // ── inline 解析 ─────────────────────────────────────────────
 // 顺序很重要: 长 token 在前
 const INLINE_RULES = [
+  // 图片 ![alt](url) 必须在链接规则之前
+  { re: /!\[([^\]\n]*?)\]\(([^)\s]+)\)/g, tag: 'img' },
   { re: /\*\*([^*\n]+?)\*\*/g, tag: 'strong' },
   { re: /__([^_\n]+?)__/g, tag: 'strong' },
   { re: /~~([^~\n]+?)~~/g, tag: 'del' },
@@ -55,6 +57,41 @@ function safeUrl(url) {
   return cleaned;
 }
 
+// 图片只放行「站内资产」相对路径(生图/存储/头像)。
+// AI 输出的正文可能含 ![](url)；若放任外链会被诱导渲染追踪像素(泄露 IP)或 data: 注入，
+// 故只允许 /api/storage、/api/images、/api/profile/avatar 前缀，其余降级为文本。
+function safeImageUrl(url) {
+  const cleaned = safeUrl(url);
+  if (!cleaned) return null;
+  return /^\/api\/(storage|images|profile\/avatar)\//.test(cleaned) ? cleaned : null;
+}
+
+// 内联图片 + 点击全屏 lightbox。背景用 <span>(fixed 覆盖) 以免在 <p> 内嵌套 <div> 破坏 HTML。
+function MarkdownImage({ src, alt }) {
+  const [open, setOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [open]);
+  return React.createElement(
+    React.Fragment, null,
+    React.createElement("img", {
+      src, alt: alt || "", className: "rpg-md__img", loading: "lazy", decoding: "async",
+      onClick: () => setOpen(true),
+    }),
+    open && React.createElement(
+      "span", { className: "mlb-backdrop", onClick: () => setOpen(false), role: "dialog", "aria-modal": "true" },
+      React.createElement("img", {
+        src, alt: alt || "",
+        style: { maxWidth: "92vw", maxHeight: "90vh", objectFit: "contain", borderRadius: 10, boxShadow: "0 12px 60px rgba(0,0,0,.7)" },
+        onClick: (e) => e.stopPropagation(),
+      })
+    )
+  );
+}
+
 function renderInline(text, keyPrefix) {
   // 找出所有 match,按位置排序,non-overlap
   const hits = [];
@@ -67,7 +104,7 @@ function renderInline(text, keyPrefix) {
         end: m.index + m[0].length,
         tag: rule.tag,
         text: m[1],
-        href: rule.tag === 'a' ? m[2] : null,
+        href: (rule.tag === 'a' || rule.tag === 'img') ? m[2] : null,
       });
     }
   });
@@ -106,6 +143,14 @@ function renderInline(text, keyPrefix) {
       } else {
         // 不安全 scheme(javascript:/data: 等)→ 降级为纯文本,绝不进 href
         out.push(h.text);
+      }
+    } else if (h.tag === "img") {
+      const isrc = safeImageUrl(h.href);
+      if (isrc) {
+        out.push(React.createElement(MarkdownImage, { key: k, src: isrc, alt: h.text || "" }));
+      } else {
+        // 非站内资产 → 降级为 alt 文本，绝不渲染外链 img
+        out.push(h.text || "");
       }
     } else {
       out.push(React.createElement(h.tag, { key: k }, h.text));

@@ -111,6 +111,35 @@ def commit_state(row: dict[str, Any]) -> dict[str, Any]:
     return {"history": [], "turn": 0}
 
 
+def tavern_card_cols(state: dict[str, Any]) -> tuple[int | None, int | None]:
+    """从 state_snapshot 抽出酒馆角色/persona 卡 id,用于把 game_saves 的
+    tavern_character_card_id / tavern_persona_card_id 列与 state JSON 对齐。
+
+    背景:LLM 工具 set_tavern_character / set_tavern_persona / import_character_card
+    只 mutate state.data['tavern'](单写者铁律),不裸写列。单写者(record_runtime_turn /
+    persist_runtime_state)持久化 state_snapshot 时,顺带把这两个列同步过来 —— 否则列保持
+    create 时的初值(空起手对话为 NULL),而 JSON 已是新卡 id,导致走列的读卡路径 404。
+
+    只返回**有值**的 id(int);缺失/非整数返回 None,调用方用 COALESCE(%s, 旧列) 落库,
+    故非酒馆存档(无 tavern 块)与字段缺失时绝不把已有列清成 NULL。"""
+    if not isinstance(state, dict):
+        return (None, None)
+    tav = state.get("tavern")
+    if not isinstance(tav, dict):
+        return (None, None)
+
+    def _as_id(v: Any) -> int | None:
+        if v is None:
+            return None
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            return None
+        return iv if iv > 0 else None
+
+    return (_as_id(tav.get("character_card_id")), _as_id(tav.get("persona_card_id")))
+
+
 def _snapshot_quality(state: dict[str, Any]) -> int:
     if not isinstance(state, dict):
         return 0

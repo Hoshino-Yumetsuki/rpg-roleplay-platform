@@ -30,6 +30,19 @@ def _is_retryable_openai(exc: Exception) -> bool:
     return False
 
 
+def _is_temperature_rejected(exc: Exception) -> bool:
+    """provider 拒绝自定义 temperature(如 moonshot kimi 部分模型「only 1 is allowed for
+    this model」、openai o-series/gpt-5 reasoning 只接受 temperature=1)。这类是 400
+    BadRequest 且报错文本点名 temperature —— 据此自愈:去掉 temperature 用模型默认重试。"""
+    try:
+        from openai import BadRequestError
+        if not isinstance(exc, BadRequestError):
+            return False
+    except ImportError:
+        return False
+    return "temperature" in str(exc).lower()
+
+
 class _OpenAICompatBackend:
     """适配所有 OpenAI 兼容的 provider，只需要 base_url + env_key + model 名。"""
 
@@ -42,6 +55,31 @@ class _OpenAICompatBackend:
     # 类级状态：记录已经验证过不支持 native tools 的 (api_id, model) 组合，
     # 同一进程内之后直接走 text marker 不再重试
     _unsupported_combos: set[tuple[str, str]] = set()
+
+    # 类级状态：记录拒绝自定义 temperature(只接受默认/=1)的 (api_id, model) 组合，
+    # 同一进程内之后直接不发 temperature。见 _create / _is_temperature_rejected。
+    _fixed_temp_combos: set[tuple[str, str]] = set()
+
+    def _create(self, **kwargs):
+        """self.client.chat.completions.create 的包装,带 temperature 自愈。
+
+        moonshot kimi 部分模型 / openai o-series 等「只允许 temperature=1」,平台默认发
+        0.9/0.1 会被 400 拒(原表现:整轮失败,用户只见随机错误码)。这里首次被拒后去掉
+        temperature 用模型默认重试**并记忆**,本进程同 (api_id, model) 后续直接不发 →
+        当轮即成功,不再失败。stream=True 时请求在 create() 即发出,400 也在此抛,可拦。
+        """
+        combo = (self.api_id, self.model_name)
+        if combo in self._fixed_temp_combos:
+            kwargs.pop("temperature", None)
+        try:
+            return self.client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            if "temperature" in kwargs and _is_temperature_rejected(exc):
+                self._fixed_temp_combos.add(combo)
+                kwargs.pop("temperature", None)
+                log.info(f"[GM] {self.api_id}/{self.model_name} 拒绝自定义 temperature → 用模型默认重试")
+                return self.client.chat.completions.create(**kwargs)
+            raise
 
     def __init__(self, model: str, base_url: str, env_key: str, display_kind: str = "openai_compat",
                  user_id: int | None = None, api_id: str | None = None):
@@ -68,14 +106,27 @@ class _OpenAICompatBackend:
         # 读超时原 120s 太紧:长回合(deepseek-v4-pro 等)常被中途切断浪费 token。
         # 提到 300s,可用 RPG_GM_TIMEOUT 调。
         _read_to = float(_os.environ.get("RPG_GM_TIMEOUT", "300"))
+        # 出站代理:用户在凭据里配的 proxy URL。**仅本地模式(非 require_auth)才真正使用** ——
+        # 托管多用户后端永不使用用户 proxy(防 SSRF:代理合法地可指向 127.0.0.1,无法用「禁私网」
+        # 校验拦截;故把使用面收窄到自托管单用户场景)。本地梯子用户选「HTTP 代理」即生效。
+        _proxy = (result.get("proxy") or "").strip()
+        _client_kwargs: dict[str, Any] = {
+            "timeout": httpx.Timeout(_read_to, connect=10.0), "follow_redirects": False,
+        }
+        if _proxy and not byok_only:
+            _client_kwargs["proxy"] = _proxy
+            log.info(f"[GM] {display_kind} 出站走用户代理 {_proxy}")
+        # 覆盖 openai SDK 默认 UA(`OpenAI/Python x.y.z`)→ 浏览器 UA。否则挂在 Cloudflare 后的
+        # 中转站会按 UA 用 WAF 把它当 AI 爬虫拦掉(403「Your request was blocked」/ error 1010),
+        # 导致这类中转站聊天/校验/拉取模型全部「不可访问」。详见 core.outbound_ua(已实测)。
+        from core.outbound_ua import openai_default_headers
         kwargs: dict[str, Any] = {
             "api_key": key,
             "timeout": httpx.Timeout(_read_to, connect=10.0),
+            "default_headers": openai_default_headers(),
             # SEC(H-5): OpenAI SDK 默认 follow_redirects=True → base_url_override(admin/local 可设)
             # 配合 301 可把携 api_key 的请求重定向到内网/元数据。自带不跟随重定向的 http_client。
-            "http_client": httpx.Client(
-                timeout=httpx.Timeout(_read_to, connect=10.0), follow_redirects=False,
-            ),
+            "http_client": httpx.Client(**_client_kwargs),
         }
         if effective_base:
             kwargs["base_url"] = effective_base
@@ -120,7 +171,7 @@ class _OpenAICompatBackend:
         _reasoning = self._reasoning_param()  # task 141
         for attempt in range(_MAX_RETRIES + 1):
             try:
-                resp = self.client.chat.completions.create(
+                resp = self._create(
                     model=self.model_name,
                     messages=self._to_messages(system, messages),
                     max_tokens=max_tokens,
@@ -195,7 +246,7 @@ class _OpenAICompatBackend:
 
     def call_structured(self, system: str, messages: list[dict], max_tokens: int) -> str:
         sys_text = (system or "") + "\n\n你必须只返回合法 JSON，不能包含 Markdown 代码围栏或解释文字。"
-        resp = self.client.chat.completions.create(
+        resp = self._create(
             model=self.model_name,
             messages=self._to_messages(sys_text, messages),
             max_tokens=max_tokens,
@@ -213,7 +264,7 @@ class _OpenAICompatBackend:
     def stream(self, system: str, messages: list[dict], max_tokens: int) -> Iterator[str]:
         _reasoning = self._reasoning_param()  # task 141
         finish_reason: str | None = None
-        stream = self.client.chat.completions.create(
+        stream = self._create(
             model=self.model_name,
             messages=self._to_messages(system, messages),
             max_tokens=max_tokens,
@@ -271,7 +322,10 @@ class _OpenAICompatBackend:
 
         sep = "__"
         from core.config import tiered_tools_enabled as _tiered_enabled
-        _WINDOW = 64  # 直接进 tools 数组的窗口大小(provider 工具数上限的保守值)
+        from core.config import tool_window_size as _tool_window
+        # 窗口外工具进 load_tools 目录按需加载(见 _tiered.py)。默认 16(原硬编码 64 → 91 个
+        # 工具里 64 个仍每轮全发 ≈ 6.7k token,阶梯化形同虚设;收到 16 后每轮工具 token 大降)。
+        _WINDOW = _tool_window()
 
         def _mk_openai_tool(t):
             """unified tool → OpenAI function 定义;无效(缺 sid/name)返回 None。"""
@@ -353,7 +407,7 @@ class _OpenAICompatBackend:
             finish_reason: str | None = None
             try:
                 _reasoning = self._reasoning_param()  # task 141
-                stream = self.client.chat.completions.create(
+                stream = self._create(
                     model=self.model_name,
                     messages=oai_messages,
                     max_tokens=max_tokens,

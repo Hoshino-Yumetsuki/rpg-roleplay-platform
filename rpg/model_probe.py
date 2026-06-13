@@ -336,7 +336,10 @@ def _list_openai_compat_models(api: dict[str, Any], user_id: int | None = None) 
         raise RuntimeError("openai SDK 未安装") from exc
     key = _resolve_provider_key(api, user_id)
     base_url = api.get("base_url") or None
-    kwargs: dict[str, Any] = {"api_key": key}
+    # 覆盖 openai SDK 默认 UA → 浏览器 UA,否则 Cloudflare 后的中转站会按 UA 拦掉(WAF 当 AI 爬虫),
+    # 表现为「拉取模型/校验连接不可访问」。详见 core.outbound_ua。
+    from core.outbound_ua import openai_default_headers
+    kwargs: dict[str, Any] = {"api_key": key, "default_headers": openai_default_headers()}
     if base_url:
         kwargs["base_url"] = base_url
     client = OpenAI(**kwargs)
@@ -720,6 +723,18 @@ def get_capabilities(api_id: str, model_real_name: str, catalog_override: list[s
     if _infer_embedding_capability(model_real_name) and "embedding" not in seen:
         out.append("embedding")
         seen.add("embedding")
+    # image_gen heuristic — 模型名含图像生成关键词时自动标记
+    _IMAGE_GEN_PATTERNS = (
+        "imagen", "seedream", "wanx",
+        "dall-e", "dalle",
+        "flux",
+        "stable-diffusion", "sd3",
+        "image",
+    )
+    _name_lower = (model_real_name or "").lower()
+    if "image_gen" not in seen and any(pat in _name_lower for pat in _IMAGE_GEN_PATTERNS):
+        out.append("image_gen")
+        seen.add("image_gen")
     # 默认值 — embedding 模型不应回到 text+streaming
     if not out:
         return ["text", "streaming"]

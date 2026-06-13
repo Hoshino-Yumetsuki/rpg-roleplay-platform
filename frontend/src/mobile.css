@@ -661,6 +661,13 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .m-root .confirm-zone { flex: none; padding: 4px 12px 6px; position: relative; z-index: 5; }
 .m-root .confirmbar { flex: none; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden; box-shadow: 0 6px 22px rgba(0,0,0,0.3); }
 .m-root .cb-head { padding: 9px 13px; font: 600 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--warn); display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--line-soft); background: var(--warn-soft); }
+/* GM 询问折叠抽屉:头部点击 toggle + 箭头旋转 + body max-height 过渡 */
+.m-root .cb-toggle { width: 100%; justify-content: space-between; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.m-root .cb-head-l { display: flex; align-items: center; gap: 6px; }
+.m-root .cb-chev { display: inline-flex; color: var(--warn); transition: transform .3s var(--ease); transform: rotate(0deg); }
+.m-root .cb-chev.open { transform: rotate(180deg); }
+.m-root .cb-body { max-height: 60vh; overflow: hidden; transition: max-height .34s var(--ease), opacity .22s var(--ease); opacity: 1; }
+.m-root .cb-body.collapsed { max-height: 0; opacity: 0; }
 .m-root .cb-q, .m-root .cb-w { padding: 12px 13px; border-bottom: 1px solid var(--line-soft); }
 .m-root .cb-q:last-child, .m-root .cb-w:last-child { border-bottom: 0; }
 .m-root .cb-q-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
@@ -1590,4 +1597,50 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   width: 1px !important; height: 1px !important;
   opacity: 0 !important; display: block !important;
   overflow: hidden; pointer-events: none; z-index: -1;
+}
+
+/* ── 角色卡头像图片 (Agent D: 移动端图片支持) ─────────────────────── */
+
+/* 卡网格 .av 区域图片模式 */
+.m-root .pl-charcard .mc-card-av-wrap {
+  height: 92px; overflow: hidden; display: block; position: relative;
+}
+.m-root .pl-charcard .mc-card-av-img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  position: absolute; inset: 0; flex-shrink: 0;
+}
+.m-root .pl-charcard .mc-card-av-letter {
+  width: 100%; height: 100%; position: absolute; inset: 0;
+  display: grid; place-items: center;
+  font: 600 34px var(--font-serif); color: inherit;
+}
+
+/* CardAv 组件内联用图 (detail / editor 预览) */
+.m-root .mc-card-av-img {
+  width: 100%; height: 100%; object-fit: cover; display: block; flex-shrink: 0;
+  border-radius: inherit;
+}
+
+/* ViewOverview Hero 头像 56px — img 路径 */
+.m-root img.mc-me-avatar {
+  width: 56px; height: 56px; border-radius: 16px; flex-shrink: 0;
+  object-fit: cover; display: block;
+}
+/* 无图 div 回退 */
+.m-root div.mc-me-avatar {
+  width: 56px; height: 56px; border-radius: 16px; flex-shrink: 0;
+  background: var(--accent); color: #fff8f3;
+  font: 600 24px var(--font-serif); display: grid; place-items: center;
+}
+
+/* ViewEdit 头像预览 64px — img 路径 */
+.m-root img.mc-me-avatar-edit {
+  width: 64px; height: 64px; border-radius: 18px; flex-shrink: 0;
+  object-fit: cover; display: block;
+}
+/* 无图 div 回退 */
+.m-root div.mc-me-avatar-edit {
+  width: 64px; height: 64px; border-radius: 18px; flex-shrink: 0;
+  background: var(--accent); color: #fff8f3;
+  font: 600 28px var(--font-serif); display: grid; place-items: center;
 }

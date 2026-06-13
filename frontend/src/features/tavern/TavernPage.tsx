@@ -707,6 +707,7 @@ export default function TavernPage() {
   /* ── 派生 ──────────────────────────────────────────────────────── */
   const charName = (character && character.name) || (activeChat && activeChat.character_name) || '角色';
   const charInitial = charName.trim().slice(0, 1);
+  const charAvatar = (character && character.avatar_path) || (activeChat && activeChat.avatar_path) || null;
   const personaName = (persona && persona.name) || '你';
   const exportUrl = activeId != null ? window.api.tavern.exportJsonl(activeId) : null;
 
@@ -910,7 +911,7 @@ export default function TavernPage() {
 
             <TavernChatArea
               history={history} running={running} saveId={activeId}
-              charName={charName} charInitial={charInitial} personaName={personaName}
+              charName={charName} charInitial={charInitial} charAvatar={charAvatar} personaName={personaName}
               hasError={hasError} onRetry={onRetry}
               lastMeta={lastMeta} elapsedLabel={running ? fmtElapsed(elapsedMs) : null}
             />

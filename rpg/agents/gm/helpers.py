@@ -88,7 +88,17 @@ def _format_tools_for_prompt(tools: list[dict[str, Any]]) -> str:
     """
     if not tools:
         return ""
-    lines = ["", "【本轮可用 MCP 工具清单】"]
+    lines = [
+        "",
+        "【工具调用·正文铁律(text-marker 路径)】",
+        "调用工具(<<TOOL_CALL>>…<<END_TOOL_CALL>>)前后,绝不要用自然语言旁白工具的执行"
+        "过程或结果 —— 不写「角色已创建」「正在设置…」「一切就绪」「让我为你搭建…」这类"
+        "元叙述。正文只写故事本身(角色的言行、场景、对白);工具是后台机械,玩家看不见,"
+        "也不该从你的正文里读到它的存在。需要切换/搭建角色时直接发工具调用 marker,搭好后"
+        "用沉浸的故事正文自然承接,不解说幕后操作。",
+        "",
+        "【本轮可用 MCP 工具清单】",
+    ]
     for t in tools[:40]:  # 防止 prompt 过长
         sid = t.get("server_id", "")
         name = t.get("name", "")

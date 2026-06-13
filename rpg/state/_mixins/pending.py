@@ -13,10 +13,13 @@
 """
 from __future__ import annotations
 
+import logging as _logging
 from datetime import datetime
 
 from state.parsers import _clean_item, _parse_question
 from state.permissions import _normalize_permission_mode
+
+_log = _logging.getLogger(__name__)
 
 
 class PendingMixin:
@@ -40,6 +43,11 @@ class PendingMixin:
         if item is None:
             return "待审写入不存在"
         path = str(item.get("path", ""))
+
+        # ── Phase 1 生图门控：generate_image pending 不走 _set_path，而是入队生图 ──
+        if path == "generate_image":
+            return _approve_image_pending(item)
+
         # Bug 5：直接传 typed value，不走 spec 字符串往返；防止 list/dict 被 str() 污染。
         result = self.apply_state_write_typed(
             path=path,
@@ -185,3 +193,65 @@ class PendingMixin:
             permissions["audit_log"] = permissions["audit_log"][-200:]
         return popped
 
+
+# ── Phase 1: generate_image pending 审批辅助函数（模块级，不在 mixin 内）─────────
+
+def _approve_image_pending(item: dict) -> str:
+    """处理 path=="generate_image" 的 pending_write 审批。
+
+    不走 apply_state_write_typed / _set_path（生图不是状态字段写入），
+    而是用 pending value（即工具的 args）重新入队生图，origin="api_direct"
+    （玩家点击 approve = 显式授权，等价于 ui_button 触发）。
+
+    普通 pending_write 审批路径完全不受影响：只有 path=="generate_image" 走此分支。
+    整合前 import platform_app.image_jobs 可能失败（A/B 并行开发）——返回友好错误。
+    """
+    try:
+        from platform_app.image_jobs import enqueue_image_generation
+    except ImportError as exc:
+        _log.warning("[pending] _approve_image_pending: import failed: %s", exc)
+        return f"失败：生图模块未就绪 ({exc})"
+
+    value: dict = item.get("value") or {}
+    prompt: str = str(value.get("prompt") or "").strip()
+    if not prompt:
+        return "失败：pending 生图 prompt 为空，无法入队"
+
+    kind: str = str(value.get("kind") or "chat")
+    api_id: str | None = value.get("api_id") or None
+    model: str | None = value.get("model") or None
+    extra: dict = value.get("extra") or {}
+    user_id_raw = value.get("user_id")
+
+    user_id: int = 0
+    if user_id_raw is not None:
+        try:
+            user_id = int(user_id_raw)
+        except (TypeError, ValueError):
+            pass
+
+    if not user_id:
+        return "失败：pending 生图缺 user_id，无法入队"
+
+    try:
+        result = enqueue_image_generation(
+            user_id,
+            prompt,
+            kind,
+            api_id=api_id,
+            model=model,
+            origin="api_direct",  # 玩家审批 = 视为 api_direct（不再计入自主计数）
+            extra=extra if extra else None,
+        )
+        image_id = result.get("image_id")
+        _log.info(
+            "[pending] approved image_pending image_id=%s user_id=%s kind=%s",
+            image_id, user_id, kind,
+        )
+        return (
+            f"生图审批通过：image_id={image_id} 已入队（status=pending）。"
+            f"生成完成后通过 SSE 推送 URL。prompt={prompt!r}"
+        )
+    except Exception as exc:
+        _log.exception("[pending] _approve_image_pending enqueue failed")
+        return f"失败：生图入队出错 — {exc}"

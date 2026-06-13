@@ -5,7 +5,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from platform_app.branches._helpers import MAIN_REF, commit_state
+from platform_app.branches._helpers import MAIN_REF, commit_state, tavern_card_cols
 from platform_app.branches.commits import _state_snapshot_hash
 
 
@@ -91,6 +91,9 @@ def _ensure_active_ref(db, save_id: int) -> None:
 def _set_save_active(db, save_id: int, commit_id: int, ref_id: int | None) -> None:
     commit = db.execute("select state_snapshot from branch_commits where id = %s and save_id = %s", (commit_id, save_id)).fetchone()
     state_snapshot = commit_state(commit or {})
+    # 把酒馆角色/persona 卡列与 state JSON 对齐(回合提交/切换激活时);COALESCE 保证
+    # 仅在 snapshot 含有效卡 id 时覆盖,非酒馆存档与缺失字段保留旧列,绝不清成 NULL。
+    _tav_char, _tav_persona = tavern_card_cols(state_snapshot)
     db.execute(
         """
         update game_saves
@@ -98,11 +101,13 @@ def _set_save_active(db, save_id: int, commit_id: int, ref_id: int | None) -> No
             active_commit_id = %s,
             active_branch_ref_id = %s,
             state_snapshot = %s,
+            tavern_character_card_id = coalesce(%s, tavern_character_card_id),
+            tavern_persona_card_id = coalesce(%s, tavern_persona_card_id),
             row_version = row_version + 1,
             updated_at = now()
         where id = %s
         """,
-        (commit_id, commit_id, ref_id, Jsonb(state_snapshot), save_id),
+        (commit_id, commit_id, ref_id, Jsonb(state_snapshot), _tav_char, _tav_persona, save_id),
     )
 
 

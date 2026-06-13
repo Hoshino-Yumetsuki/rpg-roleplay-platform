@@ -273,6 +273,50 @@
 }
 .tv-drawer-body { flex: 1; overflow-y: auto; padding: 18px; }
 
+/* ── 思考流折叠块(reasoning)──────────────────────────────────────────
+ * 与正文分区共存(非互斥):正文走 .gc-msg 正常散文,思考流单独折叠成一行。
+ * 不 scope 到 .tvp-root / .gc-shell,故 Platform 内嵌页 + 独立 Tavern 页都生效。 */
+.tvp-thinking {
+  max-width: 740px;
+  margin: 2px auto 4px;
+  width: 100%;
+}
+.tvp-thinking-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-quiet);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 3px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  font-family: inherit;
+}
+.tvp-thinking-toggle:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+  border-color: var(--line);
+}
+.tvp-thinking-label { color: var(--text-quiet); }
+.tvp-thinking-body {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-deep, var(--bg)) 60%, transparent);
+  color: var(--text-quiet);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  font-style: italic;
+}
+
 /* ── 移动端 ──────────────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .tavern-chat .tv-rail {
