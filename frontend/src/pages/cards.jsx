@@ -111,6 +111,31 @@ function cardFormPayload(form, card) {
   };
 }
 
+// NPC 卡 → user_card(card_type='pc')payload。剧本编辑器 / 角色卡页共用,避免 shape 漂移。
+// 转换 = 完整复制一份独立用户卡(含头像 URL,站内资产不重存),非指针。后端走 POST
+// /api/me/character-cards(myUpsert),与 agent 工具 clone_npc_to_user_card 等价。
+function npcToUserCardBody(c, { fromNpcTag = '来自NPC', unnamed = '无名角色' } = {}) {
+  const raw = (c && c._raw) || c || {};
+  const baseTags = Array.isArray(c && c.tags) && c.tags.length ? [...c.tags] : [];
+  return {
+    name: (c && c.name) || raw.name || unnamed,
+    full_name: raw.full_name || '',
+    aliases: Array.isArray(raw.aliases) ? raw.aliases : [],
+    identity: (c && c.role) || raw.identity || raw.role || '—',
+    background: raw.background || '',
+    appearance: raw.appearance || (c && c.bio) || '',
+    personality: raw.personality || '',
+    speech_style: raw.speech_style || '',
+    current_status: raw.current_status || '',
+    secrets: raw.secrets || '',
+    sample_dialogue: Array.isArray(raw.sample_dialogue) ? raw.sample_dialogue : [],
+    avatar_path: raw.avatar_path || '',
+    tags: baseTags.includes(fromNpcTag) ? baseTags : [...baseTags, fromNpcTag],
+    metadata: { source: 'npc_promote', source_script_id: (c && c.script_id) || null, source_npc_id: raw.id ?? (c && c.id) },
+    enabled: true,
+  };
+}
+
 // 共享字段组(EC2 区块)。kind: 'npc' | 'user' | 'persona'
 function CardEditFields({ form, u, kind = 'user' }) {
   const { t } = useTranslation();
@@ -469,31 +494,9 @@ function CardGrid({ cards, onEdit, kind, filter, empty, onDeleted, onDuplicate, 
     }
   };
 
-  // NPC 卡 → user_card 一键迁移。复用 game-panels 同一套 saveAsUserCard 数据 shape。
+  // NPC 卡 → user_card 一键迁移。body 走共用 npcToUserCardBody(剧本编辑器同款),避免 shape 漂移。
   const promoteNpcToUserCard = async (c) => {
-    const raw = c._raw || c;
-    const body = {
-      name: c.name || raw.name || t('cards.detail.unnamed'),
-      full_name: raw.full_name || "",
-      aliases: Array.isArray(raw.aliases) ? raw.aliases : [],
-      identity: c.role || raw.identity || raw.role || "—",
-      background: raw.background || "",
-      appearance: raw.appearance || c.bio || "",
-      personality: raw.personality || "",
-      speech_style: raw.speech_style || "",
-      current_status: raw.current_status || "",
-      secrets: raw.secrets || "",
-      sample_dialogue: Array.isArray(raw.sample_dialogue) ? raw.sample_dialogue : [],
-      // 复制头像 URL(站内资产,物理不重存,白名单放行);转换=完整复制一份独立用户卡,非指针
-      avatar_path: raw.avatar_path || "",
-      tags: Array.isArray(c.tags) && c.tags.length ? [...c.tags, t('cards.list.tag_from_npc')] : [t('cards.list.tag_from_npc')],
-      metadata: {
-        source: "npc_promote",
-        source_script_id: c.script_id || null,
-        source_npc_id: raw.id ?? c.id,
-      },
-      enabled: true,
-    };
+    const body = npcToUserCardBody(c, { fromNpcTag: t('cards.list.tag_from_npc'), unnamed: t('cards.detail.unnamed') });
     try {
       const r = await window.api.cards.myUpsert(body);
       if (r && r.ok === false) throw new Error(r.error || r.detail || t('cards.toast.promote_fail'));
@@ -1815,4 +1818,4 @@ function CardEditModal({ card, isNew, kind, onClose, onSave, targetScriptOptions
   return createPortal(node, document.body);
 }
 
-export { CardsPage, CardGrid, UserCardsView, NpcCardsView, CardEditModal, TavernImportModal, CardSheet, cardSnippet, CardEditFields, cardFormInit, cardFormPayload };
+export { CardsPage, CardGrid, UserCardsView, NpcCardsView, CardEditModal, TavernImportModal, CardSheet, cardSnippet, CardEditFields, cardFormInit, cardFormPayload, npcToUserCardBody };

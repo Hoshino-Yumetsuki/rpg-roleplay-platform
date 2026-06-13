@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
 import { plNavigate } from '../router.js';
 import { PromptModal, usePlatformData, fmtBytes, fmtN, ResizableSplit } from '../platform-app.jsx';
-import { CardEditModal, cardSnippet } from './cards.jsx';
+import { CardEditModal, cardSnippet, npcToUserCardBody } from './cards.jsx';
 import { NewGameModal } from './saves.jsx';
 import { ScriptReview } from './script-review.jsx';
 import { WorldbookEditorView } from './script-edit-worldbook.jsx';
@@ -587,6 +587,29 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
     }
   };
 
+  // NPC 卡 → 用户角色卡(card_type='pc')。复制一份独立用户卡(含头像),后端 myUpsert
+  // (POST /api/me/character-cards),与 agent 工具 clone_npc_to_user_card 等价。订阅者也可转
+  // (转到自己名下,不改原剧本)。body shape 与角色卡页共用 npcToUserCardBody,避免漂移。
+  const [promoteBusy, setPromoteBusy] = useStatePL(null);
+  const onPromoteNpc = async (c) => {
+    if (!c) return;
+    setPromoteBusy(c.id);
+    try {
+      const body = npcToUserCardBody(c, {
+        fromNpcTag: t('cards.list.tag_from_npc', { defaultValue: '来自NPC' }),
+        unnamed: t('scripts.editor.unnamed_npc', { defaultValue: '无名角色' }),
+      });
+      const r = await window.api.cards.myUpsert(body);
+      if (r && r.ok === false) throw new Error(r.error || r.detail || '转换失败');
+      window.__apiToast?.(t('scripts.toast.npc_promoted', { name: body.name, defaultValue: `已把「${body.name}」转为你的用户角色卡` }),
+        { kind: 'ok', duration: 2600, detail: t('scripts.toast.npc_promoted_detail', { defaultValue: '在「角色卡 · 我的」里可编辑/挂到任意剧本' }) });
+    } catch (e) {
+      window.__apiToast?.(t('scripts.toast.npc_promote_fail', { defaultValue: '转为用户角色卡失败' }), { kind: 'danger', detail: e?.message || String(e) });
+    } finally {
+      setPromoteBusy(null);
+    }
+  };
+
   // 按需 AI 复核全部 NPC 卡:弹公用模型选择器(默认用户常用模型,可改)→ 用所选模型批量裁决
   // (合并同人卡 / 锁定真主角 / 删非人名卡)。on-demand,不进导入流水线 → 零自动成本。
   const [auditOpen, setAuditOpen] = useStatePL(false);
@@ -989,6 +1012,12 @@ function ScriptDetailPanel({ script: s, savesCount, scriptSaves = [], embedStatu
                         {t('scripts.editor.set_protagonist', { defaultValue: '设为主角' })}
                       </CSButton>
                     )}
+                    {/* NPC → 用户角色卡:任何查看者(含订阅者)都可复制到自己名下,不改原剧本 */}
+                    <CSButton variant="inline-link" iconName="add-plus"
+                      loading={promoteBusy === c.id}
+                      onClick={() => onPromoteNpc(c)}>
+                      {t('scripts.editor.promote_npc', { defaultValue: '转为用户角色卡' })}
+                    </CSButton>
                   </CSSpaceBetween>
                 ) },
               ],
