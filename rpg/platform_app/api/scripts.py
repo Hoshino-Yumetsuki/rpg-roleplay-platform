@@ -551,6 +551,19 @@ async def api_script_upsert_character_card(request: Request, script_id: int, use
         return json_response({"ok": True, "card": knowledge.upsert_character_card(user["id"], script_id, body)})
     except ValueError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
+    except Exception as exc:
+        # 兜底:改名撞同名等唯一约束冲突(罕见竞态/其它路径)别冒成 500「保存没反应」,
+        # 转成可行动 400。upsert 内 with connect() 已回滚,连接干净归还。
+        try:
+            from psycopg.errors import UniqueViolation
+            if isinstance(exc, UniqueViolation):
+                return json_response(
+                    {"ok": False, "error": "该剧本已存在同名 NPC 角色卡,请改用不同的名字"},
+                    status_code=400,
+                )
+        except Exception:
+            pass
+        raise
 
 
 @router.post("/api/scripts/{script_id}/character-cards/{card_id}/delete")

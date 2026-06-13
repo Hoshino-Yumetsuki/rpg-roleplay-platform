@@ -95,6 +95,18 @@ def upsert_character_card(user_id: int, script_id: int, payload: dict[str, Any])
             ).fetchone()
             if not owned:
                 raise ValueError("character_card 不存在或不属于该剧本")
+            # 改名预检:把卡改成已被**别的** NPC 占用的名字会撞 uq_character_cards_npc_name
+            # (script_id,name)唯一约束 → 裸 UniqueViolation 冒成 500、前端「保存没反应」。
+            # 先查冲突给出可行动 ValueError(端点 ValueError→400,前端能显示原因)。
+            # 同名更新自身不算冲突(id<>),所以不改名的普通编辑不受影响。
+            clash = db.execute(
+                "select 1 from character_cards where script_id = %s and name = %s "
+                "and card_type='npc' and id <> %s",
+                (script_id, name, int(card_id)),
+            ).fetchone()
+            if clash:
+                raise ValueError(f"该剧本已存在同名 NPC 角色卡「{name}」,请改用不同的名字"
+                                 "(或先删除/合并重名卡)")
             db.execute(
                 """
                 update character_cards set
