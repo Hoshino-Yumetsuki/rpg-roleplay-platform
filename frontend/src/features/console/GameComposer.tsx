@@ -8,7 +8,7 @@ import { useState as useStateC, useRef as useRefC, useEffect as useEffectC } fro
 import { Icon } from './GameIcons';
 import { chatComposerKey } from '../../hooks/useResponsive';
 import { useTranslation } from 'react-i18next';
-import GenerateImageModal from './components/GenerateImageModal.jsx';
+import GenerateImageModal from '@/components/GenerateImageModal.jsx';
 
 const SLASH_COMMANDS = [
   {

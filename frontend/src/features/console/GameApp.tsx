@@ -2171,6 +2171,128 @@ function TopBar({
   );
 }
 
+// ── Image persistence helpers ────────────────────────────────────────────────
+function _imgMapKey(saveId) { return `rpg.imgmsg.${saveId}`; }
+function _loadImgMap(saveId) {
+  try { return JSON.parse(localStorage.getItem(_imgMapKey(saveId)) || '{}') || {}; } catch (_) { return {}; }
+}
+function _saveImgMap(saveId, map) {
+  try { localStorage.setItem(_imgMapKey(saveId), JSON.stringify(map)); } catch (_) {}
+}
+
+export function useSaveImages(saveId, lastKeyRef) {
+  const [images, setImages] = useStateA([]);
+  const mapRef = useRefA({});
+
+  useEffectA(() => {
+    if (saveId == null) { setImages([]); mapRef.current = {}; return; }
+    let cancelled = false;
+    mapRef.current = _loadImgMap(saveId);
+    (async () => {
+      try {
+        const list = await window.api.images.list(saveId);
+        if (cancelled) return;
+        const done = Array.isArray(list) ? list.filter((im) => im.status === 'done' && im.url) : [];
+        const map = mapRef.current;
+        setImages(done.map((im) => ({ id: im.id, url: im.url, kind: im.kind || 'game', key: (map[im.id] != null ? String(map[im.id]) : null) })));
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [saveId]);
+
+  useEffectA(() => {
+    if (saveId == null) return;
+    const handler = (ev) => {
+      const { op, payload } = (ev && ev.detail) || {};
+      if (op !== 'ready') return;
+      const { image_id, url, kind } = payload || {};
+      if (!image_id || !url) return;
+      const key = (lastKeyRef && lastKeyRef.current != null) ? String(lastKeyRef.current) : null;
+      if (key != null) { mapRef.current[image_id] = key; _saveImgMap(saveId, mapRef.current); }
+      setImages((prev) => prev.some((im) => im.id === image_id) ? prev
+        : [...prev, { id: image_id, url, kind: kind || 'game', key }]);
+    };
+    window.addEventListener('rpg-image-updated', handler);
+    return () => window.removeEventListener('rpg-image-updated', handler);
+  }, [saveId]);
+
+  return useMemoA(() => {
+    const g = {};
+    for (const im of images) {
+      const k = im.key != null ? im.key : '__last';
+      (g[k] = g[k] || []).push(im);
+    }
+    return g;
+  }, [images]);
+}
+
+function SaveImagesStrip({ saveId }) {
+  const [images, setImages] = useStateA([]);
+  const [lightbox, setLightbox] = useStateA(null);
+
+  useEffectA(() => {
+    if (saveId == null) { setImages([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await window.api.images.list(saveId);
+        if (cancelled) return;
+        const done = Array.isArray(list) ? list.filter((img) => img.status === 'done' && img.url) : [];
+        setImages(done);
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [saveId]);
+
+  useEffectA(() => {
+    if (saveId == null) return;
+    const handler = (ev) => {
+      const { op, payload } = (ev && ev.detail) || {};
+      if (op !== 'ready') return;
+      const { image_id, url, kind } = payload || {};
+      if (!image_id || !url) return;
+      setImages((prev) => {
+        if (prev.some((img) => img.id === image_id)) return prev;
+        return [...prev, { id: image_id, url, kind: kind || 'game', status: 'done' }];
+      });
+    };
+    window.addEventListener('rpg-image-updated', handler);
+    return () => window.removeEventListener('rpg-image-updated', handler);
+  }, [saveId]);
+
+  if (!images.length) return null;
+
+  return (
+    <div style={{
+      margin: '12px 0 4px', padding: '10px 12px',
+      background: 'var(--surface-2, rgba(255,255,255,0.03))',
+      border: '1px solid var(--line-soft, rgba(255,255,255,0.07))',
+      borderRadius: 8,
+    }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+        本局生成的图片 ({images.length})
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {images.map((img) => (
+          <button key={img.id} onClick={() => setLightbox(img.url)}
+            style={{ border: 0, padding: 0, background: 'transparent', cursor: 'pointer', borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}
+            title={img.kind || '生成图片'}>
+            <img src={img.url} alt="" loading="lazy" decoding="async" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 6 }} />
+          </button>
+        ))}
+      </div>
+      {lightbox && (
+        <div onClick={() => setLightbox(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 8000, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img src={lightbox} alt="" style={{ maxWidth: '92vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 10, boxShadow: '0 12px 60px rgba(0,0,0,.7)' }} onClick={(e) => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} aria-label="关闭"
+            style={{ position: 'absolute', top: 20, right: 24, width: 38, height: 38, borderRadius: 99, border: 0, background: 'rgba(255,255,255,.14)', color: '#fff', fontSize: 19, cursor: 'pointer' }}>×</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export {
   LeftRail,
   RunSteps,
@@ -2183,4 +2305,5 @@ export {
   GameSettingsModal,
   NarrativeBlock,
   PlayerBlock,
+  SaveImagesStrip,
 };
