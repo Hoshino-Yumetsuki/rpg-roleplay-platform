@@ -1,9 +1,6 @@
 services:
   backend:
-    image: rpg-app:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/hoshino-yumetsuki/rpg-roleplay-platform:latest
     restart: always
     ports:
       - "7860:7860"
@@ -43,10 +40,7 @@ services:
   # cron 调度(scripts/cron_scheduler.py + croniter),非裸 while/sleep。
   # 调度表达式见下方 RPG_CRON_SCHEDULE(标准 5 段 cron,UTC),默认每天 03:00,
   cron:
-    image: rpg-app:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/hoshino-yumetsuki/rpg-roleplay-platform:latest
     restart: always
     command:
       - "uv"
