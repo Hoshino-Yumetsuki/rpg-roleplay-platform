@@ -22,7 +22,7 @@ import { useResizable } from '@/hooks/useResponsive';
 import { NarrativeBlock, PlayerBlock, GameToastStack, SaveImagesStrip, useSaveImages } from '@/features/console/GameApp';
 import { Composer } from '@/features/console/GameComposer';
 import { TavernImportModal, CardSheet, CardEditFields, cardFormInit, cardFormPayload } from '@/features/cards/CardsPage';
-import AvatarImg from '@/components/AvatarImg.jsx';
+import AvatarImg from '@/components/AvatarImg';
 
 /* ── 相对时间 ─────────────────────────────────────────────────────── */
 export function relTime(ts) {
