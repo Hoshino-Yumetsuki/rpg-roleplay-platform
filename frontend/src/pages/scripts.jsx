@@ -3021,7 +3021,7 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
             >
               {t('scripts.import.embedder_not_configured_body', {
                 defaultValue:
-                  '导入完成后，如果没有配置向量嵌入模型（RAG 模型），将无法建立向量索引——RAG 语义召回会退化为关键字匹配，影响游戏中人物/世界书的精准度。\n建议在「设置 → RAG / 向量模型」配置一个支持 /embeddings 接口的 API Key（如 OpenAI、Deepseek Embedding、Cohere 等），然后再导入。',
+                  '向量索引需要单独配置「向量嵌入（RAG）模型」，与主对话用的 LLM Key 是分开的两件事；没配它就无法生成向量索引，RAG 语义召回会退化为关键字匹配。\n注意：不是所有厂商都有向量嵌入接口——Anthropic、DeepSeek 没有。请在「设置 → RAG / 向量模型」配置一个支持 /embeddings 接口的 API Key（如 OpenAI、通义千问 Qwen、硅基流动、Cohere、Vertex 等）。',
               })}
             </CSAlert>
           )}

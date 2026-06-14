@@ -1209,7 +1209,7 @@
       "import_ok_needs_api": "Script #{{id}} · {{title}} created. Configure an API key to continue character cards/worldbook/timeline.",
       "api_fail": "Import API returned failure",
       "embedder_error_title": "Embedding configuration may have an issue",
-      "embedder_not_configured_body": "After import, without a configured embedding (RAG) model the vector index cannot be built — RAG semantic recall degrades to keyword matching, hurting in-game character/worldbook accuracy.\nWe recommend configuring an API key that supports the /embeddings endpoint (e.g. OpenAI, Deepseek Embedding, Cohere) under Settings → RAG / Embedding model before importing.",
+      "embedder_not_configured_body": "The vector index needs a separately-configured embedding (RAG) model — this is distinct from the main chat LLM key. Without it the vector index cannot be built and RAG semantic recall degrades to keyword matching.\nNote: not every provider offers embeddings — Anthropic and DeepSeek do not. Configure an API key that supports the /embeddings endpoint (e.g. OpenAI, Qwen/DashScope, SiliconFlow, Cohere, Vertex) under Settings → RAG / Embedding model.",
       "embedder_not_configured_title": "No RAG / embedding model configured (optional, but recommended)",
       "go_rag_settings": "Configure RAG model"
     },
