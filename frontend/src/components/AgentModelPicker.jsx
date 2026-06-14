@@ -45,6 +45,15 @@ export default function AgentModelPicker({
   const [model, setModel] = useState('');
   const [saving, setSaving] = useState(false);
   const [customSel, setCustomSel] = useState(false);  // 用户在下拉里显式选了「自定义…」
+  const [reloadTick, setReloadTick] = useState(0);    // 凭据变更后强制重拉(issue #22)
+
+  // 换/删 API Key 后(api-client 广播 rpg-credentials-updated)重拉 API/模型/凭据列表,
+  // 让下拉里能选的 provider/模型与当前 key 同步。
+  useEffect(() => {
+    const bump = () => setReloadTick((x) => x + 1);
+    window.addEventListener('rpg-credentials-updated', bump);
+    return () => window.removeEventListener('rpg-credentials-updated', bump);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,7 +138,7 @@ export default function AgentModelPicker({
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefPrefix]);
+  }, [prefPrefix, reloadTick]);
 
   const persist = async (aid, m) => {
     if (!aid || !m) return;

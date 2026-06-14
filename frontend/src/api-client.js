@@ -152,6 +152,13 @@
   const PUT = (path, body, opts) => _send(path, Object.assign({ method: "PUT", body: body || {} }, opts || {}));
   const DEL = (path, body, opts) => _send(path, Object.assign({ method: "DELETE", body: body || {} }, opts || {}));
 
+  // 凭据变更后广播 → 模型选择器(AgentModelPicker / 游戏台 ModelPopover)即时重拉,
+  // 修 issue #22:换/删 API Key 后模型列表仍显示旧 key 的模型。
+  const _emitCredsUpdated = (r) => {
+    try { if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("rpg-credentials-updated")); } catch (_) {}
+    return r;
+  };
+
   // ---- SSE helper for /api/chat & /api/opening ---------------
   // Posts a JSON body and parses the streaming response into
   // structured event objects: { event, data }.
@@ -772,8 +779,8 @@
     // ---------- Credentials (per-user API keys) ----------
     credentials: {
       list: () => GET(`${API_PREFIX}/me/credentials`),
-      set: (body) => POST(`${API_PREFIX}/me/credentials`, body),
-      remove: (body) => POST(`${API_PREFIX}/me/credentials/delete`, body),
+      set: (body) => POST(`${API_PREFIX}/me/credentials`, body).then(_emitCredsUpdated),
+      remove: (body) => POST(`${API_PREFIX}/me/credentials/delete`, body).then(_emitCredsUpdated),
       test: (q) => GET(`${API_PREFIX}/me/credentials/test`, q),
     },
 

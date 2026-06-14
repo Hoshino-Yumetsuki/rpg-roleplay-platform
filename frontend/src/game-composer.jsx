@@ -375,6 +375,7 @@ function ModelPopover({ current, onPick, align = "left", gameState, onClose, tri
   const [catalog, setCatalog] = useStateC(null);
   const [busy, setBusy] = useStateC(false);
   const [err, setErr] = useStateC("");
+  const [reloadTick, setReloadTick] = useStateC(0);   // 凭据变更 / 回到本页 时重拉(issue #22)
   React.useEffect(() => {
     if (!window.api || !window.api.models || !window.api.models.list) return;
     let cancelled = false;
@@ -388,6 +389,20 @@ function ModelPopover({ current, onPick, align = "left", gameState, onClose, tri
       }
     })();
     return () => { cancelled = true; };
+  }, [reloadTick]);
+  // 换/删 API Key 后模型列表要同步:① 同文档广播 rpg-credentials-updated;
+  // ② 游戏台是独立页,改 key 在平台设置页 → 回到本页(focus/可见)时重拉。修 issue #22。
+  React.useEffect(() => {
+    const bump = () => setReloadTick((x) => x + 1);
+    const onVis = () => { if (!document.hidden) bump(); };
+    window.addEventListener("rpg-credentials-updated", bump);
+    window.addEventListener("focus", onVis);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("rpg-credentials-updated", bump);
+      window.removeEventListener("focus", onVis);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   // 把 catalog 扁平化为可选模型列表（只显示 enabled 的）
