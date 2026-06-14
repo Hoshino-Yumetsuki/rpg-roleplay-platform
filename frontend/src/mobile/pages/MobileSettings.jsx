@@ -303,6 +303,12 @@ function ProviderDetail({ api, onBack, onSync, onToggleModel, onDeleteKey, nav }
                 <span style={{ color: 'var(--muted)' }}>API Key</span>
                 <span className="mono" style={{ color: 'var(--text-quiet)' }}>•••• {api.key_hint}</span>
               </div>
+              {api.enabled===false && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--muted)' }}>状态</span>
+                  <span style={{ color: 'var(--muted-2)', fontSize: 12, fontWeight: 600 }}>已禁用</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--muted)' }}>连通性</span>
                 <span style={{
@@ -1675,6 +1681,7 @@ function ModelsSection({ nav, onBack }) {
   const [selected, setSelected] = useState(null);
   const [apis, setApis] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
   const autoSynced = useRef(new Set());
 
   const mapModel = useCallback((m) => ({
@@ -1696,7 +1703,7 @@ function ModelsSection({ nav, onBack }) {
     const credMap = {};
     for (const c of (creds?.items || creds?.credentials || [])) {
       const cid = normId(c.api_id || c.id);
-      credMap[cid] = { has_key: !!(c.has_credential||c.has_key||c.key_hint), key_hint: c.key_hint||'', enabled: c.enabled!==false, base_url_override: c.base_url_override||'' };
+      credMap[cid] = { has_key: !!(c.has_credential||c.has_key||c.key_hint), key_hint: c.key_hint||'', enabled: c.enabled!==false, base_url_override: c.base_url_override||'', proxy_url: c.proxy_url || '' };
     }
     const list = data?.models?.apis || data?.apis || [];
     const rows = Array.isArray(list) ? list.map(api => {
@@ -1710,12 +1717,26 @@ function ModelsSection({ nav, onBack }) {
         base_url: cred.base_url_override || api.base_url || '',
         key_set: !!cred.has_key, key_hint: cred.key_hint || '—',
         connectivity: { status:'untested' },
-        enabled: cred.enabled !== false, proxy: api.proxy || 'direct',
+        // proxy 从凭据读(api.proxy 对非 admin 恒 undefined);后端 list_credentials 返回 proxy_url。
+        enabled: cred.enabled !== false, proxy: cred.proxy_url ? 'http_proxy' : 'direct',
         models: (api.models || api.entries || []).map(mapModel),
       };
     }).filter(a => a.key_set) : [];
-    setApis(rows);
-    return rows;
+    // 中转站 / 自定义供应商:把不在全局 catalog 里、但带 base_url_override 的用户凭据合成为
+    // provider 行,否则保存后在列表里看不到、无法选模型;models=[] 由用户点同步从中转站拉取。
+    const catalogIds = new Set((Array.isArray(list) ? list : []).map(a => normId(catId(a.api_id || a.id))));
+    const customRows = Object.entries(credMap)
+      .filter(([cid, c]) => c.has_key && c.base_url_override && !catalogIds.has(normId(cid)))
+      .map(([cid, c]) => ({
+        id: cid, credential_id: cid, name: cid,
+        base_url: c.base_url_override, key_set: true, key_hint: c.key_hint || '—',
+        connectivity: { status:'untested' },
+        enabled: c.enabled !== false, proxy: c.proxy_url ? 'http_proxy' : 'direct',
+        models: [], _custom: true,
+      }));
+    const allRows = [...rows, ...customRows];
+    setApis(allRows);
+    return allRows;
   }, [mapModel]);
 
   const syncRemote = useCallback(async (api, silent=false) => {
@@ -1737,12 +1758,13 @@ function ModelsSection({ nav, onBack }) {
     }
   }, [mapModel, nav]);
 
-  useEffect(() => {
-    (async () => {
-      try { await load(); } catch (_) {}
-      finally { setLoading(false); }
-    })();
+  const reload = useCallback(async () => {
+    try { setLoadErr(''); await load(); }
+    catch (e) { setLoadErr(e?.message || '加载失败'); }
+    finally { setLoading(false); }
   }, [load]);
+
+  useEffect(() => { reload(); }, [reload]);
 
   useEffect(() => {
     if (loading) return;
@@ -1765,10 +1787,18 @@ function ModelsSection({ nav, onBack }) {
         nav={nav}
         onToggleModel={async (mId) => {
           const m = selectedApi.models.find(x => x.id===mId);
+          const prev = !!m?.enabled;
           setApis(arr => arr.map(a => a.id===selectedApi.id ? { ...a, models: a.models.map(x => x.id===mId ? { ...x, enabled:!x.enabled } : x) } : a));
-          try { await window.api.models.upsertModel({ api_id: selectedApi.id, real_name: mId, enabled: !m?.enabled }); } catch (_) {}
+          try {
+            await window.api.models.upsertModel({ api_id: selectedApi.id, real_name: mId, enabled: !prev });
+          } catch (e) {
+            // POST /api/models/model 是 admin-only,非 admin 部署模式 403 → 回滚乐观翻转并提示。
+            setApis(arr => arr.map(a => a.id===selectedApi.id ? { ...a, models: a.models.map(x => x.id===mId ? { ...x, enabled: prev } : x) } : a));
+            nav.toast(e?.status===403 ? '仅管理员可修改全局模型开关' : ('保存失败: ' + (e?.message||'')), 'danger', 'warn');
+          }
         }}
         onDeleteKey={async () => {
+          if (!window.confirm(`删除「${selectedApi.name}」的 API 密钥?删除后需回电脑端重新配置。`)) return;
           try {
             await window.api.credentials.remove({ api_id: credId(selectedApi.id) });
             setSelected(null);
@@ -1798,14 +1828,23 @@ function ModelsSection({ nav, onBack }) {
               <p>加载中…</p>
             </div>
           )}
-          {!loading && apis.length===0 && (
+          {!loading && loadErr && (
+            <div className="pl-empty">
+              <div className="ic"><Icon name="warn" size={22} /></div>
+              <h3>加载失败</h3>
+              <p>{loadErr}</p>
+              <button className="pl-btn-ghost" style={{ marginTop:12, height:38, fontSize:13, width:'auto', padding:'0 18px' }}
+                onClick={() => { setLoading(true); setLoadErr(''); reload(); }}>重试</button>
+            </div>
+          )}
+          {!loading && !loadErr && apis.length===0 && (
             <div className="pl-empty">
               <div className="ic"><Icon name="key" size={22} /></div>
               <h3>尚未配置任何供应商</h3>
               <p>请在电脑端「设置 → 模型」添加 API 密钥后再来这里管理</p>
             </div>
           )}
-          {!loading && apis.map(pv => {
+          {!loading && !loadErr && apis.map(pv => {
             const conn = pv.connectivity || {};
             const enabledCnt = pv.models.filter(m => m.enabled).length;
             const statusOk = conn.status==='ok';
@@ -1817,7 +1856,10 @@ function ModelsSection({ nav, onBack }) {
                 <div className="pl-prov-head">
                   <span className="pl-prov-logo">{pv.name.slice(0,1)}</span>
                   <span className="pl-prov-id">
-                    <strong>{pv.name}</strong>
+                    <strong>
+                      {pv.name}
+                      {pv.enabled===false && <span style={{ marginLeft:6, fontSize:11, fontWeight:600, color:'var(--muted-2)', border:'1px solid var(--line-soft)', borderRadius:4, padding:'1px 6px' }}>已禁用</span>}
+                    </strong>
                     <span className="key mono">•••• {pv.key_hint}</span>
                   </span>
                   <span className={`pl-status ${statusOk?'online':''}`}>
