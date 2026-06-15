@@ -9,6 +9,8 @@ import { BranchGraph } from './branch-graph.jsx';
 import { useBreakpoint, useResizable, ResizeHandle } from './responsive.jsx';
 import { stripNarrativeOps } from './narrative-strip.js';
 import AvatarImg from './components/AvatarImg.jsx';
+import { useStickToBottom } from './hooks/useStickToBottom.js';
+import { createToastChannel } from './toast.jsx';
 
 // ----------------------------- LEFT RAIL ---------------------------------
 function LeftRail({ collapsed, onToggle, state, runState, onNew, onSave, onSwitchSave, onMemoryMode, currentSaveId, saves, resizeHandle, mobileOpen }) {
@@ -996,49 +998,17 @@ function ChatArea({ history, runState, runStyle, narrativeFont, narrativeSize, h
   lastKeyRef.current = lastAsstIdx >= 0 ? String(lastAsstIdx) : null;
   const imagesByKey = useSaveImages(saveId, lastKeyRef);
 
-  // task 133: Claude 风格自动滚动 — 用户上滚后停止跟随 + 回到底部按钮
-  const isAtBottomRef = useRefA(true);
-  const isFirstLoadRef = useRefA(true);
-  const [showJumpBtn, setShowJumpBtn] = useStateA(false);
-  // 用户滚动时检测是否离开底部
-  useEffectA(() => {
-    const el = ref.current;
-    if (!el) return;
-    const onScroll = () => {
-      const threshold = 80;  // 距底部 80px 内算"在底部"
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
-      isAtBottomRef.current = atBottom;
-      setShowJumpBtn(!atBottom);
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-  // 新内容时的滚动策略:① 第一次进入或刷新页面时，强制滚动到最底部; ② 自己刚发消息(末条=玩家)→ 强制滚到底; ③ 否则双守卫——
-  // 用户已上滚(isAtBottom=false) 或 实时距底 >360px(防 ref 时序滞后/iOS 节流)→ 绝不跟随。
-  // 这样 GM 输出(含输出完成 running→false)在用户看上文时不会被硬拽回底部。
-  useEffectA(() => {
-    const el = ref.current;
-    if (!el) return;
-    const last = history && history[history.length - 1];
-    if (visible.length > 0 && isFirstLoadRef.current) {
-      isFirstLoadRef.current = false;
-      isAtBottomRef.current = true;
-    } else if (last && last.role === "user") {
-      isAtBottomRef.current = true;  // 自己发的:跟到底
-    } else if (!isAtBottomRef.current || (el.scrollHeight - el.scrollTop - el.clientHeight) > 360) {
-      return;  // 用户在看上文 → 不强制跟随
-    }
-    const id = requestAnimationFrame(() => {
-      if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
-    });
-    return () => cancelAnimationFrame(id);
-  }, [visible.length, runState.running, runState.rawSteps?.length]);
-  const jumpToBottom = () => {
-    if (!ref.current) return;
-    ref.current.scrollTo({ top: ref.current.scrollHeight, behavior: "smooth" });
-    isAtBottomRef.current = true;
-    setShowJumpBtn(false);
-  };
+  // task 133: Claude 风格自动滚动 — 用户上滚后停止跟随 + 回到底部按钮。
+  // 收口到 useStickToBottom(逐字等价):首屏门控用 visible.length(窗口化渲染),
+  // 「末条=玩家」判定读完整 history,deps 逐字保留 [visible.length, running, rawSteps?.length]。
+  const _last = history && history[history.length - 1];
+  const { showJump: showJumpBtn, jumpToBottom } = useStickToBottom(ref, {
+    deps: [visible.length, runState.running, runState.rawSteps?.length],
+    lastIsUser: !!(_last && _last.role === "user"),
+    hasContent: visible.length > 0,
+    mode: "instant",
+    withButton: true,
+  });
 
   return (
     <div
@@ -1498,76 +1468,15 @@ function SwitchTiny({ on, set }) {
 // ----------------------- TOAST 容器 (task 14) ----------------------------
 // 现象：Game Console 调 window.__apiToast / window.toast 但只落到 console.log，
 // 因为 ToastStack 只挂在 Platform Shell，Game Console 页没人渲染它。
-// 修法：在 game-app.jsx 里独立装 toast pub/sub + 复用 platform 的 pl-toast-stack 样式，
-// 由 Game Console 渲染 <GameToastStack/>。如果 platform-app.jsx 已经先一步装了 window.toast
-// （例如某些跨页面共用脚本场景），不重复挂；当前 Game Console.html 不载入 platform-app.jsx，
-// 所以这里 register 一定生效。
-(function () {
-  if (window.__GAME_TOAST_INSTALLED) return;
-  const listeners = [];
-  let nextId = 1;
-  const fire = (msg, opts) => {
-    const t = {
-      id: ++nextId,
-      kind: (opts && opts.kind) || "ok",
-      message: msg,
-      detail: (opts && opts.detail) || null,
-      duration: (opts && Number.isFinite(opts.duration)) ? opts.duration : 2400,
-      action: opts && opts.action,
-    };
-    listeners.forEach((fn) => fn(t));
-    return t.id;
-  };
-  // 不覆盖 Platform 已注入的同名函数（同源容错）
-  if (typeof window.toast !== "function") window.toast = fire;
-  // api-client.js 在加载时也设过 __apiToast = local fallback，这里再覆盖为真正可见版本
-  window.__apiToast = fire;
-  window.__gameToastSubscribe = (fn) => {
-    listeners.push(fn);
-    return () => {
-      const i = listeners.indexOf(fn);
-      if (i >= 0) listeners.splice(i, 1);
-    };
-  };
-  window.__GAME_TOAST_INSTALLED = true;
-})();
-
-function GameToastStack() {
-  const [items, setItems] = useStateA([]);
-  React.useEffect(() => {
-    const unsub = window.__gameToastSubscribe((t) => {
-      setItems((arr) => [...arr, t]);
-      if (t.duration > 0) {
-        setTimeout(() => setItems((arr) => arr.filter((x) => x.id !== t.id)), t.duration);
-      }
-    });
-    return unsub;
-  }, []);
-  const dismiss = (id) => setItems((arr) => arr.filter((x) => x.id !== id));
-  if (!items.length) return null;
-  const node = (
-    <div className="pl-toast-stack" aria-live="polite">
-      {items.map((t) => (
-        <div key={`toast-${t.id}`} className={`pl-toast pl-toast-${t.kind}`}>
-          <span className={`pl-toast-icon dot ${t.kind === "ok" ? "ok" : t.kind === "warn" ? "warn" : t.kind === "danger" ? "danger" : "info"}`} />
-          <div className="pl-toast-body">
-            <div className="pl-toast-msg">{t.message}</div>
-            {t.detail && <div className="pl-toast-detail muted-2">{t.detail}</div>}
-          </div>
-          {t.action && (
-            <button className="pl-toast-action" onClick={() => { try { t.action.onClick && t.action.onClick(); } catch (_) {} dismiss(t.id); }}>
-              {t.action.label}
-            </button>
-          )}
-          <button className="iconbtn pl-toast-close" onClick={() => dismiss(t.id)} aria-label="关闭">
-            <Icon name="close" size={11} />
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-  return createPortal(node, document.body);
-}
+// 修法：toast pub/sub + window.toast/__apiToast + pl-toast-stack 渲染已收口到 ./toast.jsx 的
+// createToastChannel(与 platform-app 共用工厂)。game 通道逐字保留原 IIFE 语义:
+//   · window.toast 仅在未被 Platform 装过时才装(guardWindowToast);
+//   · __apiToast 无条件指向本通道 fire(setApiToast,覆盖 api-client 的 console 兜底);
+//   · GameToastStack = 本通道的 ToastStack(兼容现有 import { GameToastStack })。
+// install() 在模块加载即执行(等价原 IIFE 时机);幂等(__GAME_TOAST 由通道 installed 标记承接)。
+const __gameToast = createToastChannel({ name: 'game', setWindowToast: true, guardWindowToast: true, setApiToast: true });
+const GameToastStack = __gameToast.ToastStack;
+__gameToast.install();
 
 // ---------------------- 历史回顾 / 搜索本档 抽屉 -------------------------
 // task 9：之前 TopBar 两个按钮一个空实现、一个 state 设了但没渲染。

@@ -4,6 +4,7 @@ import AgentModelPicker from './AgentModelPicker.jsx';
 import MediaUploadZone from './MediaUploadZone.jsx';
 import ImageSizePicker from './ImageSizePicker.jsx';
 import { isCredentialsError } from '../lib/creds.js';
+import { useImageGeneration } from '../hooks/useImageGeneration.js';
 
 /* MediaStudio — 统一图片来源：① AI 生成 ② 上传(拖拽/粘贴/点击) ③ 从图库选。
    一个优雅的流替代散落的"AI生成 / 上传"按钮。拿到最终 URL 后 onApplied(url)。
@@ -18,7 +19,7 @@ import { isCredentialsError } from '../lib/creds.js';
 const TAB = { GEN: 'gen', UP: 'up', LIB: 'lib' };
 
 export default function MediaStudio({ open, onClose, target, name, defaultPrompt = '', onApplied }) {
-  const { useState, useEffect, useCallback, useRef } = React;
+  const { useState, useEffect, useCallback } = React;
   const [tab, setTab] = useState(TAB.GEN);
   const [prompt, setPrompt] = useState('');
   const [size, setSize] = useState('');
@@ -30,7 +31,6 @@ export default function MediaStudio({ open, onClose, target, name, defaultPrompt
   const [pendingFile, setPendingFile] = useState(null);
   const [libItems, setLibItems] = useState(null); // null=未拉
   const [libSel, setLibSel] = useState(null);
-  const pollRef = useRef(null);
 
   const api = (typeof window !== 'undefined' && window.api) || {};
   const t = (target && target.type) || 'card_avatar';
@@ -41,9 +41,16 @@ export default function MediaStudio({ open, onClose, target, name, defaultPrompt
     : t === 'script_cover' ? { type: 'script_cover', id: target.id }
     : (scriptId ? { type: 'card_avatar', id: target.id, script_id: scriptId } : { type: 'card_avatar', id: target.id });
 
+  // 生图内核(generate + 每 2s 轮询 + creds 分类)收口到 useImageGeneration;done/fail 仍用本组件
+  // 与上传/图库共用的那两个(故经 onDone/onFail 路由回来,MediaStudio 自己的 busy/err 状态不变)。
+  const imageGen = useImageGeneration({
+    onDone: (url) => done(url),
+    onFail: (m) => fail(m),
+  });
+
   useEffect(() => {
     if (open) { setPrompt(defaultPrompt || ''); setErr(''); setCredsMissing(false); setPreview(''); setPendingFile(null); setLibSel(null); setTab(TAB.GEN); }
-    return () => { if (pollRef.current) clearTimeout(pollRef.current); };
+    return () => { imageGen.stop(); };
   }, [open, defaultPrompt]);
 
   useEffect(() => {
@@ -67,28 +74,28 @@ export default function MediaStudio({ open, onClose, target, name, defaultPrompt
   }, []);
 
   // ── 生成 ──
-  const pollImage = useCallback((id) => {
-    if (!api.images || !api.images.get) return;
-    api.images.get(id).then((r) => {
-      const st = r && (r.status || (r.ok && 'done'));
-      if (st === 'done' && r.url) return done(r.url);
-      if (st === 'failed') return fail(r.error || 'generation_error');
-      pollRef.current = setTimeout(() => pollImage(id), 2000);
-    }).catch(() => { pollRef.current = setTimeout(() => pollImage(id), 2500); });
-  }, [done, fail]);
-
+  // perCall:逐字保留 MediaStudio 原 pollImage/generate 内核语义(轮询 done 需 r.url;空响应/catch
+  // 继续重试,catch 间隔 2500;响应级 creds/quota 预检;catch 只把 e.message 交给 fail() 自行分类)。
+  const GEN_PER_CALL = {
+    doneFromStatus: (r) => r && (r.status || (r.ok && 'done')),
+    requireUrl: true,
+    failFallback: 'generation_error',
+    emptyResStops: false,           // 空响应:继续轮询
+    catchStops: false, pollCatchMs: 2500,   // 轮询 catch:2.5s 后重试
+    rawCatch: true,                 // generate catch:只把 e.message 交给 fail() 自行分类
+    inspect: (r, { fail: failNow }) => {
+      if (isCredentialsError(r)) { failNow('credentials_required'); return true; }
+      if (r && r.code === 'quota_exceeded') { failNow('今日生图次数已达上限'); return true; }
+      return false;
+    },
+  };
   const generate = useCallback(async () => {
     if (!prompt.trim()) { setErr('请填写生成描述'); return; }
     if (!sel.api_id || !sel.model) { setErr('请先选择生成模型'); return; }
     setErr(''); setBusy('generating');
-    try {
-      const r = await api.images.generate({ prompt: prompt.trim(), kind, api_id: sel.api_id, model: sel.model, attach, size: size || undefined });
-      if (isCredentialsError(r)) return fail('credentials_required');
-      if (r && r.code === 'quota_exceeded') return fail('今日生图次数已达上限');
-      if (r && r.image_id) pollImage(r.image_id);
-      else fail(r && r.error);
-    } catch (e) { fail((e && e.message) || ''); }
-  }, [prompt, sel, kind, attach, pollImage, fail]);
+    imageGen.generate({ prompt: prompt.trim(), kind, api_id: sel.api_id, model: sel.model, attach, size: size || undefined }, GEN_PER_CALL);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prompt, sel, kind, attach, imageGen]);
 
   // ── 上传 ──
   const onPickFile = useCallback((file) => {

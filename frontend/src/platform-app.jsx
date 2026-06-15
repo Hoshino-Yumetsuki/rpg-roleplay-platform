@@ -39,6 +39,7 @@ import GlobalTaskFloater from './components/GlobalTaskFloater.jsx';
 import MediaStudio from './components/MediaStudio.jsx';
 import FileLibrary from './components/FileLibrary.jsx';
 import { credApiIdSet } from './components/catalog-helpers.js';
+import { createToastChannel } from './toast.jsx';
 // Cloudscape shell(AWS 控制台架构 + 暖色主题)
 import CSTopNavigation from '@cloudscape-design/components/top-navigation';
 import CSAppLayout from '@cloudscape-design/components/app-layout';
@@ -432,24 +433,14 @@ function WelcomeModal({ open, firstTime = false, onClose }) {
 }
 
 /* ---------------------------- TOAST ---------------------------- */
-const __toastListeners = [];
-let __toastId = 0;
-function emitToast(toast) {
-  __toastListeners.forEach(fn => fn(toast));
-}
-window.toast = function(message, opts = {}) {
-  const t = {
-    id: ++__toastId,
-    kind: opts.kind || "ok",        // ok | info | warn | danger
-    icon: opts.icon,
-    message,
-    detail: opts.detail || null,
-    duration: opts.duration ?? 2400,
-    action: opts.action,
-  };
-  emitToast(t);
-  return t.id;
-};
+// pub/sub + window.toast + pl-toast-stack 渲染收口到 ./toast.jsx 的 createToastChannel
+// (与 game-app 共用工厂,但各自独立总线)。行为零变化:
+//   · 装 window.toast(契约不变),【不】装 __apiToast —— Platform 桌面外壳只挂自己的 <ToastStack/>,
+//     __apiToast 历来走 game-app 总线(桌面无 GameToastStack 挂载 → 不可见);合并总线会让那
+//     60 处 __apiToast 在桌面突然可见 = 行为变化,故刻意保持两条独立总线。
+const __platformToast = createToastChannel({ name: 'platform', setWindowToast: true });
+const { ToastStack } = __platformToast;
+__platformToast.install();
 
 // 成就解锁通知:对 unlocked && seen===false 的项弹一次(会话内去重)再标记 seen。
 // 由个人主页加载与 app 外壳(跨页面)共用,保证在任何页面解锁都能弹。
@@ -472,51 +463,7 @@ window.__checkAchievements = async function () {
   } catch (_) {}
 };
 
-function useToasts() {
-  const [items, setItems] = useStatePL([]);
-  React.useEffect(() => {
-    const onAdd = (t) => {
-      setItems(arr => [...arr, t]);
-      if (t.duration > 0) {
-        setTimeout(() => setItems(arr => arr.filter(x => x.id !== t.id)), t.duration);
-      }
-    };
-    __toastListeners.push(onAdd);
-    return () => {
-      const i = __toastListeners.indexOf(onAdd);
-      if (i >= 0) __toastListeners.splice(i, 1);
-    };
-  }, []);
-  const dismiss = (id) => setItems(arr => arr.filter(x => x.id !== id));
-  return { items, dismiss };
-}
-
-function ToastStack() {
-  const { items, dismiss } = useToasts();
-  if (!items.length) return null;
-  const node = (
-    <div className="pl-toast-stack" aria-live="polite">
-      {items.map(t => (
-        <div key={t.id} className={`pl-toast pl-toast-${t.kind}`}>
-          <span className={`pl-toast-icon dot ${t.kind === "ok" ? "ok" : t.kind === "warn" ? "warn" : t.kind === "danger" ? "danger" : "info"}`} />
-          <div className="pl-toast-body">
-            <div className="pl-toast-msg">{t.message}</div>
-            {t.detail && <div className="pl-toast-detail muted-2">{t.detail}</div>}
-          </div>
-          {t.action && (
-            <button className="pl-toast-action" onClick={() => { t.action.onClick?.(); dismiss(t.id); }}>
-              {t.action.label}
-            </button>
-          )}
-          <button className="iconbtn pl-toast-close" onClick={() => dismiss(t.id)} data-tip="关闭">
-            <Icon name="close" size={11} />
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-  return createPortal(node, document.body);
-}
+// useToasts / ToastStack 已收口到 ./toast.jsx —— ToastStack 在文件顶部 import,外壳直接渲染。
 
 /* DialogHost — 全局 Promise 化的 Cloudscape 弹窗,接管浏览器原生 confirm/prompt。
    用法: await window.__confirm({title, message, danger, confirmText})  → bool

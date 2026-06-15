@@ -22,6 +22,7 @@ import { NarrativeBlock, PlayerBlock, GameToastStack, SaveImagesStrip, useSaveIm
 import { Composer } from './game-composer.jsx';
 import { TavernImportModal, CardSheet, CardEditFields, cardFormInit, cardFormPayload } from './pages/cards.jsx';
 import AvatarImg from './components/AvatarImg.jsx';
+import { useStickToBottom } from './hooks/useStickToBottom.js';
 
 /* ── 相对时间 ─────────────────────────────────────────────────────── */
 // 桶算法委托 data-loader.js 规范 window.__fmt.ago(语义统一 #25);仅本端的「空/坏值 → ''」
@@ -343,9 +344,6 @@ export function TavernThinkingBlock({ text, thinking }) {
 
 export function TavernChatArea({ history, running, saveId, charName, charInitial, charAvatar, personaName, hasError, errorMsg, onRetry, lastMeta, elapsedLabel }) {
   const ref = useRef(null);
-  const atBottomRef = useRef(true);
-  const isFirstLoadRef = useRef(true);
-  const [showJump, setShowJump] = useState(false);
 
   // 内嵌聊天图片:最后一条助手消息绝对索引 + 图片按消息分发(复用游戏端 hook)
   const total0 = Array.isArray(history) ? history.length : 0;
@@ -355,34 +353,15 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
   lastKeyRef.current = lastAsstIdx >= 0 ? String(lastAsstIdx) : null;
   const imagesByKey = useSaveImages(saveId, lastKeyRef);
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const onScroll = () => {
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      atBottomRef.current = atBottom;
-      setShowJump(!atBottom);
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, []);
-
-  // ① 第一次进入或刷新页面时，强制滚动到最底部; ② 自己刚发(末条=玩家)→ 滚到底; ③ 否则双守卫:已上滚 或 实时距底>360 → 不跟随(GM 输出完成不拽回)
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const last = history && history[history.length - 1];
-    if (history.length > 0 && isFirstLoadRef.current) {
-      isFirstLoadRef.current = false;
-      atBottomRef.current = true;
-    } else if (last && last.role === 'user') {
-      atBottomRef.current = true;
-    } else if (!atBottomRef.current || (el.scrollHeight - el.scrollTop - el.clientHeight) > 360) {
-      return;
-    }
-    const id = requestAnimationFrame(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; });
-    return () => cancelAnimationFrame(id);
-  }, [history.length, running]);
+  // 粘底守卫收口到 useStickToBottom(逐字等价:threshold 80 / 双守卫 360 / 首屏·末条玩家策略 / instant scrollTop)。
+  const _last = history && history[history.length - 1];
+  const { showJump, jumpToBottom } = useStickToBottom(ref, {
+    deps: [history.length, running],
+    lastIsUser: !!(_last && _last.role === 'user'),
+    hasContent: history.length > 0,
+    mode: 'instant',
+    withButton: true,
+  });
 
   const total = history.length;
   const isWaiting = running && (total === 0 || history[total - 1]?.role === 'user');
@@ -466,7 +445,7 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
             → 钉在阅读列右下、不随滚动飘走。游戏版同理(game-app.jsx)。 */}
         {showJump && (
           <button
-            onClick={() => { if (ref.current) { ref.current.scrollTo({ top: ref.current.scrollHeight, behavior: 'smooth' }); atBottomRef.current = true; setShowJump(false); } }}
+            onClick={jumpToBottom}
             className="btn"
             style={{ position: 'sticky', bottom: 16, justifySelf: 'end', marginLeft: 'auto', width: 'fit-content', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 999, padding: '6px 14px', fontSize: 12.5, boxShadow: 'var(--shadow-3, 0 6px 18px -6px rgba(0,0,0,0.5))', zIndex: 5, cursor: 'pointer' }}
             data-tip="跳到最新"

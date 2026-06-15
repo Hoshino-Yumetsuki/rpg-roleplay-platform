@@ -11,6 +11,7 @@
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icon } from '../icons.jsx';
+import { useStickToBottom } from '../../hooks/useStickToBottom.js';
 // 不复用电脑端 cards.jsx 的 UI 组件 —— 移动原生重写卡片读视图/persona 表单 + 纯数据 helper。
 // 注:此处 cardFormInit/cardFormPayload 字段集刻意比 pages/cards.jsx 窄(酒馆 persona 用
 // language_style/secret,无 full_name/importance/first_revealed_chapter/token_budget/
@@ -634,43 +635,18 @@ function ChatView({
   const closeMsgSheet = () => { setMsgSheet(null); setPressedIdx(null); };
   const threadRef = useRef(null);
   const taRef = useRef(null);
-  const atBottomRef = useRef(true);
-  const isFirstLoadRef = useRef(true);
-  const [showJump, setShowJump] = useState(false);
 
   const charName = (character && character.name) || (activeChat && activeChat.character_name) || '角色';
 
-  /* 自动滚底 */
-  useEffect(() => {
-    const el = threadRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const at = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      atBottomRef.current = at;
-      setShowJump(!at);
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, []);
-
-  // ① 第一次进入或刷新页面时，强制滚动到最底部; ② 自己刚发(末条=玩家)→ 滚到底; ③ 否则双守卫:已上滚 或 实时距底>360 → 不跟随(输出完成不拽回)
-  useEffect(() => {
-    const el = threadRef.current;
-    if (!el) return;
-    const last = history && history[history.length - 1];
-    if (history.length > 0 && isFirstLoadRef.current) {
-      isFirstLoadRef.current = false;
-      atBottomRef.current = true;
-    } else if (last && last.role === 'user') {
-      atBottomRef.current = true;
-    } else if (!atBottomRef.current || (el.scrollHeight - el.scrollTop - el.clientHeight) > 360) {
-      return;
-    }
-    const id = requestAnimationFrame(() => {
-      if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
-    });
-    return () => cancelAnimationFrame(id);
-  }, [history.length, running]);
+  /* 自动滚底:收口到 useStickToBottom(逐字等价:threshold 80 / 双守卫 360 / 首屏·末条玩家策略 / instant scrollTop)。 */
+  const _last = history && history[history.length - 1];
+  const { showJump, jumpToBottom } = useStickToBottom(threadRef, {
+    deps: [history.length, running],
+    lastIsUser: !!(_last && _last.role === 'user'),
+    hasContent: history.length > 0,
+    mode: 'instant',
+    withButton: true,
+  });
 
   /* textarea 自动增高 */
   useEffect(() => {
@@ -831,13 +807,7 @@ function ChatView({
         {/* 回到最新按钮 */}
         {showJump && (
           <button
-            onClick={() => {
-              if (threadRef.current) {
-                threadRef.current.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' });
-                atBottomRef.current = true;
-                setShowJump(false);
-              }
-            }}
+            onClick={jumpToBottom}
             style={{
               position: 'sticky', bottom: 8, left: '50%', transform: 'translateX(-50%)',
               display: 'flex', alignItems: 'center', gap: 5, width: 'fit-content',

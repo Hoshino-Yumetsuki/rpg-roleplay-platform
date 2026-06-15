@@ -9,7 +9,7 @@ import CSAlert from '@cloudscape-design/components/alert';
 import CSStatusIndicator from '@cloudscape-design/components/status-indicator';
 import AgentModelPicker from './AgentModelPicker.jsx';
 import ImageSizePicker from './ImageSizePicker.jsx';
-import { isCredentialsError } from '../lib/creds.js';
+import { useImageGeneration } from '../hooks/useImageGeneration.js';
 
 /* GenerateImageModal — AI 生图弹窗，复用 CSModal + AgentModelPicker 范式。
 
@@ -36,74 +36,38 @@ export default function GenerateImageModal({
   onDone,
   saveId,
 }) {
-  const { useState, useEffect, useRef } = React;
+  const { useState, useEffect } = React;
 
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [size, setSize] = useState('');
   const [selModel, setSelModel] = useState({ api_id: '', model: '' });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const [credsMissing, setCredsMissing] = useState(false);
-  const pollTimer = useRef(null);
+
+  // 生图内核(generate + 每 2s 轮询 + creds 分类)收口到 useImageGeneration;busy/error/credsMissing
+  // 取自 hook。done → onDone(url)+onClose;creds 文案逐字保留。
+  const CREDS_TEXT = '请先在设置中配置该 Provider 的 API Key，再重试。';
+  const { generate, generating: busy, error, credsMissing, reset, stop, setError } = useImageGeneration({
+    onDone: (url) => { if (onDone) onDone(url); if (onClose) onClose(); },
+  });
+  // perCall:逐字保留本组件原 done/fail/error 文案与轮询策略。
+  const PER_CALL = {
+    noImageIdMsg: '服务端未返回任务 ID',   // 响应无 image_id(含 !res)→ 报错
+    failFallback: '生成失败',               // failed 取错文兜底
+    credsErrorText: CREDS_TEXT,             // creds 时显示该文 + credsMissing 旗标
+    emptyResStops: true, emptyResMsg: '轮询返回空响应',   // 轮询空响应:停并报错
+    catchStops: true, pollCatchMsg: '轮询出错',           // 轮询 catch:停并报错(不再重试)
+    genericErrorMsg: '请求失败',
+  };
 
   // 当 defaultPrompt 变化(如父组件切换上下文)时同步
   useEffect(() => {
     setPrompt(defaultPrompt);
   }, [defaultPrompt]);
 
-  // 弹窗关闭时清理轮询
+  // 弹窗关闭时清理轮询(仅停轮询,逐字保留原行为:不在此清 error/credsMissing,那由 handleClose 做)。
   useEffect(() => {
-    if (!open) {
-      if (pollTimer.current) {
-        clearTimeout(pollTimer.current);
-        pollTimer.current = null;
-      }
-    }
+    if (!open) stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-
-  function stopPoll() {
-    if (pollTimer.current) {
-      clearTimeout(pollTimer.current);
-      pollTimer.current = null;
-    }
-  }
-
-  async function pollStatus(imageId) {
-    stopPoll();
-    try {
-      const res = await window.api.images.get(imageId);
-      if (!res) {
-        setBusy(false);
-        setError('轮询返回空响应');
-        return;
-      }
-      const status = res.status;
-      if (status === 'done') {
-        setBusy(false);
-        if (onDone) onDone(res.url);
-        if (onClose) onClose();
-        return;
-      }
-      if (status === 'failed') {
-        setBusy(false);
-        const errMsg = res.error || '生成失败';
-        const isCredsMissing = isCredentialsError(errMsg);
-        if (isCredsMissing) {
-          setCredsMissing(true);
-          setError('请先在设置中配置该 Provider 的 API Key，再重试。');
-        } else {
-          setCredsMissing(false);
-          setError(errMsg);
-        }
-        return;
-      }
-      // pending / generating → 继续轮询
-      pollTimer.current = setTimeout(() => pollStatus(imageId), 2000);
-    } catch (e) {
-      setBusy(false);
-      setError((e && e.message) || '轮询出错');
-    }
-  }
 
   async function handleGenerate() {
     const trimmedPrompt = (prompt || '').trim();
@@ -115,48 +79,21 @@ export default function GenerateImageModal({
       setError('请先选择模型');
       return;
     }
-    setError(null);
-    setCredsMissing(false);
-    setBusy(true);
-    try {
-      const body = {
-        prompt: trimmedPrompt,
-        kind,
-        api_id: selModel.api_id,
-        model: selModel.model,
-      };
-      if (attach) body.attach = attach;
-      if (saveId != null) body.save_id = saveId;
-      if (size) body.size = size;
-      const res = await window.api.images.generate(body);
-      if (!res || !res.image_id) {
-        setBusy(false);
-        setError('服务端未返回任务 ID');
-        return;
-      }
-      // 开始轮询
-      pollStatus(res.image_id);
-    } catch (e) {
-      setBusy(false);
-      const errMsg = (e && e.message) || '请求失败';
-      const payload = e && e.payload;
-      const detail = (payload && (payload.detail || payload.error)) || errMsg;
-      const isCredsMissing = isCredentialsError(e) || isCredentialsError(detail);
-      if (isCredsMissing) {
-        setCredsMissing(true);
-        setError('请先在设置中配置该 Provider 的 API Key，再重试。');
-      } else {
-        setCredsMissing(false);
-        setError(detail);
-      }
-    }
+    const body = {
+      prompt: trimmedPrompt,
+      kind,
+      api_id: selModel.api_id,
+      model: selModel.model,
+    };
+    if (attach) body.attach = attach;
+    if (saveId != null) body.save_id = saveId;
+    if (size) body.size = size;
+    generate(body, PER_CALL);
   }
 
   function handleClose() {
     if (busy) return;
-    stopPoll();
-    setError(null);
-    setCredsMissing(false);
+    reset();
     if (onClose) onClose();
   }
 

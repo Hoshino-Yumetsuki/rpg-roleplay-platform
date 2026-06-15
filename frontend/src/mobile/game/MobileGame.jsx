@@ -8,10 +8,11 @@
    面板内容(状态/记忆/世界书/人物/时间线/上下文/规则/调试)的移动原生实装在 ./panels.jsx
    (P2c);本文件负责外壳 + 聊天 + composer + 抽屉/sheet 骨架 + 找回的功能入口。 */
 import React from 'react';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Icon } from '../icons.jsx';
 import { MobilePanel, MOBILE_PANEL_TABS } from './panels.jsx';
 import AgentModelPicker from '../../components/AgentModelPicker.jsx';
+import { useStickToBottom } from '../../hooks/useStickToBottom.js';
 
 const SLASH_GROUPS = [
   { title: '查询', items: [
@@ -335,31 +336,18 @@ export function MobileGame(gc) {
   const running = runState.running;
   const anyOverlay = leftOpen || rightOpen || !!sheet;
 
-  const atBottomRef = useRef(true);
-  const isFirstLoadRef = useRef(true);
-  const scrollBottom = useCallback((smooth) => {
-    const el = chatRef.current; if (!el) return;
-    requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }));
-  }, []);
-  // 此前手机游戏【完全没有守卫】→ 每次输出无条件拽回底部。补 onScroll 记录是否在底部。
-  useEffect(() => {
-    const el = chatRef.current; if (!el) return;
-    const onScroll = () => { atBottomRef.current = (el.scrollHeight - el.scrollTop - el.clientHeight) < 80; };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, []);
-  useEffect(() => { scrollBottom(false); }, []);  // 挂载滚底
-  // ① 第一次进入或刷新页面时，强制滚动到最底部; ② 自己刚发(末条=玩家)→ 滚底; ③ 否则双守卫:已上滚 或 实时距底>360 → 不跟随(GM 输出完成不拽回)
-  useEffect(() => {
-    const el = chatRef.current; if (!el) return;
-    const last = history && history[history.length - 1];
-    if (history.length > 0 && isFirstLoadRef.current) {
-      isFirstLoadRef.current = false;
-      atBottomRef.current = true;
-    } else if (last && last.role === 'user') { atBottomRef.current = true; }
-    else if (!atBottomRef.current || (el.scrollHeight - el.scrollTop - el.clientHeight) > 360) { return; }
-    scrollBottom(true);
-  }, [history.length, running]);
+  // 此前手机游戏【完全没有守卫】→ 每次输出无条件拽回底部。粘底守卫收口到 useStickToBottom
+  // (逐字等价:threshold 80 / 双守卫 360 / 首屏·末条玩家策略 / mode 'smooth' 即原 scrollBottom(true) /
+  // scrollOnMount 即挂载 scrollBottom(false))。手机游戏无「回到最新」按钮 → withButton:false。
+  const _last = history && history[history.length - 1];
+  useStickToBottom(chatRef, {
+    deps: [history.length, running],
+    lastIsUser: !!(_last && _last.role === 'user'),
+    hasContent: history.length > 0,
+    mode: 'smooth',
+    withButton: false,
+    scrollOnMount: true,
+  });
 
   // 手机 GM 询问可折叠(抽屉):默认展开;新询问到达自动展开;用户可手动点头部收起腾出视野。
   // 发消息时 running=true → confirm-zone 自动隐藏(相当于关上一条),新询问回来 qSig 变→自动展开。
