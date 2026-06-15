@@ -388,6 +388,40 @@ class GenericAlgorithmNoHardcoding(unittest.TestCase):
         self.assertIsNotNone(a)
         self.assertEqual(a["story_phase"], "Mule Crisis")
 
+    def test_collapse_phase_duplicate_anchors(self):
+        """去重:同 story_time_label 同时存在「空 phase」与「非空 phase」时,删空保实。"""
+        from platform_app.db import connect, init_db
+        from script_timeline import collapse_phase_duplicate_anchors
+        sid = 9990009
+        # 模拟真实病:build_timeline 写 ('', '序章'),rebuild 写 ('开端','序章');
+        # 另有 ('开端','第二章') 单行(非空、无空兄弟,应保留)和 ('','孤儿章') 单行
+        # (空、无非空兄弟,该 label 唯一来源,应保留)。
+        self._seed_anchors(sid, [
+            ("", "序章", 1, 1),
+            ("开端", "序章", 1, 1),
+            ("开端", "第二章", 2, 2),
+            ("", "孤儿章", 3, 3),
+        ])
+        init_db()
+        with connect() as db:
+            deleted = collapse_phase_duplicate_anchors(db, sid)
+            self.assertEqual(deleted, 1, "应只删 ('','序章') 这一行")
+            rows = db.execute(
+                "select story_phase, story_time_label from script_timeline_anchors "
+                "where script_id=%s order by story_time_label, story_phase",
+                (sid,),
+            ).fetchall()
+        got = {(r["story_phase"], r["story_time_label"]) for r in rows}
+        # 序章 只剩非空 phase 那行;第二章、孤儿章 都保留
+        self.assertIn(("开端", "序章"), got)
+        self.assertNotIn(("", "序章"), got)
+        self.assertIn(("开端", "第二章"), got)
+        self.assertIn(("", "孤儿章"), got, "唯一来源的空 phase 行不能误删")
+        # 幂等:再跑一次删 0
+        with connect() as db:
+            self.assertEqual(collapse_phase_duplicate_anchors(db, sid), 0)
+            db.execute("delete from script_timeline_anchors where script_id=%s", (sid,))
+
     def test_no_match_safety(self):
         """完全无关 label 在所有剧本类型下都返回 None。"""
         from script_timeline import resolve_timeline_anchor

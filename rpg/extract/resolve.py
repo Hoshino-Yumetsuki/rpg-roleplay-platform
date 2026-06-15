@@ -689,6 +689,16 @@ def build_timeline(db, script_id: int, chapter_extracts: list) -> int:
              seg["chapter_max"] - seg["chapter_min"] + 1, sample_summary, 0.7),
         )
         written += 1
+    # build_timeline 的 story_phase 恒为空串。若此前 rebuild_timeline_anchors /
+    # rebuild_timeline_from_db 已写过非空 phase 的同名锚点(知识同步/时间线重建在前、
+    # 本次重跑拆书提取在后),唯一键 (script_id, story_phase, story_time_label) 因 phase
+    # 一空一实不去重 → 同一标签留两行,时间线面板两个同名节点都判「当前」。
+    # 收尾确定性去重:删掉「同 label 有非空 phase 兄弟」的空 phase 行(见 collapse_phase_duplicate_anchors)。
+    try:
+        from script_timeline import collapse_phase_duplicate_anchors
+        collapse_phase_duplicate_anchors(db, script_id)
+    except Exception:
+        pass
     return written
 
 
