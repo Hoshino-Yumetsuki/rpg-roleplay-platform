@@ -17,6 +17,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Icon } from './game-icons.jsx';
+import Modal from './components/Modal.jsx';
+import ConfirmDialog from './components/ConfirmDialog.jsx';
 import { useResizable } from './responsive.jsx';
 import { NarrativeBlock, PlayerBlock, GameToastStack, SaveImagesStrip, useSaveImages } from './game-app.jsx';
 import { Composer } from './game-composer.jsx';
@@ -35,31 +37,27 @@ export function relTime(ts) {
   return ago ? ago(ts) : d.toLocaleDateString();
 }
 
-/* ── 确认弹窗(仿 game-app.jsx 的 pl-modal)─────────────────────────── */
+/* ── 确认弹窗 ──────────────────────────────────────────────────────
+   收口到共享 components/ConfirmDialog.jsx(建在 Modal 之上)。导出契约与产出 DOM
+   完全不变:eyebrow 危险操作/请确认、宽 420、行高 1.7、createPortal、确认钮无图标。 */
 export function ConfirmModal({ open, title, body, confirmLabel = '确认', danger, onClose, onConfirm }) {
-  if (!open) return null;
-  const node = (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(420px, 100%)' }}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow">{danger ? '危险操作' : '请确认'}</div>
-            <h2 className="pl-modal-title">{title}</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip="关闭"><Icon name="close" size={14} /></button>
-        </header>
-        <div style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--text-quiet)' }}>{body}</div>
-        <footer className="pl-modal-foot">
-          <span />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn ghost" onClick={onClose}>取消</button>
-            <button className={`btn ${danger ? 'danger' : 'primary'}`} onClick={onConfirm}>{confirmLabel}</button>
-          </div>
-        </footer>
-      </div>
-    </div>
+  return (
+    <ConfirmDialog
+      open={open}
+      title={title}
+      body={body}
+      eyebrow={danger ? '危险操作' : '请确认'}
+      danger={danger}
+      confirmLabel={confirmLabel}
+      cancelLabel="取消"
+      icons={false}
+      width={420}
+      bodyLineHeight={1.7}
+      portal
+      onClose={onClose}
+      onConfirm={onConfirm}
+    />
   );
-  return createPortal(node, document.body);
 }
 
 /* ── 单条对话行(标题 + last_snippet + 相对时间 + hover ⋯ 菜单)──────── */
@@ -1124,32 +1122,29 @@ export function RenameModal({ target, onClose, onConfirm }) {
   useEffect(() => { setVal(target?.title || target?.character_name || ''); }, [target]);
   if (!target) return null;
   const node = (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(420px, 100%)' }}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow">重命名对话</div>
-            <h2 className="pl-modal-title">新标题</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip="关闭"><Icon name="close" size={14} /></button>
-        </header>
-        <div className="pl-field">
-          <input
-            autoFocus value={val} onChange={(e) => setVal(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && val.trim()) onConfirm(val.trim()); }}
-            placeholder="对话标题"
-            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--line-soft)', background: 'var(--bg-deep)', color: 'var(--text)' }}
-          />
+    <Modal
+      open
+      eyebrow="重命名对话"
+      title="新标题"
+      width={420}
+      onClose={onClose}
+      footer={<>
+        <span />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn ghost" onClick={onClose}>取消</button>
+          <button className="btn primary" onClick={() => val.trim() && onConfirm(val.trim())} disabled={!val.trim()}>保存</button>
         </div>
-        <footer className="pl-modal-foot">
-          <span />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn ghost" onClick={onClose}>取消</button>
-            <button className="btn primary" onClick={() => val.trim() && onConfirm(val.trim())} disabled={!val.trim()}>保存</button>
-          </div>
-        </footer>
+      </>}
+    >
+      <div className="pl-field">
+        <input
+          autoFocus value={val} onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && val.trim()) onConfirm(val.trim()); }}
+          placeholder="对话标题"
+          style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--line-soft)', background: 'var(--bg-deep)', color: 'var(--text)' }}
+        />
       </div>
-    </div>
+    </Modal>
   );
   return createPortal(node, document.body);
 }

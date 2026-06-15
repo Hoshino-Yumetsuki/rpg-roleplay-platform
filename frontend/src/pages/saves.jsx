@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom';
 import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL, useCallback as useCallbackPL } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
+import Modal from '../components/Modal.jsx';
 import { plNavigate } from '../router.js';
 import { ConfirmModal, useShellChrome, ResizableSplit } from '../platform-app.jsx';
 import { BranchGraph } from '../branch-graph.jsx';
@@ -1048,15 +1049,24 @@ function ContinuePicker({ open, save, focusedNodeId, onClose }) {
   // STEP 1: Save selection
   if (step === "save") {
     return (
-      <div className="pl-modal-backdrop" onClick={onClose}>
-        <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(620px, 100%)"}}>
-          <header className="pl-modal-head">
-            <div>
-              <div className="pl-modal-eyebrow">{t('saves.continue.step1_eyebrow')}</div>
-              <h2 className="pl-modal-title">{t('saves.continue.step1_title')}</h2>
-            </div>
-            <button className="iconbtn" onClick={onClose} data-tip={t('saves.continue.close_tip')}><Icon name="close" size={14} /></button>
-          </header>
+      <Modal
+        open
+        eyebrow={t('saves.continue.step1_eyebrow')}
+        title={t('saves.continue.step1_title')}
+        width={620}
+        onClose={onClose}
+        footer={<>
+          <span className="muted-2" style={{fontSize: 11.5}}>
+            <Icon name="info" size={11} /> {t('saves.continue.hint_dblclick')}
+          </span>
+          <div style={{display: "flex", gap: 8}}>
+            <button className="btn ghost" onClick={onClose}>{t('saves.continue.btn_cancel')}</button>
+            <button className="btn primary" onClick={() => setStep("branch")} disabled={!pickedSave}>
+              {t('saves.continue.btn_next')} <Icon name="arrow_right" size={12} />
+            </button>
+          </div>
+        </>}
+      >
           <div className="pl-save-picker">
             {savesLoading && (
               <div className="muted-2" style={{padding: "20px 12px", textAlign: "center", fontSize: 13}}>
@@ -1095,17 +1105,6 @@ function ContinuePicker({ open, save, focusedNodeId, onClose }) {
               <Icon name="chevron_right" size={14} style={{color: "var(--muted-2)"}} />
             </button>
           </div>
-          <footer className="pl-modal-foot">
-            <span className="muted-2" style={{fontSize: 11.5}}>
-              <Icon name="info" size={11} /> {t('saves.continue.hint_dblclick')}
-            </span>
-            <div style={{display: "flex", gap: 8}}>
-              <button className="btn ghost" onClick={onClose}>{t('saves.continue.btn_cancel')}</button>
-              <button className="btn primary" onClick={() => setStep("branch")} disabled={!pickedSave}>
-                {t('saves.continue.btn_next')} <Icon name="arrow_right" size={12} />
-              </button>
-            </div>
-          </footer>
           <NewGameModal
             open={newOpen}
             onClose={() => setNewOpen(false)}
@@ -1117,26 +1116,37 @@ function ContinuePicker({ open, save, focusedNodeId, onClose }) {
               // 成功会跳页 (location.href),不会执行到下面
             }}
           />
-        </div>
-      </div>
+      </Modal>
     );
   }
 
   // STEP 2: Branch / node selection
   return (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(640px, 100%)"}}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow">
-              <button className="pl-back-btn" onClick={() => setStep("save")} data-tip={t('saves.continue.step2_back_tip')}>
-                <Icon name="chevron_left" size={11} /> {t('saves.continue.step2_back')}
-              </button>
-            </div>
-            <h2 className="pl-modal-title">{pickedSave?.title || t('saves.continue.step2_fallback_title')}</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip={t('saves.continue.close_tip')}><Icon name="close" size={14} /></button>
-        </header>
+    <Modal
+      open
+      width={640}
+      onClose={onClose}
+      eyebrow={
+        <button className="pl-back-btn" onClick={() => setStep("save")} data-tip={t('saves.continue.step2_back_tip')}>
+          <Icon name="chevron_left" size={11} /> {t('saves.continue.step2_back')}
+        </button>
+      }
+      title={pickedSave?.title || t('saves.continue.step2_fallback_title')}
+      footer={<>
+        <span className="muted-2" style={{fontSize: 11.5}}>
+          <Icon name="info" size={11} />{" "}
+          {isFork
+            ? t('saves.continue.info_fork', { id: String(picked.id).padStart(2, "0") })
+            : t('saves.continue.info_continue', { id: String(picked?.id || 0).padStart(2, "0") })}
+        </span>
+        <div style={{display: "flex", gap: 8}}>
+          <button className="btn ghost" onClick={() => setStep("save")}>{t('saves.continue.btn_prev')}</button>
+          <button className="btn primary" onClick={confirm} disabled={pickedNode == null}>
+            <Icon name="play" size={12} /> {isFork ? t('saves.continue.btn_fork') : t('saves.continue.btn_continue')}
+          </button>
+        </div>
+      </>}
+    >
 
         {/* task 45：真分支树。loading 时显示加载提示；空时显示空态（新账号还没存档的常见情况） */}
         {branchLoading && (
@@ -1217,22 +1227,7 @@ function ContinuePicker({ open, save, focusedNodeId, onClose }) {
           })}
         </div>
 
-        <footer className="pl-modal-foot">
-          <span className="muted-2" style={{fontSize: 11.5}}>
-            <Icon name="info" size={11} />{" "}
-            {isFork
-              ? t('saves.continue.info_fork', { id: String(picked.id).padStart(2, "0") })
-              : t('saves.continue.info_continue', { id: String(picked?.id || 0).padStart(2, "0") })}
-          </span>
-          <div style={{display: "flex", gap: 8}}>
-            <button className="btn ghost" onClick={() => setStep("save")}>{t('saves.continue.btn_prev')}</button>
-            <button className="btn primary" onClick={confirm} disabled={pickedNode == null}>
-              <Icon name="play" size={12} /> {isFork ? t('saves.continue.btn_fork') : t('saves.continue.btn_continue')}
-            </button>
-          </div>
-        </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

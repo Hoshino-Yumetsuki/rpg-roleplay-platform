@@ -30,6 +30,7 @@ import {
   AdminAchievementsPage,
 } from './pages/admin.jsx';
 import Modal from './components/Modal.jsx';
+import ConfirmDialog from './components/ConfirmDialog.jsx';
 import PolicyNoticeBanner from './components/PolicyNoticeBanner.jsx';
 import { FeedbackQuickModal } from './components/FeedbackQuickModal.jsx';
 import HelpDrawerRoot from './components/HelpDrawer.jsx';
@@ -229,15 +230,25 @@ function PromptModal({ open, eyebrow, title, fields = [], submitLabel = "确认"
   const update = (k, v) => setValues(s => ({ ...s, [k]: v }));
   const canSubmit = fields.every(f => !f.required || (values[f.key] !== "" && values[f.key] != null));
   return (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(480px, 100%)"}}>
-        <header className="pl-modal-head">
-          <div>
-            {eyebrow && <div className="pl-modal-eyebrow">{eyebrow}</div>}
-            <h2 className="pl-modal-title">{title}</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip="关闭"><Icon name="close" size={14} /></button>
-        </header>
+    <Modal
+      open
+      eyebrow={eyebrow || undefined}
+      title={title}
+      width={480}
+      onClose={onClose}
+      footer={<>
+        <span className="muted-2" style={{fontSize: 11.5}}>
+          {hint ? (<><Icon name="info" size={11} /> {hint}</>) : null}
+        </span>
+        <div style={{display: "flex", gap: 8}}>
+          <button className="btn ghost" onClick={onClose}>取消</button>
+          <button className={`btn ${danger ? "danger" : "primary"}`} disabled={!canSubmit || busy}
+            onClick={() => onConfirm(values)}>
+            {danger ? <Icon name="trash" size={12} /> : <Icon name="check" size={12} />} {submitLabel}
+          </button>
+        </div>
+      </>}
+    >
         <div className="pl-modal-form">
           {fields.map(f => (
             <div key={f.key} className="pl-field">
@@ -263,49 +274,30 @@ function PromptModal({ open, eyebrow, title, fields = [], submitLabel = "确认"
             </div>
           ))}
         </div>
-        <footer className="pl-modal-foot">
-          <span className="muted-2" style={{fontSize: 11.5}}>
-            {hint ? (<><Icon name="info" size={11} /> {hint}</>) : null}
-          </span>
-          <div style={{display: "flex", gap: 8}}>
-            <button className="btn ghost" onClick={onClose}>取消</button>
-            <button className={`btn ${danger ? "danger" : "primary"}`} disabled={!canSubmit || busy}
-              onClick={() => onConfirm(values)}>
-              {danger ? <Icon name="trash" size={12} /> : <Icon name="check" size={12} />} {submitLabel}
-            </button>
-          </div>
-        </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
+// 收口到共享 components/ConfirmDialog.jsx(建在 Modal 之上)。导出契约与产出 DOM 完全不变:
+// eyebrow 高危操作(danger 染红)/确认、宽 440、行高 1.65、确认/取消钮带 trash/check 图标、
+// busy 禁关。无 createPortal(历来直接挂在调用处)。
 function ConfirmModal({ open, title, body, danger = false, confirmLabel = "确认", onClose, onConfirm, busy = false }) {
-  if (!open) return null;
   return (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(440px, 100%)"}}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow" style={{color: danger ? "var(--danger)" : "var(--muted-2)"}}>
-              {danger ? "高危操作" : "确认"}
-            </div>
-            <h2 className="pl-modal-title">{title}</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip="关闭" disabled={busy}><Icon name="close" size={14} /></button>
-        </header>
-        <div style={{fontSize: 13.5, lineHeight: 1.65, color: "var(--text-quiet)"}}>{body}</div>
-        <footer className="pl-modal-foot">
-          <span></span>
-          <div style={{display: "flex", gap: 8}}>
-            <button className="btn ghost" onClick={onClose} disabled={busy}>取消</button>
-            <button className={`btn ${danger ? "danger" : "primary"}`} onClick={onConfirm} disabled={busy}>
-              {danger ? <Icon name="trash" size={12} /> : <Icon name="check" size={12} />} {confirmLabel}
-            </button>
-          </div>
-        </footer>
-      </div>
-    </div>
+    <ConfirmDialog
+      open={open}
+      title={title}
+      body={body}
+      danger={danger}
+      dangerEyebrow
+      confirmLabel={confirmLabel}
+      cancelLabel="取消"
+      icons
+      busy={busy}
+      width={440}
+      bodyLineHeight={1.65}
+      onClose={onClose}
+      onConfirm={onConfirm}
+    />
   );
 }
 
@@ -365,17 +357,26 @@ function WelcomeModal({ open, firstTime = false, onClose }) {
   );
 
   return (
-    <div className="pl-modal-backdrop" onClick={busy ? undefined : handleClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(520px, 100%)', maxHeight: '90vh', overflowY: 'auto' }}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow">{t('platform.welcome.eyebrow')}</div>
-            <h2 className="pl-modal-title">{t('platform.welcome.title')}</h2>
-          </div>
-          <button className="iconbtn" onClick={handleClose} disabled={busy} data-tip="关闭">
-            <Icon name="close" size={14} />
+    <Modal
+      open
+      eyebrow={t('platform.welcome.eyebrow')}
+      title={t('platform.welcome.title')}
+      width={520}
+      panelStyle={{ maxHeight: '90vh', overflowY: 'auto' }}
+      closeDisabled={busy}
+      onClose={handleClose}
+      footer={<>
+        <span />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn ghost" onClick={handleGoSettings} disabled={busy}>
+            {t('platform.welcome.go_settings')}
           </button>
-        </header>
+          <button className="btn primary" onClick={handleClose} disabled={busy}>
+            <Icon name="check" size={12} /> {t('platform.welcome.close_btn')}
+          </button>
+        </div>
+      </>}
+    >
         <div style={{ padding: '4px 0 16px' }}>
           {/* 测试期免责 */}
           <div style={{ background: 'rgba(220,80,60,0.10)', border: '1px solid rgba(220,80,60,0.3)', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
@@ -416,19 +417,7 @@ function WelcomeModal({ open, firstTime = false, onClose }) {
             </div>
           )}
         </div>
-        <footer className="pl-modal-foot">
-          <span />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn ghost" onClick={handleGoSettings} disabled={busy}>
-              {t('platform.welcome.go_settings')}
-            </button>
-            <button className="btn primary" onClick={handleClose} disabled={busy}>
-              <Icon name="check" size={12} /> {t('platform.welcome.close_btn')}
-            </button>
-          </div>
-        </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -2028,15 +2017,20 @@ function MeUserSettings() {
         onConfirm={onExportData}
       />
       {sessionsOpen && (
-        <div className="pl-modal-backdrop" onClick={() => setSessionsOpen(false)}>
-          <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(620px, 100%)"}}>
-            <header className="pl-modal-head">
-              <div>
-                <div className="pl-modal-eyebrow">活跃会话</div>
-                <h2 className="pl-modal-title">{sessions.length === 0 ? "暂无活跃会话" : `${sessions.length} 个登录中`}</h2>
-              </div>
-              <button className="iconbtn" onClick={() => setSessionsOpen(false)} data-tip="关闭"><Icon name="close" size={14} /></button>
-            </header>
+        <Modal
+          open
+          eyebrow="活跃会话"
+          title={sessions.length === 0 ? "暂无活跃会话" : `${sessions.length} 个登录中`}
+          width={620}
+          onClose={() => setSessionsOpen(false)}
+          footer={<>
+            <span className="muted-2" style={{fontSize: 11.5}}>POST /api/auth/sessions/revoke</span>
+            <div style={{display: "flex", gap: 8}}>
+              <button className="btn ghost" onClick={() => setSessionsOpen(false)}>关闭</button>
+              <button className="btn danger" onClick={onRevokeAll} disabled={busyRevokeAll}><Icon name="close" size={12} /> 全部下线（保留当前）</button>
+            </div>
+          </>}
+        >
             <ul className="pl-session-list">
               {sessions.map((s, i) => (
                 <li key={s.id || i}>
@@ -2056,26 +2050,26 @@ function MeUserSettings() {
                 </li>
               ))}
             </ul>
-            <footer className="pl-modal-foot">
-              <span className="muted-2" style={{fontSize: 11.5}}>POST /api/auth/sessions/revoke</span>
-              <div style={{display: "flex", gap: 8}}>
-                <button className="btn ghost" onClick={() => setSessionsOpen(false)}>关闭</button>
-                <button className="btn danger" onClick={onRevokeAll} disabled={busyRevokeAll}><Icon name="close" size={12} /> 全部下线（保留当前）</button>
-              </div>
-            </footer>
-          </div>
-        </div>
+        </Modal>
       )}
       {historyOpen && (
-        <div className="pl-modal-backdrop" onClick={() => setHistoryOpen(false)}>
-          <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(640px, 100%)"}}>
-            <header className="pl-modal-head">
-              <div>
-                <div className="pl-modal-eyebrow">登录日志</div>
-                <h2 className="pl-modal-title">最近登录 · {loginHistory.length} 次</h2>
-              </div>
-              <button className="iconbtn" onClick={() => setHistoryOpen(false)} data-tip="关闭"><Icon name="close" size={14} /></button>
-            </header>
+        <Modal
+          open
+          eyebrow="登录日志"
+          title={`最近登录 · ${loginHistory.length} 次`}
+          width={640}
+          onClose={() => setHistoryOpen(false)}
+          footer={<>
+            <span className="muted-2" style={{fontSize: 11.5}}>GET /api/auth/login-history</span>
+            <div style={{display: "flex", gap: 8}}>
+              <button className="btn ghost" onClick={() => setHistoryOpen(false)}>关闭</button>
+              <button className="btn ghost" onClick={() => {
+                const url = window.api.base + "/api/v1/auth/login-history?format=csv";
+                window.open(url, "_blank");
+              }}><Icon name="download" size={12} /> 导出 CSV</button>
+            </div>
+          </>}
+        >
             <ul className="pl-session-list">
               {loginHistory.length === 0 ? (
                 <li className="muted" style={{padding: 16, textAlign: "center"}}>暂无记录</li>
@@ -2092,29 +2086,20 @@ function MeUserSettings() {
                 </li>
               ))}
             </ul>
-            <footer className="pl-modal-foot">
-              <span className="muted-2" style={{fontSize: 11.5}}>GET /api/auth/login-history</span>
-              <div style={{display: "flex", gap: 8}}>
-                <button className="btn ghost" onClick={() => setHistoryOpen(false)}>关闭</button>
-                <button className="btn ghost" onClick={() => {
-                  const url = window.api.base + "/api/v1/auth/login-history?format=csv";
-                  window.open(url, "_blank");
-                }}><Icon name="download" size={12} /> 导出 CSV</button>
-              </div>
-            </footer>
-          </div>
-        </div>
+        </Modal>
       )}
       {policyOpen && (
-        <div className="pl-modal-backdrop" onClick={() => setPolicyOpen(false)}>
-          <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(680px, 100%)"}}>
-            <header className="pl-modal-head">
-              <div>
-                <div className="pl-modal-eyebrow">隐私政策摘要</div>
-                <h2 className="pl-modal-title">我们如何处理你的数据</h2>
-              </div>
-              <button className="iconbtn" onClick={() => setPolicyOpen(false)} data-tip="关闭"><Icon name="close" size={14} /></button>
-            </header>
+        <Modal
+          open
+          eyebrow="隐私政策摘要"
+          title="我们如何处理你的数据"
+          width={680}
+          onClose={() => setPolicyOpen(false)}
+          footer={<>
+            <a className="muted" style={{fontSize: 12}} href="#" onClick={(e) => e.preventDefault()}>查看完整政策（外链）</a>
+            <button className="btn primary" onClick={() => setPolicyOpen(false)}>我已阅读</button>
+          </>}
+        >
             <div style={{fontSize: 13, lineHeight: 1.7, color: "var(--text-quiet)", maxHeight: 360, overflow: "auto"}}>
               <p><strong>1. 我们收集什么</strong>：账号信息（用户名、邮箱、可选手机）、设备指纹（用于会话）、用量遥测（仅在你开启时）。</p>
               <p><strong>2. 我们 不 收集什么</strong>：剧本正文、玩家变量、私聊、长期记忆、世界书条目——这些数据加密存储在你的工作区，团队 无 任何访问。</p>
@@ -2122,12 +2107,7 @@ function MeUserSettings() {
               <p><strong>4. 数据所有权</strong>：你可以随时通过『导出我的数据』申请完整归档；可随时『停用账号』（90 天保留）或『永久删除』（立刻执行）。</p>
               <p><strong>5. 合规</strong>：本平台符合 GDPR · 中国《个人信息保护法》· 加州 CCPA。</p>
             </div>
-            <footer className="pl-modal-foot">
-              <a className="muted" style={{fontSize: 12}} href="#" onClick={(e) => e.preventDefault()}>查看完整政策（外链）</a>
-              <button className="btn primary" onClick={() => setPolicyOpen(false)}>我已阅读</button>
-            </footer>
-          </div>
-        </div>
+        </Modal>
       )}
     </CSSpaceBetween>
   );
@@ -3759,44 +3739,41 @@ function CapCard({ id, name, desc, tag, on, status, kind, onChanged, _raw }) {
         }}
       />
       {logOpen && (
-        <div className="pl-modal-backdrop" onClick={() => setLogOpen(false)}>
-          <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(640px, 100%)"}}>
-            <header className="pl-modal-head">
-              <div>
-                <div className="pl-modal-eyebrow">日志 · {name}</div>
-                <h2 className="pl-modal-title">最近 50 条</h2>
-              </div>
-              <button className="iconbtn" onClick={() => setLogOpen(false)} data-tip="关闭"><Icon name="close" size={14} /></button>
-            </header>
+        <Modal
+          open
+          eyebrow={`日志 · ${name}`}
+          title="最近 50 条"
+          width={640}
+          onClose={() => setLogOpen(false)}
+          footer={<>
+            <span className="muted-2" style={{fontSize: 11.5}}>
+              <Icon name="info" size={11} /> {kind === "mcp" ? "GET /api/mcp/runtime · admin 可见 stderr" : "本类型暂无运行时日志"}
+            </span>
+            <div style={{display: "flex", gap: 8}}>
+              <button className="btn ghost" onClick={loadLog} disabled={logBusy}><Icon name="refresh" size={12} /> 刷新</button>
+              <button className="btn ghost" onClick={() => setLogOpen(false)}>关闭</button>
+              <button className="btn primary" disabled={!logText} onClick={() => {
+                // task 50：之前是 dead button。下载日志文本为 .log 文件。
+                try {
+                  const blob = new Blob([logText || ""], { type: "text/plain;charset=utf-8" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  const safe = String(name || id || "log").replace(/[^\w.-]+/g, "_");
+                  a.href = url; a.download = `${safe}.log`;
+                  document.body.appendChild(a); a.click();
+                  document.body.removeChild(a);
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } catch (e) { window.__apiToast?.("导出失败", { kind: "danger", detail: e?.message }); }
+              }}><Icon name="download" size={12} /> 导出</button>
+            </div>
+          </>}
+        >
             <pre className="mono" style={{
               maxHeight: 320, overflow: "auto", margin: 0, padding: "12px 14px",
               background: "var(--bg-deep)", border: "1px solid var(--line-soft)",
               borderRadius: "var(--r-2)", fontSize: 11.5, lineHeight: 1.7, color: "var(--text-quiet)"
             }}>{logBusy ? "加载中…" : logText || "（暂无内容）"}</pre>
-            <footer className="pl-modal-foot">
-              <span className="muted-2" style={{fontSize: 11.5}}>
-                <Icon name="info" size={11} /> {kind === "mcp" ? "GET /api/mcp/runtime · admin 可见 stderr" : "本类型暂无运行时日志"}
-              </span>
-              <div style={{display: "flex", gap: 8}}>
-                <button className="btn ghost" onClick={loadLog} disabled={logBusy}><Icon name="refresh" size={12} /> 刷新</button>
-                <button className="btn ghost" onClick={() => setLogOpen(false)}>关闭</button>
-                <button className="btn primary" disabled={!logText} onClick={() => {
-                  // task 50：之前是 dead button。下载日志文本为 .log 文件。
-                  try {
-                    const blob = new Blob([logText || ""], { type: "text/plain;charset=utf-8" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    const safe = String(name || id || "log").replace(/[^\w.-]+/g, "_");
-                    a.href = url; a.download = `${safe}.log`;
-                    document.body.appendChild(a); a.click();
-                    document.body.removeChild(a);
-                    setTimeout(() => URL.revokeObjectURL(url), 1000);
-                  } catch (e) { window.__apiToast?.("导出失败", { kind: "danger", detail: e?.message }); }
-                }}><Icon name="download" size={12} /> 导出</button>
-              </div>
-            </footer>
-          </div>
-        </div>
+        </Modal>
       )}
       {confirmDel && (
         <Modal eyebrow="删除确认" title="删除 MCP 服务器" width={420}

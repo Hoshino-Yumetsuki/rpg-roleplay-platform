@@ -6,6 +6,7 @@ import React from 'react';
 import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL, useCallback as useCallbackPL } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
+import Modal from '../components/Modal.jsx';
 import { ConfirmModal, SettingsToggle, useAutoSave, usePlatformData, useReactiveUser, publishUser, fmtN, ResizableSplit } from '../platform-app.jsx';
 import AgentModelPicker from '../components/AgentModelPicker.jsx';
 import GmStyleEditor from '../components/GmStyleEditor.jsx';
@@ -868,15 +869,25 @@ function AddModelModal({ open, api, onClose, onConfirm }) {
   if (!open || !api) return null;
   const toggleCap = (c) => setForm(f => ({ ...f, capabilities: f.capabilities.includes(c) ? f.capabilities.filter(x => x !== c) : [...f.capabilities, c] }));
   return (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(560px, 100%)"}}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow">{t('settings.add_model.eyebrow', { api: api.name })}</div>
-            <h2 className="pl-modal-title">{t('settings.add_model.title')}</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip={t('common.close')}><Icon name="close" size={14} /></button>
-        </header>
+    <Modal
+      open
+      eyebrow={t('settings.add_model.eyebrow', { api: api.name })}
+      title={t('settings.add_model.title')}
+      width={560}
+      onClose={onClose}
+      footer={<>
+        <span className="muted-2" style={{fontSize: 11.5}}>
+          <Icon name="info" size={11} /> POST <span className="mono">/api/v1/models/model</span>
+        </span>
+        <div style={{display: "flex", gap: 8}}>
+          <button className="btn ghost" onClick={onClose}>{t('common.cancel')}</button>
+          <button className="btn primary" disabled={!form.real_name || !form.display}
+            onClick={() => onConfirm({ id: form.real_name, ...form })}>
+            <Icon name="check" size={12} /> {t('settings.add_model.add_btn')}
+          </button>
+        </div>
+      </>}
+    >
         <div className="pl-modal-form">
           <div className="pl-field">
             <label>{t('settings.add_model.real_name')} <span className="muted-2" style={{textTransform: "none", letterSpacing: 0, marginLeft: 6}}>{t('settings.add_model.real_name_hint', { api: api.name })}</span></label>
@@ -905,20 +916,7 @@ function AddModelModal({ open, api, onClose, onConfirm }) {
             </div>
           </div>
         </div>
-        <footer className="pl-modal-foot">
-          <span className="muted-2" style={{fontSize: 11.5}}>
-            <Icon name="info" size={11} /> POST <span className="mono">/api/v1/models/model</span>
-          </span>
-          <div style={{display: "flex", gap: 8}}>
-            <button className="btn ghost" onClick={onClose}>{t('common.cancel')}</button>
-            <button className="btn primary" disabled={!form.real_name || !form.display}
-              onClick={() => onConfirm({ id: form.real_name, ...form })}>
-              <Icon name="check" size={12} /> {t('settings.add_model.add_btn')}
-            </button>
-          </div>
-        </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1090,15 +1088,25 @@ function VisibilityModal({ open, api, onClose, onConfirm }) {
     return n;
   });
   return (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(640px, 100%)", maxHeight: "88vh"}}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow">{t('settings.visibility.eyebrow', { name: api.name })}</div>
-            <h2 className="pl-modal-title">{t('settings.visibility.title', { selected: selected.size, total: api.models.length })}</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip={t('common.close')}><Icon name="close" size={14} /></button>
-        </header>
+    <Modal
+      open
+      eyebrow={t('settings.visibility.eyebrow', { name: api.name })}
+      title={t('settings.visibility.title', { selected: selected.size, total: api.models.length })}
+      width={640}
+      panelStyle={{maxHeight: "88vh"}}
+      onClose={onClose}
+      footer={<>
+        <span className="muted-2" style={{fontSize: 11.5}}>
+          <Icon name="info" size={11} /> {t('settings.visibility.info')}
+        </span>
+        <div style={{display: "flex", gap: 8}}>
+          <button className="btn ghost" onClick={onClose}>{t('common.cancel')}</button>
+          <button className="btn primary" onClick={() => onConfirm([...selected])}>
+            <Icon name="check" size={12} /> {t('settings.visibility.save')}
+          </button>
+        </div>
+      </>}
+    >
         <div className="pl-model-search" style={{flex: "0 0 auto"}}>
           <Icon name="search" size={12} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('settings.visibility.search_placeholder', { count: api.models.length })} autoFocus />
@@ -1144,19 +1152,7 @@ function VisibilityModal({ open, api, onClose, onConfirm }) {
             </label>
           ))}
         </div>
-        <footer className="pl-modal-foot">
-          <span className="muted-2" style={{fontSize: 11.5}}>
-            <Icon name="info" size={11} /> {t('settings.visibility.info')}
-          </span>
-          <div style={{display: "flex", gap: 8}}>
-            <button className="btn ghost" onClick={onClose}>{t('common.cancel')}</button>
-            <button className="btn primary" onClick={() => onConfirm([...selected])}>
-              <Icon name="check" size={12} /> {t('settings.visibility.save')}
-            </button>
-          </div>
-        </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1222,17 +1218,26 @@ function ValidateModal({ open, api, onClose, onConfirm }) {
     onClose();
   };
   return (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(560px, 100%)"}}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow">{t('settings.validate.eyebrow', { name: api.name })}</div>
-            <h2 className="pl-modal-title">
-              {phase === "sniffing" ? t('settings.validate.sniffing') : t('settings.validate.done')}
-            </h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip={t('common.close')}><Icon name="close" size={14} /></button>
-        </header>
+    <Modal
+      open
+      eyebrow={t('settings.validate.eyebrow', { name: api.name })}
+      title={phase === "sniffing" ? t('settings.validate.sniffing') : t('settings.validate.done')}
+      width={560}
+      onClose={onClose}
+      footer={<>
+        <span className="muted-2" style={{fontSize: 11.5}}>
+          <Icon name="info" size={11} /> GET /api/models/diff · POST /api/models/model
+        </span>
+        <div style={{display: "flex", gap: 8}}>
+          <button className="btn ghost" onClick={onClose}>{phase === "done" ? t('common.close') : t('common.cancel')}</button>
+          {phase === "done" && removeIds.size > 0 && (
+            <button className="btn danger" onClick={() => onConfirm([...removeIds])}>
+              <Icon name="trash" size={12} /> {t('settings.validate.delete_btn', { count: removeIds.size })}
+            </button>
+          )}
+        </div>
+      </>}
+    >
         {phase === "sniffing" ? (
           <div className="pl-validate-progress">
             <div className="pl-validate-step done"><span className="dot ok" /> {t('settings.validate.step1')}</div>
@@ -1320,21 +1325,7 @@ function ValidateModal({ open, api, onClose, onConfirm }) {
             )}
           </div>
         )}
-        <footer className="pl-modal-foot">
-          <span className="muted-2" style={{fontSize: 11.5}}>
-            <Icon name="info" size={11} /> GET /api/models/diff · POST /api/models/model
-          </span>
-          <div style={{display: "flex", gap: 8}}>
-            <button className="btn ghost" onClick={onClose}>{phase === "done" ? t('common.close') : t('common.cancel')}</button>
-            {phase === "done" && removeIds.size > 0 && (
-              <button className="btn danger" onClick={() => onConfirm([...removeIds])}>
-                <Icon name="trash" size={12} /> {t('settings.validate.delete_btn', { count: removeIds.size })}
-              </button>
-            )}
-          </div>
-        </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -3844,15 +3835,43 @@ function DangerSection() {
 
       {/* S3/S5: 清空存档 Modal — 文字确认 + 进度条 */}
       {confirm === "clear" && (
-        <div className="pl-modal-backdrop" onClick={closeConfirm}>
-          <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(460px, 100%)"}}>
-            <header className="pl-modal-head">
-              <div>
-                <div className="pl-modal-eyebrow" style={{color: "var(--danger)"}}>{t('settings.danger.clear_modal_eyebrow')}</div>
-                <h2 className="pl-modal-title">{t('settings.danger.clear_modal_title')}</h2>
-              </div>
-              <button className="iconbtn" onClick={closeConfirm} data-tip={t('common.close')}><Icon name="close" size={14} /></button>
-            </header>
+        <Modal
+          open
+          width={460}
+          onClose={closeConfirm}
+          header={
+            <div>
+              <div className="pl-modal-eyebrow" style={{color: "var(--danger)"}}>{t('settings.danger.clear_modal_eyebrow')}</div>
+              <h2 className="pl-modal-title">{t('settings.danger.clear_modal_title')}</h2>
+            </div>
+          }
+          footer={<>
+            <span></span>
+            <div style={{display: "flex", gap: 8}}>
+              <button className="btn ghost" onClick={closeConfirm}>{t('common.cancel')}</button>
+              <button
+                className="btn danger"
+                disabled={confirmText !== t('settings.danger.clear_confirm_word') || !!clearProgress}
+                onClick={async () => {
+                  if (nSaves === 0) { window.__apiToast?.(t('settings.danger.clear_empty'), { kind: "info", duration: 1600 }); closeConfirm(); return; }
+                  setClearProgress({ done: 0, total: nSaves });
+                  let done = 0, fail = 0;
+                  for (const s of saves) {
+                    try { await window.api.saves.remove(s.id); } catch (_) { fail++; }
+                    done++;
+                    setClearProgress({ done, total: nSaves });
+                  }
+                  setClearProgress(null);
+                  closeConfirm();
+                  window.__apiToast?.(fail ? t('settings.danger.clear_ok_fail', { count: done - fail, fail }) : t('settings.danger.clear_ok', { count: done - fail }), { kind: fail ? "warn" : "ok", duration: 3000 });
+                  try { window.dispatchEvent(new CustomEvent("rpg-saves-updated")); } catch (_) {}
+                }}
+              >
+                <Icon name="trash" size={12} /> {t('settings.danger.clear_saves_btn')}
+              </button>
+            </div>
+          </>}
+        >
             <div style={{fontSize: 13.5, lineHeight: 1.65, color: "var(--text-quiet)"}}>
               {t('settings.danger.clear_modal_desc', { count: nSaves })}
             </div>
@@ -3883,34 +3902,7 @@ function DangerSection() {
                 </div>
               </div>
             )}
-            <footer className="pl-modal-foot">
-              <span></span>
-              <div style={{display: "flex", gap: 8}}>
-                <button className="btn ghost" onClick={closeConfirm}>{t('common.cancel')}</button>
-                <button
-                  className="btn danger"
-                  disabled={confirmText !== t('settings.danger.clear_confirm_word') || !!clearProgress}
-                  onClick={async () => {
-                    if (nSaves === 0) { window.__apiToast?.(t('settings.danger.clear_empty'), { kind: "info", duration: 1600 }); closeConfirm(); return; }
-                    setClearProgress({ done: 0, total: nSaves });
-                    let done = 0, fail = 0;
-                    for (const s of saves) {
-                      try { await window.api.saves.remove(s.id); } catch (_) { fail++; }
-                      done++;
-                      setClearProgress({ done, total: nSaves });
-                    }
-                    setClearProgress(null);
-                    closeConfirm();
-                    window.__apiToast?.(fail ? t('settings.danger.clear_ok_fail', { count: done - fail, fail }) : t('settings.danger.clear_ok', { count: done - fail }), { kind: fail ? "warn" : "ok", duration: 3000 });
-                    try { window.dispatchEvent(new CustomEvent("rpg-saves-updated")); } catch (_) {}
-                  }}
-                >
-                  <Icon name="trash" size={12} /> {t('settings.danger.clear_saves_btn')}
-                </button>
-              </div>
-            </footer>
-          </div>
-        </div>
+        </Modal>
       )}
     </SetGroup>
   );

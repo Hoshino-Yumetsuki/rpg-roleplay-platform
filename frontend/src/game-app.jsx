@@ -4,6 +4,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { useState as useStateA, useEffect as useEffectA, useRef as useRefA, useMemo as useMemoA, useCallback as useCallbackA } from 'react';
 import { Icon } from './game-icons.jsx';
+import Modal from './components/Modal.jsx';
 import { RpgMarkdown } from './markdown-render.jsx';
 import { BranchGraph } from './branch-graph.jsx';
 import { useBreakpoint, useResizable, ResizeHandle } from './responsive.jsx';
@@ -558,54 +559,54 @@ function DeleteConfirmModal({ open, text, msgIndex, role, busy, onClose, onConfi
   const restoreTurn = turnOfMsg != null ? turnOfMsg - 1 : null;
   const isAssistant = role === "assistant";
   const node = (
-    <div className="pl-modal-backdrop" onClick={busy ? null : onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(480px, 100%)"}}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow" style={{color: "var(--danger)"}}>危险操作</div>
-            <h2 className="pl-modal-title">删除此消息及之后所有?</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} disabled={busy} data-tip="关闭">
-            <Icon name="close" size={14} />
-          </button>
-        </header>
-        <div style={{fontSize: 13.5, lineHeight: 1.7, color: "var(--text-quiet)"}}>
-          这是不可逆操作。{isAssistant ? "下面这条 GM 回复" : "下面这条消息"}及其之后的<strong style={{color: "var(--danger)"}}>所有对话、世界线、阶段摘要</strong>都会被丢弃。
-          {isAssistant && <span> 上一条玩家输入会保留，方便继续改写或重试。</span>}
-          <div style={{
-            marginTop: 10, padding: "10px 12px",
-            background: "var(--bg-deep)", border: "1px solid var(--line-soft)",
-            borderRadius: 6, fontFamily: "var(--font-serif)", fontSize: 13,
-            color: "var(--text-quiet)", borderLeft: "2px solid var(--danger)",
-          }}>
-            {preview || "(空消息)"}
-          </div>
-          <div style={{marginTop: 10, fontSize: 12, color: "var(--muted)"}}>
-            {isAssistant
-              ? <>存档会回到 <strong>这条 GM 回复之前</strong> 的状态。</>
-              : restoreTurn != null && restoreTurn >= 0
-              ? <>存档会回到 <strong>第 {restoreTurn + 1} 回合</strong> 结束时的状态。</>
-              : <>存档会回到 <strong>开局前</strong> 的状态。</>}
-            <br />
-            旧分支会自动保留在 <code style={{fontFamily: "var(--font-mono)", fontSize: 11}}>refs/trash/...</code>,
-            通过分支树可以切回去恢复。
-          </div>
+    <Modal
+      open
+      width={480}
+      closeDisabled={busy}
+      onClose={onClose}
+      header={
+        <div>
+          <div className="pl-modal-eyebrow" style={{color: "var(--danger)"}}>危险操作</div>
+          <h2 className="pl-modal-title">删除此消息及之后所有?</h2>
         </div>
-        <footer className="pl-modal-foot">
-          <span className="muted-2" style={{fontSize: 11.5}}>
-            <Icon name="info" size={11} /> POST /api/branches/rollback
-          </span>
-          <div style={{display: "flex", gap: 8}}>
-            <button className="btn ghost" onClick={onClose} disabled={busy}>取消</button>
-            <button className="btn danger" onClick={onConfirm} disabled={busy}>
-              {busy
-                ? <><span className="gc-spinner spin" /> 删除中…</>
-                : <><Icon name="trash" size={12} /> 确认删除</>}
-            </button>
-          </div>
-        </footer>
+      }
+      footer={<>
+        <span className="muted-2" style={{fontSize: 11.5}}>
+          <Icon name="info" size={11} /> POST /api/branches/rollback
+        </span>
+        <div style={{display: "flex", gap: 8}}>
+          <button className="btn ghost" onClick={onClose} disabled={busy}>取消</button>
+          <button className="btn danger" onClick={onConfirm} disabled={busy}>
+            {busy
+              ? <><span className="gc-spinner spin" /> 删除中…</>
+              : <><Icon name="trash" size={12} /> 确认删除</>}
+          </button>
+        </div>
+      </>}
+    >
+      <div style={{fontSize: 13.5, lineHeight: 1.7, color: "var(--text-quiet)"}}>
+        这是不可逆操作。{isAssistant ? "下面这条 GM 回复" : "下面这条消息"}及其之后的<strong style={{color: "var(--danger)"}}>所有对话、世界线、阶段摘要</strong>都会被丢弃。
+        {isAssistant && <span> 上一条玩家输入会保留，方便继续改写或重试。</span>}
+        <div style={{
+          marginTop: 10, padding: "10px 12px",
+          background: "var(--bg-deep)", border: "1px solid var(--line-soft)",
+          borderRadius: 6, fontFamily: "var(--font-serif)", fontSize: 13,
+          color: "var(--text-quiet)", borderLeft: "2px solid var(--danger)",
+        }}>
+          {preview || "(空消息)"}
+        </div>
+        <div style={{marginTop: 10, fontSize: 12, color: "var(--muted)"}}>
+          {isAssistant
+            ? <>存档会回到 <strong>这条 GM 回复之前</strong> 的状态。</>
+            : restoreTurn != null && restoreTurn >= 0
+            ? <>存档会回到 <strong>第 {restoreTurn + 1} 回合</strong> 结束时的状态。</>
+            : <>存档会回到 <strong>开局前</strong> 的状态。</>}
+          <br />
+          旧分支会自动保留在 <code style={{fontFamily: "var(--font-mono)", fontSize: 11}}>refs/trash/...</code>,
+          通过分支树可以切回去恢复。
+        </div>
       </div>
-    </div>
+    </Modal>
   );
   return createPortal(node, document.body);
 }
@@ -614,39 +615,36 @@ function ForkConfirmModal({ open, text, onClose, onConfirm }) {
   if (!open) return null;
   const preview = (text || "").slice(0, 80) + ((text || "").length > 80 ? "…" : "");
   const node = (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(460px, 100%)"}}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow">从这条消息新建分支</div>
-            <h2 className="pl-modal-title">在此节点开新分支</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip="关闭"><Icon name="close" size={14} /></button>
-        </header>
-        <div style={{fontSize: 13.5, lineHeight: 1.7, color: "var(--text-quiet)"}}>
-          当前节点之后的消息会保留在原分支，新分支从这里继续。
-          <div style={{
-            marginTop: 10, padding: "10px 12px",
-            background: "var(--bg-deep)", border: "1px solid var(--line-soft)",
-            borderRadius: 6, fontFamily: "var(--font-serif)", fontSize: 13,
-            color: "var(--text-quiet)", borderLeft: "2px solid var(--accent-edge)",
-          }}>
-            {preview}
-          </div>
+    <Modal
+      open
+      eyebrow="从这条消息新建分支"
+      title="在此节点开新分支"
+      width={460}
+      onClose={onClose}
+      footer={<>
+        <span className="muted-2" style={{fontSize: 11.5}}>
+          <Icon name="info" size={11} /> POST /api/branches/continue
+        </span>
+        <div style={{display: "flex", gap: 8}}>
+          <button className="btn ghost" onClick={onClose}>取消</button>
+          <button className="btn primary" onClick={onConfirm}>
+            <Icon name="fork" size={12} /> 新建分支
+          </button>
         </div>
-        <footer className="pl-modal-foot">
-          <span className="muted-2" style={{fontSize: 11.5}}>
-            <Icon name="info" size={11} /> POST /api/branches/continue
-          </span>
-          <div style={{display: "flex", gap: 8}}>
-            <button className="btn ghost" onClick={onClose}>取消</button>
-            <button className="btn primary" onClick={onConfirm}>
-              <Icon name="fork" size={12} /> 新建分支
-            </button>
-          </div>
-        </footer>
+      </>}
+    >
+      <div style={{fontSize: 13.5, lineHeight: 1.7, color: "var(--text-quiet)"}}>
+        当前节点之后的消息会保留在原分支，新分支从这里继续。
+        <div style={{
+          marginTop: 10, padding: "10px 12px",
+          background: "var(--bg-deep)", border: "1px solid var(--line-soft)",
+          borderRadius: 6, fontFamily: "var(--font-serif)", fontSize: 13,
+          color: "var(--text-quiet)", borderLeft: "2px solid var(--accent-edge)",
+        }}>
+          {preview}
+        </div>
       </div>
-    </div>
+    </Modal>
   );
   return createPortal(node, document.body);
 }
@@ -1326,16 +1324,29 @@ function GameSettingsModal({ open, onClose, saveTitle, permission, saveId }) {
   const sublabelStyle = { fontSize: 11.5, color: "var(--muted)", marginTop: 2 };
 
   const node = (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(480px, 100%)"}}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow">游戏内设置 · 本档</div>
-            <h2 className="pl-modal-title">{saveTitle || "本档设置"}</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip="关闭"><Icon name="close" size={14} /></button>
-        </header>
-        <div className="pl-modal-form" style={{paddingTop: 4}}>
+    <Modal
+      open
+      eyebrow="游戏内设置 · 本档"
+      title={saveTitle || "本档设置"}
+      width={480}
+      onClose={onClose}
+      footer={<>
+        <span className="muted-2" style={{fontSize: 11.5}}>
+          <Icon name="info" size={11} /> 密度/字体改动即时生效
+        </span>
+        <div style={{display: "flex", gap: 8}}>
+          <a className="btn ghost" href="/settings"
+             target="_blank" rel="noopener noreferrer"
+             style={{textDecoration: "none"}}>
+            <Icon name="settings" size={12} /> 全局设置 ↗
+          </a>
+          <button className="btn primary" onClick={onClose}>
+            <Icon name="check" size={12} /> 完成
+          </button>
+        </div>
+      </>}
+    >
+      <div className="pl-modal-form" style={{paddingTop: 4}}>
 
           {/* ── 信息密度 ── */}
           <div style={rowStyle}>
@@ -1427,24 +1438,8 @@ function GameSettingsModal({ open, onClose, saveTitle, permission, saveId }) {
             </div>
           </div>
 
-        </div>
-        <footer className="pl-modal-foot">
-          <span className="muted-2" style={{fontSize: 11.5}}>
-            <Icon name="info" size={11} /> 密度/字体改动即时生效
-          </span>
-          <div style={{display: "flex", gap: 8}}>
-            <a className="btn ghost" href="/settings"
-               target="_blank" rel="noopener noreferrer"
-               style={{textDecoration: "none"}}>
-              <Icon name="settings" size={12} /> 全局设置 ↗
-            </a>
-            <button className="btn primary" onClick={onClose}>
-              <Icon name="check" size={12} /> 完成
-            </button>
-          </div>
-        </footer>
       </div>
-    </div>
+    </Modal>
   );
   return createPortal(node, document.body);
 }

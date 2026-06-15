@@ -7,6 +7,7 @@ import React from 'react';
 import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL, useCallback as useCallbackPL } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
+import Modal from '../components/Modal.jsx';
 import { plNavigate } from '../router.js';
 import { PromptModal, usePlatformData, fmtBytes, fmtN, ResizableSplit } from '../platform-app.jsx';
 import { CardEditModal, cardSnippet, npcToUserCardBody } from './cards.jsx';
@@ -106,15 +107,31 @@ function ScriptPreviewModal({ open, busy, data, rule, onClose, onRetryRule, onCo
   const { t } = useTranslation();
   if (!open) return null;
   return (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(720px, 100%)"}}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow">{t('scripts.import.preview_eyebrow')} · {rule || t('scripts.import.rule_auto')}</div>
-            <h2 className="pl-modal-title">{busy ? t('scripts.import.preview_splitting') : (data?.title || t('scripts.import.unnamed'))}</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip={t('common.close')}><Icon name="close" size={14} /></button>
-        </header>
+    <Modal
+      open
+      eyebrow={`${t('scripts.import.preview_eyebrow')} · ${rule || t('scripts.import.rule_auto')}`}
+      title={busy ? t('scripts.import.preview_splitting') : (data?.title || t('scripts.import.unnamed'))}
+      width={720}
+      onClose={onClose}
+      footer={<>
+        <span className="muted-2" style={{fontSize: 11.5}}>
+          <Icon name="info" size={11} /> {t('scripts.import.preview_footer', { count: data?.preview?.length || 0 })}
+        </span>
+        <div style={{display: "flex", gap: 8}}>
+          <button className="btn ghost" onClick={onClose}>{t('common.cancel')}</button>
+          {!busy && (
+            <>
+              <button className="btn ghost" onClick={() => onRetryRule?.("chapter_cn")} data-tip={t('scripts.import.retry_tip')}>
+                <Icon name="refresh" size={12} /> {t('scripts.import.retry_rule')}
+              </button>
+              <button className="btn primary" onClick={onConfirm} disabled={!data}>
+                <Icon name="check" size={12} /> {t('scripts.import.confirm_import')}
+              </button>
+            </>
+          )}
+        </div>
+      </>}
+    >
         {busy ? (
           // 这里之前是 3 个伪 step (校验文件 / 解析分章 / 计算预算) — 前端没法真知道
           // 后端预览到了哪一步。改成单一 spinner,不撒谎。
@@ -174,26 +191,7 @@ function ScriptPreviewModal({ open, busy, data, rule, onClose, onRetryRule, onCo
             </div>
           </>
         ) : null}
-        <footer className="pl-modal-foot">
-          <span className="muted-2" style={{fontSize: 11.5}}>
-            <Icon name="info" size={11} /> {t('scripts.import.preview_footer', { count: data?.preview?.length || 0 })}
-          </span>
-          <div style={{display: "flex", gap: 8}}>
-            <button className="btn ghost" onClick={onClose}>{t('common.cancel')}</button>
-            {!busy && (
-              <>
-                <button className="btn ghost" onClick={() => onRetryRule?.("chapter_cn")} data-tip={t('scripts.import.retry_tip')}>
-                  <Icon name="refresh" size={12} /> {t('scripts.import.retry_rule')}
-                </button>
-                <button className="btn primary" onClick={onConfirm} disabled={!data}>
-                  <Icon name="check" size={12} /> {t('scripts.import.confirm_import')}
-                </button>
-              </>
-            )}
-          </div>
-        </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1763,15 +1761,14 @@ function ScriptsListView() {
       )}
       <OverridesModal script={overridesScript} onClose={() => setOverridesScript(null)} />
       {reviewScript && (
-        <div className="pl-modal-backdrop" onClick={() => setReviewScript(null)}>
-          <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{ width: "min(900px, 100%)", maxHeight: "85vh", overflow: "auto" }}>
-            <header className="pl-modal-head">
-              <div>
-                <div className="pl-modal-eyebrow">{t('scripts.review.eyebrow')}</div>
-                <h2 className="pl-modal-title">{reviewScript.title || t('scripts.review.script_id', { id: reviewScript.id })}</h2>
-              </div>
-              <button className="iconbtn" onClick={() => setReviewScript(null)} data-tip={t('common.close')}><Icon name="close" size={14} /></button>
-            </header>
+        <Modal
+          open
+          eyebrow={t('scripts.review.eyebrow')}
+          title={reviewScript.title || t('scripts.review.script_id', { id: reviewScript.id })}
+          width={900}
+          panelStyle={{ maxHeight: "85vh", overflow: "auto" }}
+          onClose={() => setReviewScript(null)}
+        >
             <ScriptReview
               scriptId={reviewScript.id}
               initialStatus={reviewScript.review_status}
@@ -1781,8 +1778,7 @@ function ScriptsListView() {
                 setReviewScript((cur) => cur && cur.id === sid ? { ...cur, review_status: rs } : cur);
               }}
             />
-          </div>
-        </div>
+        </Modal>
       )}
       {/* Codex P0-2 修复:基于此剧本"新建存档"流。无现成 save 时弹这个 modal,
           走 window.__createAndEnterSave 原子流 (POST /api/saves → activate → 跳页),

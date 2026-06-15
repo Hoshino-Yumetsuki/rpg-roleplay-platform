@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { useState as useStatePL, useEffect as useEffectPL, useMemo as useMemoPL, useCallback as useCallbackPL } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../game-icons.jsx';
+import Modal from '../components/Modal.jsx';
 import { fmtBytes, ResizableSplit } from '../platform-app.jsx';
 import AgentModelPicker from '../components/AgentModelPicker.jsx';
 import AvatarImg from '../components/AvatarImg.jsx';
@@ -1359,15 +1360,30 @@ function TavernImportModal({ open, onClose, onConfirm }) {
   const canSubmitChat = chatParsed && !chatError;
 
   const node = (
-    <div className="pl-modal-backdrop" onClick={onClose}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()} style={{width: "min(640px, 100%)"}}>
-        <header className="pl-modal-head">
-          <div>
-            <div className="pl-modal-eyebrow">{t('cards.import.modal_eyebrow')}</div>
-            <h2 className="pl-modal-title">{t('cards.import.modal_title')}</h2>
-          </div>
-          <button className="iconbtn" onClick={onClose} data-tip={t('cards.import.btn_close')}><Icon name="close" size={14} /></button>
-        </header>
+    <Modal
+      open
+      eyebrow={t('cards.import.modal_eyebrow')}
+      title={t('cards.import.modal_title')}
+      width={640}
+      onClose={onClose}
+      footer={<>
+        <span className="muted-2" style={{fontSize: 11.5}}>
+          <Icon name="info" size={11} /> {importType === "chat" ? t('cards.import.chat_footer_hint') : t('cards.import.footer_hint')}
+        </span>
+        <div style={{display: "flex", gap: 8}}>
+          <button className="btn ghost" onClick={onClose}>{t('cards.import.btn_cancel')}</button>
+          {importType === "card" ? (
+            <button className="btn primary" onClick={doConfirmCard} disabled={!canSubmitCard}>
+              <Icon name="check" size={12} /> {t('cards.import.btn_confirm', { count: files.length > 1 ? files.length : 0 })}
+            </button>
+          ) : (
+            <button className="btn primary" onClick={doConfirmChat} disabled={!canSubmitChat}>
+              <Icon name="check" size={12} /> {t('cards.import.chat_btn_confirm')}
+            </button>
+          )}
+        </div>
+      </>}
+    >
         <div className="pl-modal-form">
           {/* top-level type switcher */}
           <div className="seg" style={{display: "flex"}}>
@@ -1531,25 +1547,7 @@ function TavernImportModal({ open, onClose, onConfirm }) {
             </>
           )}
         </div>
-        <footer className="pl-modal-foot">
-          <span className="muted-2" style={{fontSize: 11.5}}>
-            <Icon name="info" size={11} /> {importType === "chat" ? t('cards.import.chat_footer_hint') : t('cards.import.footer_hint')}
-          </span>
-          <div style={{display: "flex", gap: 8}}>
-            <button className="btn ghost" onClick={onClose}>{t('cards.import.btn_cancel')}</button>
-            {importType === "card" ? (
-              <button className="btn primary" onClick={doConfirmCard} disabled={!canSubmitCard}>
-                <Icon name="check" size={12} /> {t('cards.import.btn_confirm', { count: files.length > 1 ? files.length : 0 })}
-              </button>
-            ) : (
-              <button className="btn primary" onClick={doConfirmChat} disabled={!canSubmitChat}>
-                <Icon name="check" size={12} /> {t('cards.import.chat_btn_confirm')}
-              </button>
-            )}
-          </div>
-        </footer>
-      </div>
-    </div>
+    </Modal>
   );
   return createPortal(node, document.body);
 }
