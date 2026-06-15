@@ -522,6 +522,49 @@ async def api_save_anchor_satisfy(save_id: int, anchor_key: str, user=Depends(re
             {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, status_code=500)
 
 
+@router.post("/api/saves/{save_id}/progress/rewind")
+async def api_save_progress_rewind(save_id: int, request: Request, user=Depends(require_user)):
+    """玩家回到之前的世界线节点:把 progress_chapter 显式设回 target_chapter(【可降】,
+    区别于 advance_progress 的 max-only),并把 source_chapter > target 的已发生锚点重置回
+    pending(重新上锁,时间线节点重新变「待解锁」)。用于纠正进度过推 / 主动回溯到更早节点。
+    配合 retrieval BUG-3 修复(进度只按已确认锚点推进)后,回退能稳住不被下一回合再推回去。"""
+    user_id = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        target = int(body.get("target_chapter"))
+    except (TypeError, ValueError):
+        return json_response({"ok": False, "error": "target_chapter 必须为整数"}, status_code=400)
+    if target < 1:
+        target = 1
+    from tools_dsl.command_dispatcher import _get_sync_scope_lock
+    from psycopg.types.json import Jsonb
+    try:
+        with _get_sync_scope_lock((user_id, save_id)), connect() as db:
+            if not owns_save(db, save_id, user_id):
+                return json_response({"ok": False, "error": "无权访问该存档"}, status_code=403)
+            sess = db.execute(
+                "select worldline from game_sessions where save_id=%s", (save_id,)).fetchone()
+            wl = dict((sess or {}).get("worldline") or {}) if sess else {}
+            wl["progress_chapter"] = target  # 显式回退:直接设,不走 max-only 的 advance_progress
+            db.execute("update game_sessions set worldline=%s, updated_at=now() where save_id=%s",
+                       (Jsonb(wl), save_id))
+            relocked = db.execute(
+                "update save_anchor_states set status='pending', occurred_at_turn=null, "
+                "variant_description=null, drift_score=0, updated_at=now() "
+                "where save_id=%s and source_chapter > %s and status in ('occurred','variant') "
+                "returning id",
+                (save_id, target),
+            ).fetchall()
+        return json_response({"ok": True, "progress_chapter": target,
+                              "relocked": len(relocked or [])})
+    except Exception as exc:
+        return json_response(
+            {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, status_code=500)
+
+
 # ── Phase F/W6: 创建引导 + 游戏内设置(读 schema/设置,写 apply 锁死 enforcement)──
 @router.get("/api/saves/{save_id}/settings")
 async def api_save_settings_get(save_id: int, user=Depends(require_user)):

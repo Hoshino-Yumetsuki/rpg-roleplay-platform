@@ -451,11 +451,6 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
             try:
                 _save_id_prog = _resolve_save_id_from_user(user_id)
                 if _save_id_prog:
-                    from agents.anchor_seed_agent import get_progress_window as _gpw_sync
-                    _wt_sync = (world.get("time") or "").strip()
-                    _pw_sync = _gpw_sync(_save_id_prog, world_time_label=_wt_sync,
-                                         script_id=int(script_id), window_size=50)
-                    _progress_chapter = max(1, int(_pw_sync.get("chapter_min") or 1))
                     from gm_serving.settings import advance_progress as _adv_prog
                     from platform_app.db import connect as _conn_prog
                     with _conn_prog() as _db_prog:
@@ -465,7 +460,25 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                         _wl_prog = (_sess_prog or {}).get("worldline") if _sess_prog else None
                         if isinstance(_wl_prog, dict):
                             _foreknowledge_mode = _wl_prog.get("foreknowledge_mode") or "none"
-                        _adv_prog(_db_prog, _save_id_prog, _progress_chapter)
+                        # 进度真源 = 存档已写的 progress_chapter(权威)+ 已满足锚点最大原著章(reliable)。
+                        # 【绝不】再用 world.time→timeline 映射(旧 get_progress_window.chapter_min)
+                        # materialize 进度:story_time_label 是不可靠的「章节标题当时间」(见
+                        # project_timeline_world_model),会把 progress bogus-jump 到远章(实测 occ=0
+                        # 的存档被推到 77/89);advance_progress 又 max-only 不可逆 → 用户卡死。
+                        # 只按【已确认锚点】(occurred/variant)的最大原著章确定性推进。
+                        try:
+                            _progress_chapter = max(1, int((_wl_prog or {}).get("progress_chapter") or 1))
+                        except (TypeError, ValueError):
+                            _progress_chapter = 1
+                        _msat = _db_prog.execute(
+                            "select coalesce(max(source_chapter), 0) as c from save_anchor_states "
+                            "where save_id = %s and status in ('occurred', 'variant')",
+                            (_save_id_prog,),
+                        ).fetchone()
+                        _last_sat = int((_msat or {}).get("c") or 0)
+                        if _last_sat >= 1:
+                            _adv_prog(_db_prog, _save_id_prog, _last_sat)
+                            _progress_chapter = max(_progress_chapter, _last_sat)
             except Exception as _prog_err:
                 log.warning(f"[retrieval] progress_chapter 同步跳过(非致命): {_prog_err}")
         if not timeline_filter.get("anchor_chapter"):

@@ -2168,7 +2168,13 @@
       "satisfy_title": "Deterministic advance: mark this canon anchor as having occurred in this save (progress advances)",
       "satisfy_confirm": "Mark this canon anchor as reached? Your progress advances to its chapter and it will no longer be pending.",
       "satisfy_ok": "Marked as reached — world-line advanced.",
-      "satisfy_failed": "Mark failed"
+      "satisfy_failed": "Mark failed",
+      "rewind_btn": "Rewind here",
+      "rewind_confirm_title": "Rewind to this world-line node?",
+      "rewind_confirm_body": "This sets world-line progress back to \"{{label}}\" (ch {{chapter}}); later anchors re-lock and spoiler-gating pulls back accordingly. Your chat history is untouched. Continue?",
+      "rewind_confirm_ok": "Rewind here",
+      "rewind_ok": "Rewound to ch {{chapter}}",
+      "rewind_failed": "Rewind failed"
     },
     "context": {
       "title": "Context This Round",

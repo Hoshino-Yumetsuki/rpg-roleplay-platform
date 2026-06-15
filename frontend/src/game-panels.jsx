@@ -1183,6 +1183,39 @@ function PanelTimeline({ state }) {
     return () => { cancelled = true; };
   }, [saveId, refreshKey]);
 
+  // 回到之前的世界线节点:把进度显式设回该节点章节 + 重新上锁其后锚点。
+  const [rewinding, setRewinding] = useState(false);
+  const doRewind = async (targetCh, label) => {
+    if (rewinding || !saveId || !(targetCh >= 1)) return;
+    const body = t('game.timeline.rewind_confirm_body', { chapter: targetCh, label: label || "" });
+    const ok = (typeof window !== "undefined" && typeof window.__confirm === "function")
+      ? await window.__confirm({ title: t('game.timeline.rewind_confirm_title'), body, danger: true,
+                                 confirmLabel: t('game.timeline.rewind_confirm_ok') })
+      : window.confirm(body);
+    if (!ok) return;
+    setRewinding(true);
+    try {
+      const base = (typeof window !== "undefined" && window.__API_BASE) || "";
+      const r = await fetch(`${base}/api/saves/${saveId}/progress/rewind`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_chapter: targetCh }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) {
+        window.__apiToast?.(t('game.timeline.rewind_ok', { chapter: targetCh }), { kind: "ok" });
+        setRefreshKey(k => k + 1);
+        try { window.dispatchEvent(new CustomEvent('game-state-refresh')); } catch (_) {}
+      } else {
+        window.__apiToast?.(t('game.timeline.rewind_failed'), { kind: "danger", detail: j.error });
+      }
+    } catch (e) {
+      window.__apiToast?.(t('game.timeline.rewind_failed'), { kind: "danger", detail: e?.message });
+    } finally {
+      setRewinding(false);
+    }
+  };
+
   if (!saveId) {
     return (
       <div className="gp-stack">
@@ -1286,6 +1319,18 @@ function PanelTimeline({ state }) {
                         ? `${t('game.timeline.chapter_label', { chapter: chMin })}${chMax != null && chMax !== chMin ? `–${chMax}` : ""}`
                         : ""}
                     </div>
+                    {isDone && chMin != null && (
+                      <button
+                        className="gp-anchor-rewind"
+                        disabled={rewinding}
+                        onClick={() => doRewind(chMin, mainTitle)}
+                        title={t('game.timeline.rewind_btn')}
+                        style={{ marginTop: 3, fontSize: 10.5, background: "none",
+                                 border: "1px solid var(--line)", borderRadius: 4, padding: "1px 7px",
+                                 color: "var(--muted-2)", cursor: rewinding ? "default" : "pointer" }}>
+                        {t('game.timeline.rewind_btn')}
+                      </button>
+                    )}
                   </div>
                   {i < scriptAnchors.length - 1 && <div className="gp-anchor-line" />}
                 </div>

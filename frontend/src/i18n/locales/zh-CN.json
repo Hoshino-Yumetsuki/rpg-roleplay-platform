@@ -2259,7 +2259,13 @@
       "satisfy_title": "确定性推进:把该原著锚点标记为本存档已发生(进度随之前进)",
       "satisfy_confirm": "把这个原著锚点标记为「已到达」?玩家进度会推进到该章,该事件不再待发生。",
       "satisfy_ok": "已标记到达,世界线已推进。",
-      "satisfy_failed": "标记失败"
+      "satisfy_failed": "标记失败",
+      "rewind_btn": "回到此节点",
+      "rewind_confirm_title": "回到之前的世界线节点?",
+      "rewind_confirm_body": "将把世界线进度设回「{{label}}」(第 {{chapter}} 章),其后的锚点重新上锁、防剧透相应收回。聊天历史不受影响。确定吗?",
+      "rewind_confirm_ok": "回到此节点",
+      "rewind_ok": "已回到第 {{chapter}} 章",
+      "rewind_failed": "回退失败"
     },
     "context": {
       "title": "本轮上下文",
