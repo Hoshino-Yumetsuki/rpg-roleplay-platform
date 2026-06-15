@@ -8,16 +8,14 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 
 import zhCN from './locales/zh-CN.json';
 import en from './locales/en.json';
+import { lsGet, lsSet } from '../lib/storage.js';
 
 const STORAGE_KEY = 'pref.ui_language';
 
 // 读 prefs 里存的语言(settings.jsx 的 save("ui_language", v) 写的 key)
+// 缺失返回 undefined(非 null),让 i18next 回落到 LanguageDetector。
 function getStoredLang() {
-  try {
-    return localStorage.getItem(STORAGE_KEY) || undefined;
-  } catch (_) {
-    return undefined;
-  }
+  return lsGet(STORAGE_KEY) || undefined;
 }
 
 i18n
@@ -42,7 +40,7 @@ i18n
 
 /** 切换语言并同步写 localStorage(prefs save 也会写后端,这里只保证本地立即生效) */
 export function changeLanguage(lng) {
-  try { localStorage.setItem(STORAGE_KEY, lng); } catch (_) {}
+  lsSet(STORAGE_KEY, lng);
   return i18n.changeLanguage(lng);
 }
 

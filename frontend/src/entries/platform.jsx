@@ -16,6 +16,7 @@ import '../worldbook-status-toast.js';
 import '../ui-atlas.js';
 import '../console-assistant-navigation.jsx';
 import '../i18n/index.js';   // 初始化 i18next + 接 interfaceLang
+import { lsGet, lsSet, lsRemove } from '../lib/storage.js';
 
 // Cloudscape 设计系统 + 暖色主题(UI 底座)
 import '@cloudscape-design/global-styles/index.css';
@@ -75,9 +76,9 @@ const TWEAK_DEFAULTS = {
 const MOBILE_V2_ENABLED = (() => {
   try {
     const q = new URLSearchParams(location.search);
-    if (q.get('m2') === '1') { try { localStorage.setItem('rpg_mobile_v2', '1'); } catch (_) {} return true; }
-    if (q.get('m2') === '0') { try { localStorage.removeItem('rpg_mobile_v2'); } catch (_) {} return false; }
-    return localStorage.getItem('rpg_mobile_v2') === '1';
+    if (q.get('m2') === '1') { lsSet('rpg_mobile_v2', '1'); return true; }
+    if (q.get('m2') === '0') { lsRemove('rpg_mobile_v2'); return false; }
+    return lsGet('rpg_mobile_v2') === '1';
   } catch (_) { return false; }
 })();
 const MOBILE_V2_MAX_WIDTH = 600;

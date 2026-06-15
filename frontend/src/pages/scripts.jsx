@@ -16,6 +16,7 @@ import { ScriptReview } from './script-review.jsx';
 import { WorldbookEditorView } from './script-edit-worldbook.jsx';
 import { credApiIdSet } from '../components/catalog-helpers.js';
 import { isCredentialsError } from '../lib/creds.js';
+import { lsGetJSON, lsSetJSON, lsRemove } from '../lib/storage.js';
 // phase_rebuild_panel: 模块矩阵重做面板
 import { useScriptRebuild, ModuleRebuildPanel } from './script-modules-panel.jsx';
 import AgentModelPicker from '../components/AgentModelPicker.jsx';
@@ -2190,58 +2191,46 @@ function ScriptsImportView({ embedded = false, onClose } = {}) {
 
   // Restore job from localStorage on mount (page-refresh resilient)
   React.useEffect(() => {
-    try {
-      const cached = localStorage.getItem("rpg.import.job");
-      if (cached) {
-        const j = JSON.parse(cached);
-        if (j && j.status === "running") setJob(j);
-        else if (j && j.status === "estimating") setJob(j);
-      }
-    } catch {}
+    const j = lsGetJSON("rpg.import.job", null);
+    if (j && j.status === "running") setJob(j);
+    else if (j && j.status === "estimating") setJob(j);
   }, []);
 
   // Persist job state
   React.useEffect(() => {
-    if (job) localStorage.setItem("rpg.import.job", JSON.stringify(job));
-    else localStorage.removeItem("rpg.import.job");
+    if (job) lsSetJSON("rpg.import.job", job);
+    else lsRemove("rpg.import.job");
   }, [job]);
 
   React.useEffect(() => {
-    try {
-      const cachedImport = localStorage.getItem(PENDING_IMPORT_KEY);
-      if (cachedImport) {
-        const item = JSON.parse(cachedImport);
-        if (item && item.upload_id) setPendingImport(item);
-      }
-      const cached = localStorage.getItem(PENDING_IMPORT_PIPELINE_KEY);
-      if (!cached) return;
-      const item = JSON.parse(cached);
-      if (item && item.script_id) setPendingPipeline(item);
-    } catch {}
+    const item = lsGetJSON(PENDING_IMPORT_KEY, null);
+    if (item && item.upload_id) setPendingImport(item);
+    const pipe = lsGetJSON(PENDING_IMPORT_PIPELINE_KEY, null);
+    if (pipe && pipe.script_id) setPendingPipeline(pipe);
   }, []);
 
   const persistPendingImport = useCallbackPL((item) => {
     if (!item || !item.upload_id) return;
     const payload = { ...item, updated_at: Date.now() };
     setPendingImport(payload);
-    try { localStorage.setItem(PENDING_IMPORT_KEY, JSON.stringify(payload)); } catch {}
+    lsSetJSON(PENDING_IMPORT_KEY, payload);
   }, []);
 
   const clearPendingImport = useCallbackPL(() => {
     setPendingImport(null);
-    try { localStorage.removeItem(PENDING_IMPORT_KEY); } catch {}
+    lsRemove(PENDING_IMPORT_KEY);
   }, []);
 
   const persistPendingPipeline = useCallbackPL((item) => {
     if (!item || !item.script_id) return;
     const payload = { ...item, updated_at: Date.now() };
     setPendingPipeline(payload);
-    try { localStorage.setItem(PENDING_IMPORT_PIPELINE_KEY, JSON.stringify(payload)); } catch {}
+    lsSetJSON(PENDING_IMPORT_PIPELINE_KEY, payload);
   }, []);
 
   const clearPendingPipeline = useCallbackPL(() => {
     setPendingPipeline(null);
-    try { localStorage.removeItem(PENDING_IMPORT_PIPELINE_KEY); } catch {}
+    lsRemove(PENDING_IMPORT_PIPELINE_KEY);
   }, []);
 
   const cancelUploadQuietly = useCallbackPL((uploadId) => {

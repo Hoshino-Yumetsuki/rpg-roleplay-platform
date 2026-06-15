@@ -28,6 +28,7 @@ import CSExpandableSection from '@cloudscape-design/components/expandable-sectio
 // 显示文案与其它端不同,刻意保留(提交时作为 consentText 传入 submitFeedback;
 // 后端只校验 64-hex,不校验等于某文案的 SHA256,故 token 差异无副作用)。
 import { AUP_LINK, MAX_FREE_TEXT, QQ_GROUP_NUMBER, QQ_JOIN_URL, QQ_QR_SRC, submitFeedback, feedbackDecisionLabel } from '../lib/feedback.js';
+import { lsGet, lsSet } from '../lib/storage.js';
 
 // ── 常量 ─────────────────────────────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ export function FeedbackDrawer({ open, onClose }) {
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const lastSeenStr = localStorage.getItem('feedback_last_seen_id') || '0';
+      const lastSeenStr = lsGet('feedback_last_seen_id') || '0';
       const lastSeen = parseInt(lastSeenStr, 10) || 0;
       const res = await fetch('/api/me/feedback?limit=50', { credentials: 'include' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -104,7 +105,7 @@ export function FeedbackDrawer({ open, onClose }) {
   React.useEffect(() => {
     if (open) return;
     if (maxReviewedId > 0) {
-      try { localStorage.setItem('feedback_last_seen_id', String(maxReviewedId)); } catch (_) {}
+      lsSet('feedback_last_seen_id', String(maxReviewedId));
     }
   }, [open, maxReviewedId]);
 

@@ -4,6 +4,7 @@
    字段防御性读取;空态明确提示。调试 tab 仅 devmode。 */
 import React from 'react';
 import { Icon } from '../icons.jsx';
+import { lsGet } from '../../lib/storage.js';
 
 export const MOBILE_PANEL_TABS = [
   { id: 'status', label: '状态', icon: 'status' },
@@ -13,7 +14,7 @@ export const MOBILE_PANEL_TABS = [
   { id: 'cards', label: '人物', icon: 'cards' },
   { id: 'timeline', label: '时间线', icon: 'timeline' },
   { id: 'context', label: '上下文', icon: 'gauge' },
-  ...((typeof localStorage !== 'undefined' && localStorage.getItem('rpg_devmode') === '1')
+  ...(lsGet('rpg_devmode') === '1'
     ? [{ id: 'debug', label: '调试', icon: 'braces' }] : []),
 ];
 

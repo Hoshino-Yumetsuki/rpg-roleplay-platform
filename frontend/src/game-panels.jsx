@@ -7,6 +7,7 @@ import { useState, useMemo } from 'react';
 import { Icon } from './game-icons.jsx';
 import { useTranslation } from 'react-i18next';
 import AvatarImg from './components/AvatarImg.jsx';
+import { lsGet } from './lib/storage.js';
 
 const PANEL_TABS = [
   { id: "status", labelKey: "game.tabs.status", icon: "status" },
@@ -21,7 +22,7 @@ const PANEL_TABS = [
   { id: "timeline", labelKey: "game.tabs.timeline", icon: "timeline" },
   { id: "context", labelKey: "game.tabs.context", icon: "context" },
   // 调试 tab 仅当 localStorage.rpg_devmode === "1" 时启用; 玩家面看不到
-  ...(typeof localStorage !== "undefined" && localStorage.getItem("rpg_devmode") === "1"
+  ...(lsGet("rpg_devmode") === "1"
       ? [{ id: "debug", labelKey: "game.tabs.debug", icon: "debug" }]
       : []),
 ];

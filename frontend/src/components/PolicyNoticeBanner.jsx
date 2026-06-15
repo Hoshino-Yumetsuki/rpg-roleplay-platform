@@ -13,6 +13,7 @@
  *   <PolicyNoticeBanner />
  */
 import React, { useEffect, useState } from 'react';
+import { lsGetJSON, lsSetJSON } from '../lib/storage.js';
 
 const LANDING_BASE = 'https://play.stellatrix.icu/legal';
 const STORAGE_KEY = 'policy_notice_dismissed';
@@ -46,19 +47,13 @@ function policyName(slug, lang) {
 }
 
 function getDismissed() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-  } catch {
-    return {};
-  }
+  return lsGetJSON(STORAGE_KEY, {});
 }
 
 function setDismissed(id, version) {
   const map = getDismissed();
   map[id] = version;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
-  } catch { /* storage full, ignore */ }
+  lsSetJSON(STORAGE_KEY, map);
 }
 
 function isDismissed(notice) {

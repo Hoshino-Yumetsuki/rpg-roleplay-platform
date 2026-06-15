@@ -79,6 +79,9 @@ function Toggle({ on, onChange, disabled }) {
 }
 
 /* ── SetRow 设置行 ─────────────────────────────────────────────── */
+// 语义统一 #36(保留):此 SetRow 是「信息行」(label+desc+右侧 children)且纯内联样式
+// (13px 上下内距 + danger 变体),与 mobile/Field.jsx 的竖排 Field / 开关 ToggleRow 结构都不同,
+// 强并会改布局/语义,刻意保留本地实现。信息行 ≠ 开关行。
 function SetRow({ label, desc, children, danger }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0', borderBottom: '1px solid var(--line-soft)' }}>

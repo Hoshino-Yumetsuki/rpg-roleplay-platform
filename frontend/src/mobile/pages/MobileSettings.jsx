@@ -16,6 +16,10 @@ import { normalizeProviderId, credentialToCatalogId, catalogToCredentialId } fro
 // 模块结构数组单一来源(语义统一 #19);移动端 label/tip 文案精简,保留本地按 id 取。
 import { MODULES as AGENT_MODULES } from '../../agent-modules.js';
 import { readScopedPref, readNumberPref } from '../../lib/prefs.js';
+import { lsSetJSON } from '../../lib/storage.js';
+// 竖排字段统一到 mobile/Field.jsx(语义统一 #36);本地原 MField 与之 DOM/CSS 逐字节一致,
+// 故 import 为同名 MField,调用点 <MField label desc>{control}</MField> 零变化。
+import { Field as MField } from '../Field.jsx';
 
 /* ── 工具函数 ────────────────────────────────────────────────────── */
 const normId = normalizeProviderId;
@@ -63,16 +67,6 @@ function SetGroup({ title, children, action }) {
         {action}
       </div>
       <div className="pl-group">{children}</div>
-    </div>
-  );
-}
-
-function MField({ label, desc, children }) {
-  return (
-    <div className="pl-field">
-      <label>{label}</label>
-      {desc && <span className="desc">{desc}</span>}
-      {children}
     </div>
   );
 }
@@ -801,7 +795,7 @@ function PermissionsSection({ nav }) {
   const saveCustom = async (next) => {
     setCustom(next);
     try { await window.api.account.preferences({ 'permissions.custom_whitelist': next }); } catch (_) {}
-    try { localStorage.setItem('perm.custom_whitelist', JSON.stringify(next)); } catch (_) {}
+    lsSetJSON('perm.custom_whitelist', next);
   };
 
   const addCustom = () => {

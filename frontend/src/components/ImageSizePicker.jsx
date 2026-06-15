@@ -1,4 +1,5 @@
 import React from 'react';
+import { lsGet, lsSet } from '../lib/storage.js';
 
 /* ImageSizePicker — 生图分辨率/比例选择器。
    · 预设几档常用比例(竖/方/横/长竖/宽屏),每档对应具体 WxH。
@@ -37,14 +38,13 @@ export default function ImageSizePicker({ kind, value, onChange, storeKey }) {
     if (inited.current) return;
     inited.current = true;
     if (value) return;
-    let saved = null;
-    try { saved = localStorage.getItem(key); } catch (_) {}
+    const saved = lsGet(key);
     onChange && onChange(saved || recommendedSize(kind));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pick = (v) => {
-    try { localStorage.setItem(key, v); } catch (_) {}
+    lsSet(key, v);
     onChange && onChange(v);
   };
 

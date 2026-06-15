@@ -11,6 +11,9 @@ import { Icon } from '../icons.jsx';
 import AvatarImg from '../../components/AvatarImg.jsx';
 // 卡表单读/写 helper 与桌面端字段集逐字一致 → 复用单一规范实现,避免 shape 漂移。
 import { cardFormInit, cardFormPayload } from '../../pages/cards.jsx';
+// 开关行统一到 mobile/Field.jsx(语义统一 #36);本地原 SetRow(toggle)与之 DOM/CSS 逐字节一致,
+// import 为同名 SetRow,调用点零变化。本文件的竖排 Field(内置 input,非通用控件)保留本地实现。
+import { ToggleRow as SetRow } from '../Field.jsx';
 
 /* ── helpers ─────────────────────────────────────────────────────── */
 const clamp2 = { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', wordBreak: 'break-word' };
@@ -138,6 +141,8 @@ function ProseBlock({ label, value }) {
 }
 
 /** 表单字段(input / textarea) */
+// 语义统一 #36(保留):此 Field 内置 input/textarea 控件(非通用 children 控件),且 desc 用
+// <div className="desc">(mobile/Field.jsx 的 Field 用 <span className="desc">)→ 形态不同,保留本地实现。
 function Field({ label, value, rows, placeholder, desc, onChange, type = 'text' }) {
   return (
     <div className="pl-field">
@@ -147,19 +152,6 @@ function Field({ label, value, rows, placeholder, desc, onChange, type = 'text' 
         ? <textarea className="pl-input" rows={rows} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
         : <input className="pl-input" type={type} inputMode={type === 'number' ? 'numeric' : undefined} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
       }
-    </div>
-  );
-}
-
-/** Toggle 行 */
-function SetRow({ label, desc, checked, onChange }) {
-  return (
-    <div className="pl-setrow">
-      <div className="pl-setrow-tx">
-        <strong>{label}</strong>
-        {desc && <span>{desc}</span>}
-      </div>
-      <button className={'pl-toggle' + (checked ? ' on' : '')} onClick={() => onChange(!checked)} aria-label={label} />
     </div>
   );
 }

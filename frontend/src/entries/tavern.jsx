@@ -13,6 +13,7 @@ import '../worldbook-status-toast.js';
 import '../ui-atlas.js';
 import '../a11y-tooltip-labels.js';
 import '../i18n/index.js';
+import { lsGet, lsSet } from '../lib/storage.js';
 
 // 反馈抽屉 / 复用的 CardSheet / CardEditFields 都用 Cloudscape 组件,
 // 这里加载同一套暖色暗主题(与 game-console 完全一致)。
@@ -32,17 +33,15 @@ import TavernApp from '../tavern-app.jsx';
   function _applyDensity(d) {
     if (!VALID_DENSITY[d]) d = 'default';
     document.documentElement.setAttribute('data-density', d);
-    try { localStorage.setItem('rpg.density', d); } catch (_) {}
+    lsSet('rpg.density', d);
     window.dispatchEvent(new CustomEvent('rpg-density-change', { detail: d }));
   }
-  let storedDensity = 'default';
-  try { storedDensity = localStorage.getItem('rpg.density') || 'default'; } catch (_) {}
+  const storedDensity = lsGet('rpg.density') || 'default';
   _applyDensity(storedDensity);
   window.RPG_setDensity = _applyDensity;
 
   const FONT_MAP = { serif: 'var(--font-serif)', sans: 'var(--font-sans)', mono: 'var(--font-mono)' };
-  let storedFont = 'serif';
-  try { storedFont = localStorage.getItem('rpg.narrativeFont') || 'serif'; } catch (_) {}
+  const storedFont = lsGet('rpg.narrativeFont') || 'serif';
   if (FONT_MAP[storedFont]) {
     document.documentElement.style.setProperty('--narrative-font', FONT_MAP[storedFont]);
   }

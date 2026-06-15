@@ -14,6 +14,7 @@ import { ConfirmModal, useShellChrome, ResizableSplit } from '../platform-app.js
 import { BranchGraph } from '../branch-graph.jsx';
 import { NewGameWizard } from './new-game-wizard.jsx';
 import { CardSheet, CardEditFields, cardFormInit, cardFormPayload } from './cards.jsx';
+import { lsGet, lsSet, lsGetJSON, lsSetJSON, lsRemove } from '../lib/storage.js';
 import {
   PageHeader, SplitLayout, ResourceList, Tabs, FormSection,
   Btn, Badge, KeyValue, StatusIndicator, ConfirmDialog, Flashbar, useFlash,
@@ -1947,7 +1948,7 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
   // 避免每次 handleSubmit 重试都 myUpsert 落一张新卡。
   const createdCardRef = React.useRef(null);
   const clearNewgameDraft = React.useCallback(() => {
-    try { localStorage.removeItem(NEWGAME_DRAFT_KEY); } catch (_) {}
+    lsRemove(NEWGAME_DRAFT_KEY);
   }, []);
 
   // ── load data when opened ────────────────────────────────────
@@ -1983,8 +1984,7 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
       if (defaultScriptId && scList.some(x => String(x.id) === String(defaultScriptId))) {
         pickId = String(defaultScriptId);
       } else {
-        let remembered = "";
-        try { remembered = localStorage.getItem("newgame.lastScriptId") || ""; } catch (_) {}
+        const remembered = lsGet("newgame.lastScriptId") || "";
         if (remembered && scList.some(x => String(x.id) === remembered && !newGameScriptBlockReason(x, t))) {
           pickId = remembered;
         } else {
@@ -2008,7 +2008,7 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
       // 反馈#4:在默认值之上覆盖本地草稿——无指定剧本(通用入口)或草稿剧本与本次一致时整体恢复,
       // 避免在 A 剧本开新游戏却恢复了 B 剧本的草稿。
       try {
-        const draft = JSON.parse(localStorage.getItem(NEWGAME_DRAFT_KEY) || 'null');
+        const draft = lsGetJSON(NEWGAME_DRAFT_KEY, null);
         const sameScript = !defaultScriptId || (draft && String(draft.scriptId) === String(defaultScriptId));
         if (draft && typeof draft === 'object' && sameScript) {
           if (typeof draft.title === 'string') setTitle(draft.title);
@@ -2045,12 +2045,10 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
   // 反馈#4:任一表单字段变化即写回草稿(恢复完成后才写,避免初始 reset/默认值覆盖已存草稿)
   React.useEffect(() => {
     if (!open || !draftReadyRef.current) return;
-    try {
-      localStorage.setItem(NEWGAME_DRAFT_KEY, JSON.stringify({
-        title, scriptId, roleMode, pickedCard, newCardForm,
-        birthpoint, identity, playerOrigin, identityKnown, storyIntent,
-      }));
-    } catch (_) {}
+    lsSetJSON(NEWGAME_DRAFT_KEY, {
+      title, scriptId, roleMode, pickedCard, newCardForm,
+      birthpoint, identity, playerOrigin, identityKnown, storyIntent,
+    });
   }, [open, title, scriptId, roleMode, pickedCard, newCardForm, birthpoint, identity, playerOrigin, identityKnown, storyIntent]);
 
   // 用户反馈闭环:选「本剧本 NPC」角色卡(key 前缀 npc:)= 你就是这个 NPC 本人 →
@@ -2220,7 +2218,7 @@ function NewGameModal({ open, onClose, onConfirm, defaultScriptId = null }) {
               const v = detail.selectedOption.value;
               setScriptId(v);
               setBirthpoint(null);
-              try { if (v) localStorage.setItem('newgame.lastScriptId', v); } catch (_) {}
+              if (v) lsSet('newgame.lastScriptId', v);
             }}
           />
         </CSFormField>

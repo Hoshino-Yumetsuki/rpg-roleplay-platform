@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import GenerateImageModal from './components/GenerateImageModal.jsx';
 import AgentModelPicker from './components/AgentModelPicker.jsx';
 import { capConfig } from './components/ModelConfigInterceptModal.jsx';
+import { lsGet, lsSet } from './lib/storage.js';
 
 const SLASH_COMMANDS = [
   { id: "status", trigger: "/status", labelKey: "game.command.status_label", groupKey: "game.command.group_query", hint: "/status" },
@@ -723,13 +724,11 @@ function Composer({
   const [showImageGen, setShowImageGen] = useStateC(false);
   const isWriting = composerMode === "writing";
   const [enterToSend, setEnterToSend] = useStateC(() => {
-    try { return localStorage.getItem("rpg.game.enterToSend") !== "0"; }
-    catch (_) { return true; }
+    return lsGet("rpg.game.enterToSend") !== "0";
   });
 
   React.useEffect(() => {
-    try { localStorage.setItem("rpg.game.enterToSend", enterToSend ? "1" : "0"); }
-    catch (_) {}
+    lsSet("rpg.game.enterToSend", enterToSend ? "1" : "0");
   }, [enterToSend]);
 
   // task 50：暴露 window.__rpgInsertMention(name)，让外部（右侧 PanelCharacters

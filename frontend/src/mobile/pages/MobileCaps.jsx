@@ -55,6 +55,8 @@ function StatusPill({ on, label }) {
    maxHeight=88% 以保视觉 1:1。 */
 
 /* Text input field wrapper */
+// 语义统一 #36(保留):此 MField 的 desc 用内联 11px/line-height 1.5 的 <span>,与
+// mobile/Field.jsx 的 .desc(11.5px/1.55)显示不同 → 强迁会改字号/行高,刻意保留本地实现。
 function MField({ label, desc, children }) {
   return (
     <div className="pl-field">

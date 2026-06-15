@@ -41,6 +41,7 @@ import MediaStudio from './components/MediaStudio.jsx';
 import FileLibrary from './components/FileLibrary.jsx';
 import { credApiIdSet } from './components/catalog-helpers.js';
 import { createToastChannel } from './toast.jsx';
+import { lsGet, lsSet } from './lib/storage.js';
 // Cloudscape shell(AWS 控制台架构 + 暖色主题)
 import CSTopNavigation from '@cloudscape-design/components/top-navigation';
 import CSAppLayout from '@cloudscape-design/components/app-layout';
@@ -154,7 +155,7 @@ function useShellChrome(chrome, deps = []) {
 function ResizableSplit({ top, bottom, storageKey, initialTop = 240, minTop = 96 }) {
   const read = () => {
     if (!storageKey) return initialTop;
-    const v = Number(window.localStorage?.getItem('platform.pl-split-' + storageKey));
+    const v = Number(lsGet('platform.pl-split-' + storageKey));
     return v && v > 0 ? v : initialTop;
   };
   const [topH, setTopH] = React.useState(read);
@@ -175,7 +176,7 @@ function ResizableSplit({ top, bottom, storageKey, initialTop = 240, minTop = 96
       window.removeEventListener('mouseup', onUp);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
-      if (storageKey) { try { window.localStorage?.setItem('platform.pl-split-' + storageKey, String(latest)); } catch (_) {} }
+      if (storageKey) lsSet('platform.pl-split-' + storageKey, String(latest));
     };
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'row-resize';
@@ -197,7 +198,7 @@ function ResizableSplit({ top, bottom, storageKey, initialTop = 240, minTop = 96
     const onTouchEnd = () => {
       window.removeEventListener('touchmove', onTouchMove);
       window.removeEventListener('touchend', onTouchEnd);
-      if (storageKey) { try { window.localStorage?.setItem('platform.pl-split-' + storageKey, String(latest)); } catch (_) {} }
+      if (storageKey) lsSet('platform.pl-split-' + storageKey, String(latest));
     };
     window.addEventListener('touchmove', onTouchMove, { passive: false });
     window.addEventListener('touchend', onTouchEnd, { passive: false });
@@ -4242,7 +4243,7 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
     let cancelled = false;
     (async () => {
       try {
-        const lastSeenStr = localStorage.getItem('feedback_last_seen_id') || '0';
+        const lastSeenStr = lsGet('feedback_last_seen_id') || '0';
         const lastSeen = parseInt(lastSeenStr, 10) || 0;
         const res = await fetch('/api/me/feedback?limit=30', { credentials: 'include' });
         if (cancelled || !res.ok) return;
@@ -4259,10 +4260,8 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
         }
         // 发完 toast 立刻把本次拿到的最大 id 推进 last-seen,避免刷新重弹;
         // 与 FeedbackDrawer 的写入路径一致(都只往前推不往后退)。
-        try {
-          const maxId = Math.max(0, ...(data.items || []).map(it => it.id || 0));
-          if (maxId > lastSeen) localStorage.setItem('feedback_last_seen_id', String(maxId));
-        } catch (_) {}
+        const maxId = Math.max(0, ...(data.items || []).map(it => it.id || 0));
+        if (maxId > lastSeen) lsSet('feedback_last_seen_id', String(maxId));
       } catch (_) {}
     })();
     return () => { cancelled = true; };

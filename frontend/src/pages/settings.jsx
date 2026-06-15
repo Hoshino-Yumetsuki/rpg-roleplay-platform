@@ -13,6 +13,7 @@ import GmStyleEditor from '../components/GmStyleEditor.jsx';
 import { getCaps as _getCapsImported, normalizeProviderId, credentialToCatalogId, catalogToCredentialId } from '../components/catalog-helpers.js';
 import { MODULES as AGENT_MODULES } from '../agent-modules.js';
 import { readScopedPref, readNumberPref } from '../lib/prefs.js';
+import { lsGetJSON, lsSetJSON } from '../lib/storage.js';
 import { plNavigate } from '../router.js';
 // Cloudscape 原生组件(内容迁移,统一基线对齐)
 import CSContainer from '@cloudscape-design/components/container';
@@ -2725,10 +2726,8 @@ function PermSection() {
         if (Array.isArray(cwl)) setCustomWhitelist(cwl);
         else {
           // localStorage 兜底
-          try {
-            const stored = localStorage.getItem("perm.custom_whitelist");
-            if (stored) setCustomWhitelist(JSON.parse(stored));
-          } catch (_) {}
+          const stored = lsGetJSON("perm.custom_whitelist", null);
+          if (stored) setCustomWhitelist(stored);
         }
       } catch (_) {}
     })();
@@ -2751,7 +2750,7 @@ function PermSection() {
     } catch (_) {
       // 后端不支持则 localStorage 兜底
     }
-    try { localStorage.setItem("perm.custom_whitelist", JSON.stringify(next)); } catch (_) {}
+    lsSetJSON("perm.custom_whitelist", next);
   };
 
   const addCustomEntry = () => {

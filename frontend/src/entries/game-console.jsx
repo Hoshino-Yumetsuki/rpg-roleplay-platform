@@ -16,6 +16,7 @@ import '../ui-atlas.js';
 import '../a11y-tooltip-labels.js';   // data-tip → aria-label 镜像(屏幕阅读器)
 import '../console-assistant-navigation.jsx';
 import '../i18n/index.js';   // 初始化 i18next + 接 interfaceLang
+import { lsGet, lsSet, lsRemove } from '../lib/storage.js';
 
 // 反馈抽屉使用 Cloudscape 组件；游戏页也必须加载同一套暗色主题。
 import '@cloudscape-design/global-styles/index.css';
@@ -46,17 +47,15 @@ const SPLASH_VERSION = 'v1.0-2026-05-31';
   function _applyDensity(d) {
     if (!VALID_DENSITY[d]) d = 'default';
     document.documentElement.setAttribute('data-density', d);
-    try { localStorage.setItem('rpg.density', d); } catch (_) {}
+    lsSet('rpg.density', d);
     window.dispatchEvent(new CustomEvent('rpg-density-change', { detail: d }));
   }
-  let storedDensity = 'default';
-  try { storedDensity = localStorage.getItem('rpg.density') || 'default'; } catch (_) {}
+  const storedDensity = lsGet('rpg.density') || 'default';
   _applyDensity(storedDensity);
   window.RPG_setDensity = _applyDensity;
 
   const FONT_MAP = { serif: 'var(--font-serif)', sans: 'var(--font-sans)', mono: 'var(--font-mono)' };
-  let storedFont = 'serif';
-  try { storedFont = localStorage.getItem('rpg.narrativeFont') || 'serif'; } catch (_) {}
+  const storedFont = lsGet('rpg.narrativeFont') || 'serif';
   if (FONT_MAP[storedFont]) {
     document.documentElement.style.setProperty('--narrative-font', FONT_MAP[storedFont]);
   }
@@ -252,9 +251,9 @@ const TWEAK_DEFAULTS = {
 const MOBILE_GAME_ENABLED = (() => {
   try {
     const q = new URLSearchParams(location.search);
-    if (q.get('m2') === '1') { try { localStorage.setItem('rpg_mobile_v2', '1'); } catch (_) {} return true; }
-    if (q.get('m2') === '0') { try { localStorage.removeItem('rpg_mobile_v2'); } catch (_) {} return false; }
-    return localStorage.getItem('rpg_mobile_v2') === '1';
+    if (q.get('m2') === '1') { lsSet('rpg_mobile_v2', '1'); return true; }
+    if (q.get('m2') === '0') { lsRemove('rpg_mobile_v2'); return false; }
+    return lsGet('rpg_mobile_v2') === '1';
   } catch (_) { return false; }
 })();
 
@@ -390,14 +389,10 @@ function App() {
   };
   const [activeTab, setActiveTab] = useState(() => getRightTabForLocation(t.defaultRightTab || 'status'));
   // 侧栏折叠状态持久化(localStorage,刷新后保留)。来自 PR #14。
-  const [railCollapsed, setRailCollapsed] = useState(() => {
-    try { return localStorage.getItem('gc.rail.collapsed') === 'true'; } catch { return false; }
-  });
-  const [panelCollapsed, setPanelCollapsed] = useState(() => {
-    try { return localStorage.getItem('gc.panel.collapsed') === 'true'; } catch { return false; }
-  });
-  useEffect(() => { try { localStorage.setItem('gc.rail.collapsed', railCollapsed ? 'true' : 'false'); } catch {} }, [railCollapsed]);
-  useEffect(() => { try { localStorage.setItem('gc.panel.collapsed', panelCollapsed ? 'true' : 'false'); } catch {} }, [panelCollapsed]);
+  const [railCollapsed, setRailCollapsed] = useState(() => lsGet('gc.rail.collapsed') === 'true');
+  const [panelCollapsed, setPanelCollapsed] = useState(() => lsGet('gc.panel.collapsed') === 'true');
+  useEffect(() => { lsSet('gc.rail.collapsed', railCollapsed ? 'true' : 'false'); }, [railCollapsed]);
+  useEffect(() => { lsSet('gc.panel.collapsed', panelCollapsed ? 'true' : 'false'); }, [panelCollapsed]);
   const [mobileNav, setMobileNav] = useState(false);  // 手机端: 左 rail 改汉堡抽屉的开关
   const [showSlash, setShowSlash] = useState(false);
   const [showPlus, setShowPlus] = useState(false);
@@ -462,7 +457,7 @@ function App() {
   // #11: token 用量显示 — lastUsage 存本轮 usage 事件,showUsage 由设置开关控制(默认关)
   const [lastUsage, setLastUsage] = useState(null);
   const [clicheNotice, setClicheNotice] = useState(null);  // 反馈#22: 套路比喻提示
-  const [showUsage, setShowUsage] = useState(() => { try { return localStorage.getItem('rpg.showTokenUsage') === 'on'; } catch (_) { return false; } });
+  const [showUsage, setShowUsage] = useState(() => lsGet('rpg.showTokenUsage') === 'on');
   useEffect(() => {
     const onUsageChange = (e) => setShowUsage(!!(e && e.detail));
     window.addEventListener('rpg-show-usage-change', onUsageChange);

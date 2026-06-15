@@ -13,6 +13,7 @@
 import React from 'react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Icon } from '../icons.jsx';
+import { lsGet, lsSet, lsGetJSON, lsSetJSON, lsRemove } from '../../lib/storage.js';
 
 /* ================================================================
    常量 & 工具
@@ -146,6 +147,8 @@ function Loading({ text }) {
 /* ================================================================
    FieldLabel
    ================================================================ */
+// 语义统一 #36(保留):FieldLabel 只渲染「标签 + hint」块、不含控件 children,与
+// mobile/Field.jsx 的 Field(label+desc+控件)不同形,且为纯内联样式 → 不收口,保留本地实现。
 function FieldLabel({ children, hint }) {
   return (
     <div style={{ marginBottom: 7 }}>
@@ -936,8 +939,7 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
 
       // 默认剧本
       if (!lockedScriptId) {
-        let pickId = '';
-        try { pickId = localStorage.getItem('newgame.lastScriptId') || ''; } catch (_) {}
+        let pickId = lsGet('newgame.lastScriptId') || '';
         if (!pickId || !scList.some(x => String(x.id) === pickId && !scriptBlockReason(x))) {
           const first = scList.find(x => !scriptBlockReason(x));
           pickId = first ? String(first.id) : (scList.length ? String(scList[0].id) : '');
@@ -960,7 +962,7 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
 
       // 草稿恢复
       try {
-        const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+        const draft = lsGetJSON(DRAFT_KEY, null);
         if (draft && typeof draft === 'object') {
           const sameScript = !lockedScriptId || String(draft.scriptId) === lockedScriptId;
           if (sameScript) {
@@ -994,13 +996,11 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
   // 草稿回写
   useEffect(() => {
     if (!draftReadyRef.current) return;
-    try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({
-        scriptId, title, roleMode, pickedCard, newCardName, newCardRole, newCardBg,
-        birthpoint, playerOrigin, identity, identityKnown,
-        foreknowledge, npcAwareness, steering, spoiler, storyIntent, step,
-      }));
-    } catch (_) {}
+    lsSetJSON(DRAFT_KEY, {
+      scriptId, title, roleMode, pickedCard, newCardName, newCardRole, newCardBg,
+      birthpoint, playerOrigin, identity, identityKnown,
+      foreknowledge, npcAwareness, steering, spoiler, storyIntent, step,
+    });
   }, [scriptId, title, roleMode, pickedCard, newCardName, newCardRole, newCardBg,
       birthpoint, playerOrigin, identity, identityKnown,
       foreknowledge, npcAwareness, steering, spoiler, storyIntent, step]);
@@ -1086,7 +1086,7 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
       await window.__createAndEnterSave(payload);
 
       // 成功后清草稿(如果 __createAndEnterSave 跳页了就不会执行到这里)
-      try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+      lsRemove(DRAFT_KEY);
       onDone?.();
       nav.pop();
     } catch (e) {
@@ -1124,7 +1124,7 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
                   scripts={scripts}
                   lockedScriptId={lockedScriptId}
                   scriptId={scriptId}
-                  setScriptId={v => { setScriptId(v); try { localStorage.setItem('newgame.lastScriptId', v); } catch (_) {} }}
+                  setScriptId={v => { setScriptId(v); lsSet('newgame.lastScriptId', v); }}
                   birthpoint={birthpoint}
                   setBirthpoint={setBirthpoint}
                 />

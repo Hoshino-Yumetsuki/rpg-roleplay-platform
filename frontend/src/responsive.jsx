@@ -29,6 +29,7 @@
  */
 import React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { lsGet, lsSet } from './lib/storage.js';
 
 
 // ── 断点 ─────────────────────────────────────────────────
@@ -91,12 +92,10 @@ function useResizable({
   cssVar,
 } = {}) {
   const [size, setSize] = useState(() => {
-    try {
-      if (storageKey) {
-        const v = parseInt(localStorage.getItem(storageKey) || "", 10);
-        if (Number.isFinite(v) && v >= min && v <= max) return v;
-      }
-    } catch (_) {}
+    if (storageKey) {
+      const v = parseInt(lsGet(storageKey) || "", 10);
+      if (Number.isFinite(v) && v >= min && v <= max) return v;
+    }
     return defaultSize;
   });
   const sizeRef = useRef(size);
@@ -140,7 +139,7 @@ function useResizable({
       window.removeEventListener("touchend", onEnd);
       window.removeEventListener("touchcancel", onEnd);
       setSize(pending);
-      try { if (storageKey) localStorage.setItem(storageKey, String(pending)); } catch (_) {}
+      if (storageKey) lsSet(storageKey, String(pending));
     };
     if (isTouch) {
       window.addEventListener("touchmove", onTouchMove, { passive: false });
@@ -165,7 +164,7 @@ function useResizable({
 
   const onDoubleClick = useCallback(() => {
     setSize(defaultSize);
-    try { if (storageKey) localStorage.setItem(storageKey, String(defaultSize)); } catch (_) {}
+    if (storageKey) lsSet(storageKey, String(defaultSize));
   }, [defaultSize, storageKey]);
 
   return {

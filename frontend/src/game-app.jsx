@@ -12,6 +12,7 @@ import { stripNarrativeOps } from './narrative-strip.js';
 import AvatarImg from './components/AvatarImg.jsx';
 import { useStickToBottom } from './hooks/useStickToBottom.js';
 import { createToastChannel } from './toast.jsx';
+import { lsGet, lsSet, lsGetJSON, lsSetJSON } from './lib/storage.js';
 
 // ----------------------------- LEFT RAIL ---------------------------------
 function LeftRail({ collapsed, onToggle, state, runState, onNew, onSave, onSwitchSave, onMemoryMode, currentSaveId, saves, resizeHandle, mobileOpen }) {
@@ -787,10 +788,10 @@ function PlayerBlock({ text, ts, attachments, msgIndex, saveId, commitId, speake
 // msgKey = 助手消息的绝对索引字符串(append-only history 跨刷新稳定)。
 function _imgMapKey(saveId) { return `rpg.imgmsg.${saveId}`; }
 function _loadImgMap(saveId) {
-  try { return JSON.parse(localStorage.getItem(_imgMapKey(saveId)) || '{}') || {}; } catch (_) { return {}; }
+  return lsGetJSON(_imgMapKey(saveId), {});
 }
 function _saveImgMap(saveId, map) {
-  try { localStorage.setItem(_imgMapKey(saveId), JSON.stringify(map)); } catch (_) {}
+  lsSetJSON(_imgMapKey(saveId), map);
 }
 
 // 返回 { msgKey: images[] };未映射的归入 '__last' 桶(由调用方挂到最后助手消息)。
@@ -1210,17 +1211,17 @@ function BranchTreeRail({ saveId }) {
 // MVP 范围: 密度预设 / 叙事字体 / 自动存档 / 权限模式只读展示 / 全局设置链接。
 // 所有改动均为纯前端 localStorage — 不需要后端。
 function _readDensity() {
-  try { return localStorage.getItem("rpg.density") || "default"; } catch (_) { return "default"; }
+  return lsGet("rpg.density") || "default";
 }
 function _readNarrativeFont() {
-  try { return localStorage.getItem("rpg.narrativeFont") || "serif"; } catch (_) { return "serif"; }
+  return lsGet("rpg.narrativeFont") || "serif";
 }
 function _readAutosave() {
-  try { return localStorage.getItem("rpg.autosave") !== "off"; } catch (_) { return true; }
+  return lsGet("rpg.autosave") !== "off";
 }
 // #11: token 用量显示开关 — 默认关闭(=== "on")
 function _readShowUsage() {
-  try { return localStorage.getItem("rpg.showTokenUsage") === "on"; } catch (_) { return false; }
+  return lsGet("rpg.showTokenUsage") === "on";
 }
 
 function GameSettingsModal({ open, onClose, saveTitle, permission, saveId }) {
@@ -1256,7 +1257,7 @@ function GameSettingsModal({ open, onClose, saveTitle, permission, saveId }) {
 
   const handleNarrativeFont = (f) => {
     setNarrativeFontState(f);
-    try { localStorage.setItem("rpg.narrativeFont", f); } catch (_) {}
+    lsSet("rpg.narrativeFont", f);
     const fontMap = {
       serif: "var(--font-serif)",
       sans: "var(--font-sans)",
@@ -1268,12 +1269,12 @@ function GameSettingsModal({ open, onClose, saveTitle, permission, saveId }) {
 
   const handleAutosave = (v) => {
     setAutosaveState(v);
-    try { localStorage.setItem("rpg.autosave", v ? "on" : "off"); } catch (_) {}
+    lsSet("rpg.autosave", v ? "on" : "off");
   };
 
   const handleShowUsage = (v) => {
     setShowUsageState(v);
-    try { localStorage.setItem("rpg.showTokenUsage", v ? "on" : "off"); } catch (_) {}
+    lsSet("rpg.showTokenUsage", v ? "on" : "off");
     // App(game-console)监听此事件即时显隐 footer,无需刷新
     window.dispatchEvent(new CustomEvent("rpg-show-usage-change", { detail: v }));
   };
