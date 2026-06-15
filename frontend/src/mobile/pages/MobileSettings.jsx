@@ -47,18 +47,6 @@ function Toggle({ on, onChange }) {
   );
 }
 
-function SetRow({ label, desc, children }) {
-  return (
-    <div className="pl-setrow">
-      <div className="pl-setrow-tx">
-        <strong>{label}</strong>
-        {desc && <span>{desc}</span>}
-      </div>
-      <div style={{ flex: 'none', maxWidth: '52%' }}>{children}</div>
-    </div>
-  );
-}
-
 function SetGroup({ title, children, action }) {
   return (
     <div className="pl-sec">
