@@ -117,6 +117,24 @@
 .mde-agent-input button:disabled { opacity: 0.5; cursor: default; }
 .muted { color: var(--muted, #968f85); }
 
+/* AI 续写:待定区高亮 + 顶部 Tab/Esc 提示条 */
+.mde-cm .cm-editor .mde-ai-pending { background: rgba(181,101,74,0.20); border-radius: 2px; }
+.mde-cm .cm-editor .mde-ai-panel {
+  display: none; align-items: center; gap: 10px; padding: 4px 12px;
+  background: var(--bg-deep, #131211); border-bottom: 1px solid var(--accent, #b5654a);
+  color: var(--accent, #b5654a); font-size: 12px; font-family: var(--font-sans, system-ui);
+}
+
+/* 侧栏「续写到正文」工具条 */
+.mde-agent-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 6px 8px 0; }
+.mde-agent-continue {
+  background: var(--panel-2, #282623); color: var(--text, #ebe7df);
+  border: 1px solid var(--accent, #b5654a); border-radius: 6px; padding: 5px 12px;
+  font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.mde-agent-continue:hover { background: var(--accent, #b5654a); color: #fff; }
+.mde-agent-toolbar-hint { font-size: 11px; color: var(--muted-2, #6b655e); }
+
 @media (max-width: 1100px) {
   .mde-panes { grid-template-columns: 200px 1fr 0; }
   .mde-right { display: none; }

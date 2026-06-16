@@ -9,6 +9,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput } from '@codemirror/language';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+import { aiContinueExtension, cmdKKeymap } from '../lib/md-continue.js';
 
 const { useRef, useEffect } = React;
 
@@ -27,8 +28,10 @@ const warmTheme = EditorView.theme({
   '.cm-matchingBracket': { backgroundColor: 'rgba(122,166,194,.18)', outline: 'none' },
 }, { dark: true });
 
-function baseExtensions(onChange, readOnly) {
+function baseExtensions(onChange, readOnly, getScriptId) {
   return [
+    aiContinueExtension(),
+    cmdKKeymap(getScriptId),
     lineNumbers(),
     highlightActiveLineGutter(),
     highlightActiveLine(),
@@ -48,11 +51,15 @@ function baseExtensions(onChange, readOnly) {
   ];
 }
 
-export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = false }) {
+export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = false, scriptId, onViewReady }) {
   const hostRef = useRef(null);
   const viewRef = useRef(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const scriptIdRef = useRef(scriptId);
+  scriptIdRef.current = scriptId;
+  const onViewReadyRef = useRef(onViewReady);
+  onViewReadyRef.current = onViewReady;
   const lastKeyRef = useRef(docKey);
 
   // 建一次。
@@ -60,13 +67,14 @@ export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = f
     const view = new EditorView({
       state: EditorState.create({
         doc: value || '',
-        extensions: baseExtensions((v) => onChangeRef.current?.(v), readOnly),
+        extensions: baseExtensions((v) => onChangeRef.current?.(v), readOnly, () => scriptIdRef.current),
       }),
       parent: hostRef.current,
     });
     viewRef.current = view;
     lastKeyRef.current = docKey;
-    return () => { view.destroy(); viewRef.current = null; };
+    onViewReadyRef.current?.(view);   // 暴露给侧栏 agent 的「续写到正文」用
+    return () => { onViewReadyRef.current?.(null); view.destroy(); viewRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

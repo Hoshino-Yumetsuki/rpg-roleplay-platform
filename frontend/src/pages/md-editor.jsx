@@ -8,6 +8,7 @@ import { lsGet, lsSet } from '../lib/storage.js';
 import CodeMirrorEditor from '../components/CodeMirrorEditor.jsx';
 import MdEditorAgent from '../components/MdEditorAgent.jsx';
 import { toMd, fromMd } from '../lib/md-serialize.js';
+import { runContinue } from '../lib/md-continue.js';
 
 const { useState, useEffect, useCallback, useRef } = React;
 
@@ -145,7 +146,7 @@ async function fetchGroupList(kind, sid) {
 }
 
 // ── 标签编辑器(P0:textarea;P3 替换为 CodeMirror)──────────────────────
-function EditorPane({ tab, onChange }) {
+function EditorPane({ tab, onChange, scriptId, onViewReady }) {
   if (!tab) {
     return <div className="mde-empty">从左侧选择一个文件开始编辑<br /><span className="muted">章节正文 / 角色卡 / 世界书 / 时间线 / Canon</span></div>;
   }
@@ -156,6 +157,8 @@ function EditorPane({ tab, onChange }) {
       value={tab.content}
       docKey={tab.key}
       onChange={(v) => onChange(tab.key, v)}
+      scriptId={scriptId}
+      onViewReady={onViewReady}
     />
   );
 }
@@ -167,6 +170,7 @@ export default function MdEditorPage() {
   const [tabs, setTabs] = useState([]);          // [{key, kind, id, label, content, original, loading, error, dirty}]
   const [activeKey, setActiveKey] = useState(null);
   const [treeReloadKey, setTreeReloadKey] = useState(0);   // agent 写库后 bump,触发文件树重载
+  const activeViewRef = useRef(null);                      // 当前 CodeMirror 视图(供侧栏「续写到正文」)
 
   // 拉剧本列表(仅自己拥有的可编辑)。
   useEffect(() => {
@@ -246,6 +250,13 @@ export default function MdEditorPage() {
     } catch (_) { /* 静默 */ }
   }, [tabs, scriptId]);
 
+  // 侧栏「续写到正文」:对当前打开的章节正文,在光标处(或选中段)用 AI 续写/改写。
+  const onContinue = useCallback((instruction) => {
+    const view = activeViewRef.current;
+    if (!view) { toast('请先打开一个文件再续写', { kind: 'warn' }); return; }
+    runContinue(view, { scriptId, instruction });
+  }, [scriptId]);
+
   // Cmd/Ctrl+S 保存当前标签。
   useEffect(() => {
     const onKey = (e) => {
@@ -289,13 +300,13 @@ export default function MdEditorPage() {
               </div>
             ))}
           </div>
-          <EditorPane tab={active} onChange={onEdit} />
+          <EditorPane tab={active} onChange={onEdit} scriptId={scriptId} onViewReady={(v) => { activeViewRef.current = v; }} />
         </main>
 
-        {/* 右:agent 直写面板(console_assistant SSE)*/}
+        {/* 右:agent 直写面板(console_assistant SSE)+ 续写到正文 */}
         <aside className="mde-right">
           {scriptId
-            ? <MdEditorAgent scriptId={scriptId} activeTab={active} onWriteComplete={refreshTab} />
+            ? <MdEditorAgent scriptId={scriptId} activeTab={active} onWriteComplete={refreshTab} onContinue={onContinue} />
             : <div className="mde-tree-hint">先选剧本</div>}
         </aside>
       </div>

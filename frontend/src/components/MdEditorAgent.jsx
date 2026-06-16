@@ -43,7 +43,7 @@ async function consumeSSE(res, onEvent) {
   }
 }
 
-export default function MdEditorAgent({ scriptId, activeTab, onWriteComplete }) {
+export default function MdEditorAgent({ scriptId, activeTab, onWriteComplete, onContinue }) {
   const [messages, setMessages] = useState([]);   // [{role, text, tools:[{call_id,tool,args,status,result}]}]
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -199,10 +199,20 @@ export default function MdEditorAgent({ scriptId, activeTab, onWriteComplete }) 
           </div>
         ))}
       </div>
+      {onContinue && activeTab && (
+        <div className="mde-agent-toolbar">
+          <button
+            className="mde-agent-continue"
+            title="把输入框作为指令(可空),让 AI 在当前正文光标处续写 / 选中段改写。也可在编辑器里按 ⌘K。"
+            onClick={() => { onContinue(input.trim()); setInput(''); }}
+          >续写到正文(光标处)</button>
+          <span className="mde-agent-toolbar-hint">或在正文按 ⌘K</span>
+        </div>
+      )}
       <div className="mde-agent-input">
         <textarea
           value={input}
-          placeholder={scriptId ? '让 AI 改这个剧本…' : '先选剧本'}
+          placeholder={scriptId ? '让 AI 改这个剧本… / 或写续写指令配合上方按钮' : '先选剧本'}
           disabled={!scriptId || busy}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
