@@ -63,6 +63,7 @@ def list_assistant_tools() -> list[dict[str, Any]]:
         "list_scripts",
         # MD 编辑器(剧本知识资产):读
         "get_script_chapters", "list_script_npcs", "get_script_character_card",
+        "list_worldbook_entries", "list_anchors", "list_canon_entities",
         # MD 编辑器(剧本知识资产):直写库(script scope,严格 owner 闸 + 二次确认)
         "update_script_chapter", "upsert_worldbook_entry", "update_npc_card",
         "update_anchor", "upsert_canon_entity",

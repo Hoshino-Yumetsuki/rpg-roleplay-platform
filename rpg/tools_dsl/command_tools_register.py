@@ -269,6 +269,50 @@ def _register_phase2_tools() -> None:
 
 
 # ────────────────────────────────────────────────────────────
+# N (MD 编辑器) §5: script 级「列出」读工具
+# (executor 在 command_tools_script_write,读级闸 owner|subscriber)
+# 照抄 command_tools_queries 的 script 读工具注册行(scope="script" + _READ_ANY_ORIGIN)。
+# rule 4 同步前先用这三个定位现有 entry_id / anchor_id / logical_key。
+# ────────────────────────────────────────────────────────────
+
+
+def _register_script_read_tools() -> None:
+    from tools_dsl.command_tools_script_write import (
+        _SCRIPT_READ_ORIGINS,
+        _t_list_anchors,
+        _t_list_canon_entities,
+        _t_list_worldbook_entries,
+    )
+    registry = get_registry()
+    read_specs = [
+        ("list_worldbook_entries",
+         "列出剧本世界书条目精简清单(entry_id/title/keys/enabled/...)。"
+         "用 upsert_worldbook_entry 更新前先用它拿 entry_id。",
+         _t_list_worldbook_entries),
+        ("list_anchors",
+         "列出剧本时间线锚点精简清单(anchor_id/label/story_phase/章节区间)。"
+         "用 update_anchor 更新前先用它拿 anchor_id。",
+         _t_list_anchors),
+        ("list_canon_entities",
+         "列出剧本 canon 实体精简清单(logical_key/name/type/...)。"
+         "用 upsert_canon_entity 更新前先用它拿 logical_key。",
+         _t_list_canon_entities),
+    ]
+    for name, desc, exec_ in read_specs:
+        if registry.has(name):
+            continue
+        registry.register(ToolSpec(
+            name=name,
+            description=desc,
+            input_schema={"type": "object", "properties": {"script_id": {"type": "integer"}}},
+            executor=exec_,
+            scope="script",
+            origins=_SCRIPT_READ_ORIGINS,
+            destructive=False,
+        ))
+
+
+# ────────────────────────────────────────────────────────────
 # Public: 一次性初始化所有工具
 # ────────────────────────────────────────────────────────────
 
@@ -371,6 +415,11 @@ def ensure_registered() -> None:
         register_script_write_tools()
     except Exception as exc:
         log.warning(f"[command_tools_register] script_write 工具注册失败: {exc}")
+    # N (MD 编辑器) §5: script 级「列出」读工具(世界书/锚点/canon,读级闸 owner|subscriber)
+    try:
+        _register_script_read_tools()
+    except Exception as exc:
+        log.warning(f"[command_tools_register] script_read 工具注册失败: {exc}")
     # task 68/72 — 给已注册工具打 intent_keywords + side_effect_topics 标签,
     # 供 ui_describe 模糊匹配 + dispatcher 状态变更广播。
     try:
