@@ -185,8 +185,14 @@ def rebuild_canon_resolve_from_facts(db, script_id: int) -> dict:
     db.execute("SAVEPOINT canon_rebuild")
     try:
         from psycopg.types.json import Jsonb
-        # 清旧(只清同 script,不动其他 script)
-        db.execute("delete from kb_canon_entities where script_id=%s", (script_id,))
+        # 清旧(只清同 script,不动其他 script)。editor=编辑器 agent 写的(upsert_canon_entity,
+        # attrs.source='editor')重建保留不删,与 worldbook/timeline 同口径(harness 审计 P1)。
+        # 再插用 on conflict do nothing,故幸存 editor 实体不会被同 logical_key 的重抽撞键覆盖。
+        db.execute(
+            "delete from kb_canon_entities where script_id=%s "
+            "and coalesce(attrs->>'source','') <> 'editor'",
+            (script_id,),
+        )
         written = 0
         for typ, mentions in by_type.items():
             for name, rec in mentions.items():

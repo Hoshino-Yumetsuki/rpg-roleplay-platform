@@ -344,7 +344,7 @@ def _t_upsert_worldbook_entry(user_id: int, script_id: int | None, args: dict, s
                         str(args.get("content") or ""),
                         int(args["priority"]) if args.get("priority") is not None else 50,
                         bool(args["enabled"]) if args.get("enabled") is not None else True,
-                        Jsonb({}),
+                        Jsonb({"source": "editor"}),  # 标记编辑器写入,重建保留不删(harness 审计 P1)
                         Jsonb(_strlist(args.get("keys"))),
                         Jsonb(_strlist(args.get("regex_keys"))),
                         Jsonb(_strlist(args.get("character_filter"))),
@@ -674,10 +674,14 @@ def _t_upsert_canon_entity(user_id: int, script_id: int | None, args: dict, stat
                     sets.append("aliases=%s")
                     params.append(Jsonb(_strlist(args["aliases"])))
                 if "attrs" in args and isinstance(args["attrs"], dict):
-                    sets.append("attrs=%s")
-                    params.append(Jsonb(args["attrs"]))
+                    # 用户传了 attrs → jsonb 合并(保留既有键)+ 标 source='editor'。
+                    sets.append("attrs = coalesce(attrs,'{}'::jsonb) || %s::jsonb")
+                    params.append(Jsonb({**args["attrs"], "source": "editor"}))
                 if not sets:
                     return "失败: 没有要更新的字段"
+                # 有真实字段更新但没动 attrs → 仍标 source='editor',让重建保留这条用户编辑过的实体(harness 审计 P1)。
+                if not any(s.startswith("attrs") for s in sets):
+                    sets.append("attrs = coalesce(attrs,'{}'::jsonb) || '{\"source\":\"editor\"}'::jsonb")
                 params.extend([sid, logical_key])
                 db.execute(
                     f"update kb_canon_entities set {', '.join(sets)} "
@@ -724,7 +728,8 @@ def _t_upsert_canon_entity(user_id: int, script_id: int | None, args: dict, stat
                         str(args.get("parent_logical_key") or ""),
                         int(args["importance"]) if args.get("importance") is not None else 0,
                         Jsonb(_strlist(aliases)) if isinstance(aliases, list) else Jsonb([]),
-                        Jsonb(attrs) if isinstance(attrs, dict) else Jsonb({}),
+                        # 标 source='editor':重建保留不删(harness 审计 P1,attrs 是 canon 的开放 jsonb)
+                        Jsonb({**(attrs if isinstance(attrs, dict) else {}), "source": "editor"}),
                         int(args["first_revealed_chapter"]) if args.get("first_revealed_chapter") is not None else 0,
                         bool(args["public_knowledge"]) if args.get("public_knowledge") is not None else False,
                     ),

@@ -225,10 +225,11 @@ async def api_fork_script(request: Request, script_id: int, user=Depends(require
             INSERT INTO script_timeline_anchors
               (script_id, story_phase, story_time_label,
                chapter_min, chapter_max, chapter_count,
-               sample_title, sample_summary, keywords, confidence)
+               sample_title, sample_summary, keywords, confidence, source)
             SELECT %s, story_phase, story_time_label,
                    chapter_min, chapter_max, chapter_count,
-                   sample_title, sample_summary, keywords, confidence
+                   sample_title, sample_summary, keywords, confidence,
+                   coalesce(source, 'novel')
             FROM script_timeline_anchors WHERE script_id = %s
             ON CONFLICT (script_id, story_phase, story_time_label) DO NOTHING
             """,

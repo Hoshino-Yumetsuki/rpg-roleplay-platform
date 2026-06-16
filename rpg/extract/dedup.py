@@ -64,8 +64,8 @@ def copy_canon_layer(db, src_script_id: int, dst_script_id: int) -> dict:
         (dst_script_id, src_script_id),
     )
     db.execute(
-        "insert into script_timeline_anchors(script_id, story_phase, story_time_label, chapter_min, chapter_max, chapter_count, confidence) "
-        "select %s, story_phase, story_time_label, chapter_min, chapter_max, chapter_count, confidence from script_timeline_anchors where script_id=%s "
+        "insert into script_timeline_anchors(script_id, story_phase, story_time_label, chapter_min, chapter_max, chapter_count, confidence, source) "
+        "select %s, story_phase, story_time_label, chapter_min, chapter_max, chapter_count, confidence, coalesce(source,'novel') from script_timeline_anchors where script_id=%s "
         "on conflict(script_id, story_phase, story_time_label) do nothing",
         (dst_script_id, src_script_id),
     )

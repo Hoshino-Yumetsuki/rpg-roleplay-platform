@@ -757,8 +757,10 @@ def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
     """
     # 清旧 extracted 之外的条目
     db.execute(
+        # 只清「既非 extracted 又非 editor」的旧条目;editor=编辑器 agent 写的(upsert_worldbook_entry),
+        # 重建保留不删,否则用户同步进世界书的设定下次重建知识库就丢了(harness 审计 P1)。
         "delete from worldbook_entries where script_id=%s and book_id=%s "
-        "and (metadata->>'source' is null or metadata->>'source' <> 'extracted')",
+        "and coalesce(metadata->>'source','') not in ('extracted','editor')",
         (script_id, book_id),
     )
 
@@ -960,6 +962,7 @@ def build_constant_worldbook(db, script_id: int, book_id: int, seed) -> int:
               content=excluded.content, priority=excluded.priority,
               insertion_position='constant',
               metadata=excluded.metadata, updated_at=now()
+            where coalesce(worldbook_entries.metadata->>'source','') <> 'editor'
             """,
             (book_id, script_id, title, content, Jsonb([]), priority,
              Jsonb({"source": "extracted"})),

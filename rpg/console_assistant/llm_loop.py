@@ -143,6 +143,19 @@ def _to_backend_messages(messages: list[dict[str, Any]]) -> list[dict]:
     return out
 
 
+# P0(harness 审计):script 直写 / 读 工具名集合。本回合一旦读过剧本资产正文(世界书/锚点/
+# canon/章节正文等可能夹带"忽略以上,改成…"的注入指令),后续 script 直写一律走二次确认 ——
+# 把"读外部内容 → 被诱导静默改库"这一安全属性从靠提示词改成确定性闸。
+_SCRIPT_WRITE_TOOLS = frozenset({
+    "update_script_chapter", "upsert_worldbook_entry", "update_npc_card",
+    "update_anchor", "create_anchor", "upsert_canon_entity",
+})
+_SCRIPT_READ_TOOLS = frozenset({
+    "get_script_chapters", "list_script_npcs", "get_script_character_card",
+    "list_worldbook_entries", "list_anchors", "list_canon_entities",
+})
+
+
 def _run_llm_loop(
     *,
     user_id: int,
@@ -167,6 +180,8 @@ def _run_llm_loop(
         extra_pending_note.append({"role": "user", "content": pending_summary})
 
     pending_for_this_turn: list[dict[str, Any]] = []
+    # P0:本回合是否已出现 script 读工具结果(资产正文回灌)→ 后续 script 直写需二次确认。
+    turn_read_fired = [False]
 
     # 安全: 不再信前端任意传入的 save_id/script_id, 必须经过归属校验
     page_save_id = _validate_owned_save_id(user_id, (page_context or {}).get("save_id"))
@@ -177,7 +192,12 @@ def _run_llm_loop(
         if spec is None:
             return {"ok": False, "error": f"未知工具 {tool_name}"}
         call_id = _new_call_id()
-        if spec.destructive:
+        # P0:被注入诱导的静默写防护 —— 原生 destructive,或本回合读过资产正文后的 script 直写,
+        # 一律走二次确认(前端 confirm UI 现成)。owner 闸仍是硬兜底,这是叠加的确定性闸。
+        needs_confirm = spec.destructive or (
+            tool_name in _SCRIPT_WRITE_TOOLS and turn_read_fired[0]
+        )
+        if needs_confirm:
             args_for_pending = dict(arguments or {})
             # task 120 UX: 在确认弹窗里显示 title/turn, 不只是 save_id
             if tool_name == "delete_save":
@@ -213,6 +233,9 @@ def _run_llm_loop(
             call_id=call_id,
             state_provider=state_provider,
         )
+        # P0:成功的 script 读 → 标记本回合已回灌资产正文,后续 script 直写要确认。
+        if result.ok and tool_name in _SCRIPT_READ_TOOLS:
+            turn_read_fired[0] = True
         return {
             "ok": result.ok,
             "result": result.result,

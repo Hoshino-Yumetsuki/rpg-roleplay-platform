@@ -130,7 +130,6 @@ export async function runContinue(view, opts = {}) {
   view.focus();
 
   const ctrl = new AbortController();
-  let pos = insertAt;        // 当前插入位置(待定区末尾)
   let got = false;
   opts.onState?.('busy');
 
@@ -138,12 +137,14 @@ export async function runContinue(view, opts = {}) {
     if (!text) return;
     const p = pendingState(view);
     if (!p) { ctrl.abort(); return; }   // 用户中途取消
+    // 插入点取「待定区末尾」p.to —— pendingField 已随并发编辑重映射;不用裸闭包整数 pos,
+    // 否则流式期间用户在待定区前手输使文档左移、旧 pos 失效 → token 插错位、高亮与实文发散(harness 审计 P2)。
+    const at = p.to;
     view.dispatch({
-      changes: { from: pos, insert: text },
-      effects: setPending.of({ from: p.from, to: pos + text.length, original: p.original, busy: true, onAccept: p.onAccept, rewrite: p.rewrite }),
+      changes: { from: at, insert: text },
+      effects: setPending.of({ from: p.from, to: at + text.length, original: p.original, busy: true, onAccept: p.onAccept, rewrite: p.rewrite }),
       scrollIntoView: true,
     });
-    pos += text.length;
     got = true;
   };
 
