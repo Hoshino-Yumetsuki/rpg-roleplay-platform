@@ -323,11 +323,29 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
                 f" 原始响应：{body[:120]}"
             )
         elif code == 404:
-            friendly = (
-                f"向量嵌入接口地址错误（HTTP 404 Not Found）。"
-                f" 请检查 base_url 是否正确，路径是否以 /v1 结尾（如 https://api.example.com/v1）。"
-                f" 原始响应：{body[:120]}"
-            )
+            # 区分「模型不存在/无权访问」(模型名问题)与「路径不对」(base_url 问题)——
+            # 豆包/火山方舟回的是 Model.NotFound(地址 /api/v3 本就对),旧文案一律说「路径要以 /v1 结尾」
+            # 会误导用户把 /v3 改成 /v1 反而搞坏(用户反馈)。
+            _bl = body.lower()
+            _model_404 = any(m in _bl for m in (
+                "does not exist", "do not have access", "model.notfound",
+                "model_not_found", "no such model", "model not found", "modelnotfound",
+            ))
+            if _model_404:
+                friendly = (
+                    f"向量嵌入模型「{model}」不存在或你的账号无权访问(HTTP 404)。"
+                    f"这是模型名/权限问题,不是地址问题——请勿改 base_url;到「设置 → RAG / 向量模型」"
+                    f"换成该提供商真实开通的嵌入模型(火山方舟 doubao-embedding-* / OpenAI text-embedding-3-* / "
+                    f"Gemini text-embedding-004),或到提供商控制台为该模型开通权限。"
+                    f" 原始响应：{body[:160]}"
+                )
+            else:
+                friendly = (
+                    f"向量嵌入接口地址(base_url)错误(HTTP 404 Not Found)。"
+                    f"请确认路径与提供商匹配:OpenAI/中转站通常以 /v1 结尾、火山方舟(豆包)以 /api/v3 结尾、"
+                    f"Gemini 兼容以 /v1beta/openai 结尾。"
+                    f" 原始响应：{body[:120]}"
+                )
         else:
             friendly = f"向量嵌入请求失败（HTTP {code}）：{body[:200]}"
         log.warning("[embedding] openai embed failed: %s %s | friendly: %s", code, body[:200], friendly)
