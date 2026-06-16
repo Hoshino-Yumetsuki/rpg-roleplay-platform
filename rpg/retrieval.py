@@ -430,6 +430,10 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
     # spoiler-safe 默认:progress=1(绝不 None,否则 _reveal_clause 放行全书=剧透)、mode=none。
     _progress_chapter = 1
     _foreknowledge_mode: str = "none"
+    # 剧情引导强度(rail=贴原著 / guided=软引导默认 / free=自由),从 game_sessions.worldline
+    # jsonb 读(与 foreknowledge_mode 同源)。rail 档下,下方「锚点章节原文」会确定性注入当前
+    # 进度章节的原著正文(含对话)并指示忠实重现;guided/free 维持活世界默认(原文仅作风格参考)。
+    _steering_strength: str = "guided"
     # task 117: 算法 phase fallback — 当 state.world.time 空(turn=0 等)时 timeline_filter
     # 拿不到 chapter window,从 phase_digests 拿该 save 当前 phase 的 chapter_range。
     # 这样 BM25/worldbook 不会全文检索整本书。
@@ -460,6 +464,7 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                         _wl_prog = (_sess_prog or {}).get("worldline") if _sess_prog else None
                         if isinstance(_wl_prog, dict):
                             _foreknowledge_mode = _wl_prog.get("foreknowledge_mode") or "none"
+                            _steering_strength = _wl_prog.get("steering_strength") or "guided"
                         # 进度真源 = 存档已写的 progress_chapter(权威)+ 已满足锚点最大原著章(reliable)。
                         # 【绝不】再用 world.time→timeline 映射(旧 get_progress_window.chapter_min)
                         # materialize 进度:story_time_label 是不可靠的「章节标题当时间」(见
@@ -541,17 +546,35 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
             except Exception:
                 pass
         if anchor_min and script_id:
-            anchor_text = _load_anchor_chapter_text(int(script_id), anchor_min, anchor_max, max_chars=9000)
+            _rail = (_steering_strength == "rail")
+            # rail(贴原著)档多给预算,让当前章原著的对话/桥段尽量完整进 GM 上下文。
+            anchor_text = _load_anchor_chapter_text(
+                int(script_id), anchor_min, anchor_max, max_chars=14000 if _rail else 9000)
             if anchor_text:
-                # task 131: 明确标记"风格 + 骨架参考,不是必须复现的戏剧强度"
-                parts.append(
-                    "=== 锚点章节原文 (双重用途, 严格区分) ===\n"
-                    "【骨架用途】时空 / 角色 / 事件骨架 — 必须保持。\n"
-                    "【风格用途】学作者句法 / 用词 / 节奏 — 模仿。\n"
-                    "**不模仿情绪强度** — 原文极端事件密度高不代表你本轮要复制那种密度,\n"
-                    "玩家本轮输入的戏剧强度才决定你本轮的戏剧强度。\n\n"
-                    + anchor_text
-                )
+                if _rail:
+                    # 贴原著(rail)档:确定性把当前进度章节的原著正文(含对话)喂进 GM,并指示
+                    # 忠实重现关键对话与桥段。用户主动选了「贴原著」,本段优先级高于下方 master.py
+                    # 「原文=风格参考 / 发生方式可变」的活世界默认说明(用反馈:原著对话/关键情节被跳)。
+                    # 确定性部分=原文已注入+预算更大;能否复现到位仍取决于模型,故此为 rail 档语义。
+                    parts.append(
+                        "=== 锚点章节原文 · 贴原著档(最高优先) ===\n"
+                        "本回合处于【贴原著】引导强度。以下是当前进度章节的原著正文。\n"
+                        "**你必须忠实重现其中的关键对话与桥段**:原著存在的人物对话尽量保留原话 / 原意,\n"
+                        "原著发生的关键情节(冲突 / 死亡 / 相遇 / 转折等)不得跳过或一笔带过。\n"
+                        "玩家的输入决定切入视角与节奏,但不得让剧情脱离本章原著走向。\n"
+                        "本段指示优先于其他「原文仅供风格参考 / 发生方式可变」的说明。\n\n"
+                        + anchor_text
+                    )
+                else:
+                    # task 131(活世界默认):原文标记"风格 + 骨架参考,不是必须复现的戏剧强度"
+                    parts.append(
+                        "=== 锚点章节原文 (双重用途, 严格区分) ===\n"
+                        "【骨架用途】时空 / 角色 / 事件骨架 — 必须保持。\n"
+                        "【风格用途】学作者句法 / 用词 / 节奏 — 模仿。\n"
+                        "**不模仿情绪强度** — 原文极端事件密度高不代表你本轮要复制那种密度,\n"
+                        "玩家本轮输入的戏剧强度才决定你本轮的戏剧强度。\n\n"
+                        + anchor_text
+                    )
                 # task 131-B: 抽出原文前几段当作"作者文风样本",最高优先级 style anchor
                 style_sample = _extract_style_sample(anchor_text)
                 if style_sample:
