@@ -46,6 +46,7 @@ def stream_chat(
     conv["last_user_message"] = message.strip()
     _trim_messages(conv)
 
+    disconnected = False
     try:
         yield from _run_llm_loop(
             user_id=user_id,
@@ -57,10 +58,15 @@ def stream_chat(
             max_iterations=max_iterations,
             max_tokens=max_tokens,
         )
+    except GeneratorExit:
+        # 客户端断开 → 不能在 finally 里再 yield(否则 "generator ignored GeneratorExit")
+        disconnected = True
+        raise
     finally:
         # 跨 worker:把本回合后的对话(含本回合新建的 pending_confirmations)写回 Redis,
-        # 这样 /confirm 落到任意 worker 都能找到该对话 + 其待确认项。
+        # 这样 /confirm 落到任意 worker 都能找到该对话 + 其待确认项。(persist 无 yield,断开时也安全)
         persist_conversation(user_id, conv_id, conv)
-        yield _sse_event("done", {
-            "pending_confirmations": list(conv["pending_confirmations"].keys()),
-        })
+        if not disconnected:
+            yield _sse_event("done", {
+                "pending_confirmations": list(conv["pending_confirmations"].keys()),
+            })

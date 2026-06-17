@@ -208,6 +208,7 @@ def apply_confirmation_stream(
         })
         _trim_messages(conv)
 
+    disconnected = False
     try:
         yield from _run_llm_loop(
             user_id=user_id,
@@ -219,9 +220,13 @@ def apply_confirmation_stream(
             max_iterations=max_iterations,
             max_tokens=max_tokens,
         )
+    except GeneratorExit:
+        disconnected = True
+        raise
     finally:
-        # 跨 worker:确认回合后(已消费 pending + 续写)把对话写回 Redis
+        # 跨 worker:确认回合后(已消费 pending + 续写)把对话写回 Redis(persist 无 yield,断开时也安全)
         persist_conversation(user_id, conversation_id, conv)
-        yield _sse_event("done", {
-            "pending_confirmations": list(conv["pending_confirmations"].keys()),
-        })
+        if not disconnected:
+            yield _sse_event("done", {
+                "pending_confirmations": list(conv["pending_confirmations"].keys()),
+            })
