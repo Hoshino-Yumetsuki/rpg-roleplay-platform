@@ -83,7 +83,7 @@ def estimate_account(user_id: int) -> dict[str, Any]:
         scripts = _owned_script_ids(db, user_id)
         saves = _owned_saves(db, user_id)
         cards_row = db.execute(
-            "select count(*) as n from character_cards where user_id = %s and card_type = 'pc'",
+            "select count(*) as n from character_cards where user_id = %s and card_type in ('pc', 'persona')",
             (user_id,),
         ).fetchone()
         prefs = _read_preferences(db, user_id)
@@ -111,8 +111,8 @@ def export_account(user_id: int, include_chunks: bool = False) -> tuple[bytes, s
         script_ids = _owned_script_ids(db, user_id)
         saves = _owned_saves(db, user_id)
         cards_rows = db.execute(
-            "select * from character_cards where user_id = %s and card_type = 'pc' "
-            "order by priority desc, id",
+            "select * from character_cards where user_id = %s and card_type in ('pc', 'persona') "
+            "order by card_type, priority desc, id",
             (user_id,),
         ).fetchall()
         prefs = _read_preferences(db, user_id)
@@ -120,9 +120,20 @@ def export_account(user_id: int, include_chunks: bool = False) -> tuple[bytes, s
             "select public_id, username from users where id = %s",
             (user_id,),
         ).fetchone()
+        # 图片资产「清单」(仅元数据,不含文件本体):AI 生图/头像/封面/人设图等存本地或 OSS,体积大不入包;
+        # 导出 URL 清单供用户跨实例时手动转存/重生(导入侧不处理,URL 跨实例失效)。表 v72 起,老库容缺。
+        try:
+            asset_rows = db.execute(
+                "select kind, url, source, ref_kind, ref_id, mime, size, created_at "
+                "from user_assets where user_id = %s order by kind, created_at",
+                (user_id,),
+            ).fetchall()
+        except Exception:
+            asset_rows = []
 
     overlay = user_models.load_overlay(user_id)
-    cards = [card_to_dto(r) for r in cards_rows]
+    # 保留 card_type(pc / persona),导入侧据此路由到 upsert_user_card / upsert_persona。
+    cards = [{**card_to_dto(r), "card_type": r.get("card_type") or "pc"} for r in cards_rows]
 
     buf = io.BytesIO()
     manifest_scripts: list[dict[str, Any]] = []
@@ -167,6 +178,13 @@ def export_account(user_id: int, include_chunks: bool = False) -> tuple[bytes, s
                 "\n".join(json.dumps(c, ensure_ascii=False, default=str) for c in cards),
             )
 
+        # 3b. 图片资产清单(仅元数据 / URL,不含文件本体)
+        if asset_rows:
+            zf.writestr(
+                "images.jsonl",
+                "\n".join(json.dumps(dict(r), ensure_ascii=False, default=str) for r in asset_rows),
+            )
+
         # 4. profile(偏好 + 模型 overlay)
         zf.writestr("profile.json", json.dumps({
             "preferences": prefs,
@@ -185,6 +203,7 @@ def export_account(user_id: int, include_chunks: bool = False) -> tuple[bytes, s
                 "scripts": len(manifest_scripts),
                 "saves": len(manifest_saves),
                 "cards": len(cards),
+                "images": len(asset_rows),
                 "model_entries": sum(len(v) for v in overlay.values()),
             },
             "scripts": manifest_scripts,
@@ -336,7 +355,10 @@ def import_account(user_id: int, zip_bytes: bytes, progress=None) -> dict[str, A
                 try:
                     dto = json.loads(line)
                     dto.pop("id", None)  # 让 DB 重新分配 / 按 slug upsert
-                    user_cards.upsert_user_card(user_id, dto)
+                    if (dto.get("card_type") or "pc") == "persona":
+                        user_cards.upsert_persona(user_id, dto)
+                    else:
+                        user_cards.upsert_user_card(user_id, dto)
                     n_cards += 1
                 except Exception as exc:
                     warnings.append(f"角色卡导入失败:{exc}")
