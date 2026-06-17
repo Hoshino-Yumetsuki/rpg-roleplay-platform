@@ -39,7 +39,9 @@ function frontMatterEnd(doc) {
 function frontMatterGuard() {
   return EditorState.transactionFilter.of((tr) => {
     if (!tr.docChanged) return tr;
-    if (tr.isUserEvent('undo') || tr.isUserEvent('redo')) return tr;   // 撤销/重做只会还原已许可的改动,放行
+    // 撤销/重做放行:历史里只可能存在「当初已通过本过滤器的改动」(被拒的事务从未记入历史),
+    // 故其逆操作必然也落在值区/正文区,重新校验是多余的——直接放行,避免边界条件误伤合法回退。
+    if (tr.isUserEvent('undo') || tr.isUserEvent('redo')) return tr;
     const doc = tr.startState.doc;
     const fmEnd = frontMatterEnd(doc);
     if (fmEnd < 0) return tr;                       // 无 front-matter(如纯正文章节无围栏)→ 不限制

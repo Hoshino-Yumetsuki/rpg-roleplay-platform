@@ -21,6 +21,8 @@ const TB_PATHS = {
   copy: <><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
   cut: <><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><line x1="20" y1="4" x2="8.12" y2="15.88" /><line x1="14.47" y1="14.48" x2="20" y2="20" /><line x1="8.12" y1="8.12" x2="12" y2="12" /></>,
   paste: <><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" ry="1" /></>,
+  // 右侧栏开合(VSCode 副边栏图标:外框 + 右侧栏分隔线)
+  panelRight: <><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" /></>,
 };
 const TbIcon = ({ name }) => (
   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{TB_PATHS[name]}</svg>
@@ -84,6 +86,7 @@ function FileTree({ scriptId, openNode, activeKey, reloadKey, onMutate }) {
   const [busy, setBusy] = useState(false);
   const [dragK, setDragK] = useState(null); // 拖拽中的 worldbook nodeKey
   const bodyRef = useRef(null);
+  const submittingRef = useRef(false);      // 提交锁:防 Enter(onKeyDown)+ disabled 翻转引发的 onBlur 二次提交→重复新建
 
   const persistExpanded = (s) => lsSet('mde.tree.expanded2', [...s]);
   const loadGroup = useCallback(async (kind) => {
@@ -129,9 +132,11 @@ function FileTree({ scriptId, openNode, activeKey, reloadKey, onMutate }) {
   const startRename = (kind, it) => { setEditing({ kind, id: it.id, value: (kind === 'chapter') ? (it.meta?.title ?? it.label) : it.label }); setCtx(null); };
 
   const commitEdit = async () => {
+    if (submittingRef.current) return;        // 已在提交中(Enter 已触发,onBlur 别再发一次)
     const e = editing; if (!e) return;
     const nm = (e.value || '').trim();
     if (!nm) { setEditing(null); return; }
+    submittingRef.current = true;
     setBusy(true);
     try {
       if (e.id === '__new__') {
@@ -148,7 +153,7 @@ function FileTree({ scriptId, openNode, activeKey, reloadKey, onMutate }) {
         toast('已重命名', { kind: 'ok', duration: 1100 });
       }
     } catch (err) { toast('操作失败', { kind: 'danger', detail: err?.message }); }
-    finally { setBusy(false); setEditing(null); }
+    finally { setBusy(false); setEditing(null); submittingRef.current = false; }
   };
 
   const doDelete = async (kind, it) => {
@@ -422,6 +427,14 @@ export default function MdEditorPage() {
   const panesRef = useRef(null);
   const [leftW, setLeftW] = useState(() => { const n = Number(lsGet('mde.leftW', 240)); return n >= 150 && n <= 480 ? n : 240; });
   const [rightW, setRightW] = useState(() => { const n = Number(lsGet('mde.rightW', 320)); return n >= 220 && n <= 560 ? n : 320; });
+  // 右栏(AI 助手)开合:有持久化用之;否则宽屏默认开、窄屏默认关(避免小屏一进来就被浮层盖住,且提供入口)。
+  const [rightOpen, setRightOpen] = useState(() => {
+    const v = lsGet('mde.rightOpen', null);
+    if (v === '1' || v === true || v === 1) return true;
+    if (v === '0' || v === false || v === 0) return false;
+    return typeof window !== 'undefined' ? window.innerWidth > 1100 : true;
+  });
+  const toggleRight = useCallback(() => setRightOpen((v) => { const n = !v; lsSet('mde.rightOpen', n ? '1' : '0'); return n; }), []);
   const dragRef = useRef(null);
   const onSplitDown = (side) => (e) => {
     e.preventDefault();
@@ -435,12 +448,12 @@ export default function MdEditorPage() {
       dragRef.current = { side, w };
     };
     const up = () => {
-      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
       document.body.style.cursor = ''; document.body.style.userSelect = '';
       const d = dragRef.current; dragRef.current = null;
       if (d) { if (d.side === 'left') { setLeftW(d.w); lsSet('mde.leftW', d.w); } else { setRightW(d.w); lsSet('mde.rightW', d.w); } }
     };
-    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
     document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none';
   };
 
@@ -702,9 +715,11 @@ export default function MdEditorPage() {
 
         <div className="mde-tb-spacer" />
         {active && active.dirty && <button className="mde-save" onClick={() => saveTab(active.key)} disabled={active.saving}>{active.saving ? '保存中…' : '保存 ⌘S'}</button>}
+        <button className={'mde-tb-ic' + (rightOpen ? ' on' : '')} title={rightOpen ? '隐藏 AI 助手栏' : '显示 AI 助手栏'} onClick={toggleRight}><TbIcon name="panelRight" /></button>
+        <button className="mde-menubtn" title="剧本编辑器使用帮助" onClick={() => window.__openHelp && window.__openHelp('md-editor')}>帮助</button>
       </div>
 
-      <div className="mde-panes" ref={panesRef} style={{ '--mde-left-w': leftW + 'px', '--mde-right-w': rightW + 'px' }}>
+      <div className={'mde-panes' + (rightOpen ? '' : ' right-collapsed')} ref={panesRef} style={{ '--mde-left-w': leftW + 'px', '--mde-right-w': rightW + 'px' }}>
         {/* 左:文件树 */}
         <aside className="mde-left">
           {scriptId ? <FileTree scriptId={scriptId} openNode={openNode} activeKey={activeKey} reloadKey={treeReloadKey} onMutate={onTreeMutate} /> : <div className="mde-tree-hint">先选剧本</div>}

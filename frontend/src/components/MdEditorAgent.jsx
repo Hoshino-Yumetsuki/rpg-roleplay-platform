@@ -6,6 +6,10 @@ import { Composer } from '../game-composer.jsx';
 
 const { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } = React;
 
+// 编辑器写权限只支持 3 档(后端 console_assistant 认 read_only/review/full_access,无 'default')。
+// 限制 PermissionPopover 只显示这三档,避免用户点「默认权限」却被静默映射成「审查」造成的高亮跳变。
+const EDITOR_PERMS = ['read_only', 'review', 'full_access'];
+
 // 写工具名 → (kind, id-arg-key):写成功后据此刷新编辑器标签。
 const WRITE_TOOL_MAP = {
   update_script_chapter: { kind: 'chapter', idArg: 'chapter_index' },
@@ -112,8 +116,8 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
         ? { ...msg, tools: (msg.tools || []).map((tc) => tc.tool === data.tool || tc.call_id === data.call_id
             ? { ...tc, status: data.ok === false ? 'error' : 'done', result: data.result, error: data.error } : tc) }
         : msg));
-      // 写工具成功 → 刷新编辑器对应标签。
-      if (data.ok !== false) tryRefresh(data);
+      // 写工具成功 → 刷新编辑器对应标签。用 ref 取最新 tryRefresh(makeHandler deps=[],否则捕获过期闭包→读到旧 tabs)。
+      if (data.ok !== false) tryRefreshRef.current?.(data);
       return;
     }
     if (event === 'confirmation_required') {
@@ -145,6 +149,8 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
       return m;
     });
   }, [onWriteComplete]);
+  const tryRefreshRef = useRef(null);
+  tryRefreshRef.current = tryRefresh;
 
   const send = useCallback(async (text) => {
     const msg = (text ?? input).trim();
@@ -265,6 +271,8 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
           setPermission={changeWriteMode}
           showPerm={showPerm}
           togglePerm={togglePerm}
+          permissionOptions={EDITOR_PERMS}
+          enterToSendKey="rpg.editor.enterToSend"
           gameState={null}
           hideSlash
           hideAttach

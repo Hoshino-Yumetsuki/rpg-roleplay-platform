@@ -42,6 +42,7 @@
   color: var(--muted, #968f85); cursor: pointer;
 }
 .mde-tb-ic:hover { background: var(--panel-2, #282623); color: var(--text, #ebe7df); }
+.mde-tb-ic.on { color: var(--accent, #b5654a); }
 .mde-tb-divider { width: 1px; height: 18px; background: var(--line, #36322d); margin: 0 4px; }
 
 /* 文件 / 编辑 菜单触发按钮 */
@@ -81,6 +82,9 @@
 .mde-splitter { background: var(--line, #36322d); cursor: col-resize; position: relative; }
 .mde-splitter:hover, .mde-splitter:active { background: var(--accent, #b5654a); }
 .mde-splitter::after { content: ''; position: absolute; inset: 0 -3px; }   /* 加宽命中区,视觉仍 5px */
+/* 右栏折叠(宽屏:从网格抽走右栏 + 分隔条) */
+.mde-panes.right-collapsed { grid-template-columns: var(--mde-left-w, 240px) 5px minmax(0, 1fr) 0 0; }
+.mde-panes.right-collapsed > .mde-right, .mde-panes.right-collapsed > .mde-splitter-right { display: none; }
 
 /* 文件树 */
 .mde-tree { display: flex; flex-direction: column; height: 100%; }
@@ -214,8 +218,15 @@
 .mde-syncbar-no:hover { color: var(--text, #ebe7df); }
 
 @media (max-width: 1100px) {
+  /* 窄屏:右栏永不占网格;关=隐藏,开=覆盖浮层(从右侧滑出,可用) */
   .mde-panes { grid-template-columns: var(--mde-left-w, 200px) 5px minmax(0, 1fr) 0 0; }
-  .mde-right, .mde-splitter-right { display: none; }
+  .mde-splitter-right { display: none; }
+  .mde-panes.right-collapsed > .mde-right { display: none; }
+  .mde-panes:not(.right-collapsed) > .mde-right {
+    display: flex; flex-direction: column; position: fixed; top: 42px; right: 0; bottom: 0;
+    width: min(360px, 88vw); z-index: 60; box-shadow: -8px 0 28px rgba(0,0,0,.5);
+    border-left: 1px solid var(--line, #36322d);
+  }
 }
 
 /* ── VSCode 风资源管理器(P8:多组/搜索/图标/工具栏/键盘/右键/增删改/拖拽)── */

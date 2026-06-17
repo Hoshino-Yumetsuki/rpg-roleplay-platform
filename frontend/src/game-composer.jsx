@@ -613,8 +613,11 @@ function EffortSection({ selectedKey }) {
 }
 
 
-function PermissionPopover({ current, onPick, onClose, triggerRef }) {
+function PermissionPopover({ current, onPick, onClose, triggerRef, optionIds = null }) {
   const { t } = useTranslation();
+  const OPTS = Array.isArray(optionIds) && optionIds.length
+    ? PERMISSION_OPTIONS.filter((p) => optionIds.includes(p.id))
+    : PERMISSION_OPTIONS;
   const menuRef = useRefC(null);
   // PR #14: 55vh 上限 + resize,防止权限菜单过高挡界面。
   const calcPermHeight = React.useCallback(() => {
@@ -650,7 +653,7 @@ function PermissionPopover({ current, onPick, onClose, triggerRef }) {
         <Icon name="lock" size={12} /><span>{t('game.composer.perm_title')}</span>
       </div>
       <ul className="gc-pop-list">
-        {PERMISSION_OPTIONS.map(p => (
+        {OPTS.map(p => (
           <li key={p.id}>
             <button onClick={() => onPick(p.id)} className={p.id === current ? "active" : ""}>
               <div>
@@ -710,6 +713,9 @@ function Composer({
   hideSlash = false, hidePermission = false, hideContinue = false, hideAttach = false,
   // 剧本编辑器右栏复用(窄栏):隐藏模型选择 + 上下文用量环(agent 用 console_assistant 默认模型,无每条模型选择)。默认 false → 游戏/酒馆不受影响。
   hideModel = false, hideContextUsage = false,
+  // 复用方可限制权限档(传 id 数组,如 ['read_only','review','full_access'])+ 用独立的 enterToSend 持久化键(默认沿用游戏键)。
+  permissionOptions = null,
+  enterToSendKey = "rpg.game.enterToSend",
   placeholder,
   // 生图按钮相关
   saveId: composerSaveId,
@@ -730,12 +736,12 @@ function Composer({
   const [showImageGen, setShowImageGen] = useStateC(false);
   const isWriting = composerMode === "writing";
   const [enterToSend, setEnterToSend] = useStateC(() => {
-    return lsGet("rpg.game.enterToSend") !== "0";
+    return lsGet(enterToSendKey) !== "0";
   });
 
   React.useEffect(() => {
-    lsSet("rpg.game.enterToSend", enterToSend ? "1" : "0");
-  }, [enterToSend]);
+    lsSet(enterToSendKey, enterToSend ? "1" : "0");
+  }, [enterToSend, enterToSendKey]);
 
   // task 50：暴露 window.__rpgInsertMention(name)，让外部（右侧 PanelCharacters
   // 卡片的 @ 按钮等 dead button 修复）一键插入 @角色 到输入框尾部。
@@ -999,7 +1005,7 @@ function Composer({
         )}
         {showPlus && <AttachMenu onPick={onAttachPick} onClose={togglePlus} triggerRef={plusTriggerRef} />}
         {showModel && <ModelPopover current={model} onPick={(id) => { setModel(id); toggleModel(); }} align="right" gameState={gameState} onClose={toggleModel} triggerRef={modelTriggerRef} />}
-        {showPerm && <PermissionPopover current={permission} onPick={(id) => { setPermission(id); togglePerm(); }} onClose={togglePerm} triggerRef={permTriggerRef} />}
+        {showPerm && <PermissionPopover current={permission} optionIds={permissionOptions} onPick={(id) => { setPermission(id); togglePerm(); }} onClose={togglePerm} triggerRef={permTriggerRef} />}
         {showImageGen && (
           <GenerateImageModal
             open={showImageGen}
