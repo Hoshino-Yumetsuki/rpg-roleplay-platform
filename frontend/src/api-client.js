@@ -154,8 +154,29 @@
 
   // 凭据变更后广播 → 模型选择器(AgentModelPicker / 游戏台 ModelPopover)即时重拉,
   // 修 issue #22:换/删 API Key 后模型列表仍显示旧 key 的模型。
+  //
+  // 跨文档桥(issue #22 复发主因):设置页(Platform.html)与游戏台/酒馆(独立 HTML 文档)
+  // 各有独立 window,window CustomEvent **不跨文档**。用户常「新开标签去配 key」——广播只发在
+  // 设置页文档,游戏台那些监听器在另一个 window 永远收不到,模型列表纹丝不动。
+  // 用 BroadcastChannel('rpg-credentials') 把变更广播到同源所有标签/文档,各文档收到后在
+  // 本地 re-dispatch rpg-credentials-updated,复用全部现有监听器(零改监听侧)。
+  // 注:BroadcastChannel 不会把消息投回发送它的同一 channel 实例,故发送文档只靠下面的
+  // window.dispatchEvent 本地触发一次,绝不会重复;不支持的浏览器自动降级回旧行为(仅本文档)。
+  let _credsChannel = null;
+  try {
+    if (typeof BroadcastChannel !== "undefined") {
+      _credsChannel = new BroadcastChannel("rpg-credentials");
+      _credsChannel.onmessage = (ev) => {
+        if (ev && ev.data && ev.data.type === "creds-updated") {
+          try { window.dispatchEvent(new CustomEvent("rpg-credentials-updated")); } catch (_) {}
+        }
+      };
+    }
+  } catch (_) { _credsChannel = null; }
+
   const _emitCredsUpdated = (r) => {
     try { if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("rpg-credentials-updated")); } catch (_) {}
+    try { if (_credsChannel) _credsChannel.postMessage({ type: "creds-updated" }); } catch (_) {}
     return r;
   };
 

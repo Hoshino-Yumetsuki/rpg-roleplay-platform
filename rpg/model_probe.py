@@ -265,6 +265,19 @@ def list_remote_models(
     return {"ok": True, "models": models, "cached": False}
 
 
+def invalidate_user_api(user_id: int | None, api_id: str) -> None:
+    """凭据变更(换/删 key)后清掉该 user+api 的远程模型缓存。
+
+    _LIST_CACHE 是进程级 60s TTL,key=`{user_id}::{api_id}`。换 key 后若不清,
+    /api/models/remote 这类 force_refresh=False 的入口会在 60s 内继续返回**旧 key**
+    探测出的模型列表 → 表现为「换 key 后模型列表不刷新」(issue #22)。幂等、容错。
+    """
+    try:
+        _LIST_CACHE.pop(f"{user_id or 0}::{api_id}", None)
+    except Exception:
+        pass
+
+
 def _list_vertex_models(api: dict[str, Any], user_id: int | None = None) -> list[dict[str, Any]]:
     """列出 Vertex 可用 Gemini 模型。user_id 非 None 时优先使用用户 BYOK SA。"""
     from google import genai

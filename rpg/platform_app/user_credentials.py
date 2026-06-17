@@ -175,9 +175,12 @@ def set_credential(user_id: int, api_id: str, plaintext_key: str, base_url_overr
     # 失败只 log，绝不影响存 key 主流程。
     try:
         import logging as _logging
-        from model_probe import list_remote_models
+        from model_probe import invalidate_user_api, list_remote_models
         from platform_app.user_models import replace_synced_models
-        sync_result = list_remote_models(api_id, user_id=user_id)
+        # 先清旧 key 的远程模型缓存,再强制重拉:绝不能命中改 key 前「校验连接/拉取模型」
+        # 写满的旧 key 60s 缓存,否则会把旧 key 的模型写进 overlay(issue #22 根因之一)。
+        invalidate_user_api(user_id, api_id)
+        sync_result = list_remote_models(api_id, user_id=user_id, force_refresh=True)
         if sync_result.get("ok") and sync_result.get("models"):
             replace_synced_models(user_id, api_id, sync_result["models"])
         else:
@@ -209,10 +212,13 @@ def delete_credential(user_id: int, api_id: str) -> dict[str, Any]:
     # 模型清单仍残留在游戏控制台模型列表里，删了 key 也不消失(OSS issue #22)。best-effort，
     # 清 overlay 失败不影响删 key 主流程。覆盖所有别名，防 normalize 后落到不同 api_id。
     try:
+        from model_probe import invalidate_user_api
         from platform_app.user_models import replace_synced_models
         for _alias in {canonical, *_credential_aliases(canonical)}:
             if _alias:
                 replace_synced_models(user_id, _alias, [])
+                # 同步清远程模型缓存:否则删 key 后 60s 内「拉取远程模型」仍返已删 key 的清单。
+                invalidate_user_api(user_id, _alias)
     except Exception:
         pass
     return {"ok": True, "deleted": True, "api_id": canonical}

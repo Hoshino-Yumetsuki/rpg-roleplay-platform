@@ -186,12 +186,17 @@ export default function AgentModelPicker({
           || (platVertexOk && aid === 'vertex_ai'
               && list.some((x) => (x.api_id || x.id) === 'vertex_ai'
                   && (x.models || x.entries || []).some((m) => (m.capabilities || m.caps || []).includes('embedding')))));
-        const chosenApi = prefApi
+        // prefApi 也必须过 eligible 闸:删掉某 provider 的 key 后,若偏好仍指向它,
+        // 不该继续把选中态钉在一个「已无 key、模型列表为空」的 provider 上,而要自动
+        // 降级到用户当前真有 key 的 provider(issue #22:删 key 后选择器空列表)。
+        const chosenApi = (prefApi && eligible(prefApi) ? prefApi : null)
           || (fbApi && eligible(fbApi) ? fbApi : null)
           || (selectedApiId && eligible(selectedApiId) ? selectedApiId : null)
           || (preferProvider && eligible(preferProvider) ? preferProvider : null)
           || Array.from(ids)[0]
           || (platVertexOk ? 'vertex_ai' : null)
+          // 兜底:用户一个 key 都没配时仍回显偏好/preferProvider,避免完全空白(不算回归)。
+          || prefApi
           || preferProvider || '';
         // Model 必须属于 chosenApi(否则会出现 Anthropic + gemini 这种错配):
         //   本功能偏好 model > 继承的默认 model(若在该 provider 下) > resolvedDefaultModel
