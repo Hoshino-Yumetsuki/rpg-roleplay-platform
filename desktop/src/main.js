@@ -113,6 +113,43 @@ function wireIpc() {
   });
   ipcMain.handle('upd:download', async () => { if (updater) await updater.downloadUpdate(); return { ok: !!updater }; });
   ipcMain.handle('upd:install', () => { if (updater) updater.quitAndInstall(); });
+
+  // 反馈接服务器:始终发到中央收集服务器(onlineUrl)的匿名端点,与运行模式无关。
+  // 走 Electron net(主进程,不受浏览器 CORS 限制);留邮箱则后端按重名归并到登录账户。
+  ipcMain.handle('feedback:submit', async (_e, payload) => {
+    const { net } = require('electron');
+    const c = cfg.load();
+    const base = (c.onlineUrl || 'https://play.stellatrix.icu').replace(/\/+$/, '');
+    const body = JSON.stringify({
+      free_text: (payload && payload.freeText) || '',
+      contact_email: (payload && payload.email) || '',
+      client_id: c.clientId || '',
+      app_version: app.getVersion(),
+      env_snapshot: {
+        os: process.platform, arch: process.arch,
+        os_version: require('os').release(),
+        app_version: app.getVersion(), electron: process.versions.electron,
+        mode: c.mode,
+      },
+    });
+    return await new Promise((resolve) => {
+      let req;
+      try { req = net.request({ method: 'POST', url: `${base}/api/feedback/anon` }); }
+      catch (e) { return resolve({ ok: false, error: String(e && e.message || e) }); }
+      req.setHeader('Content-Type', 'application/json');
+      let data = '';
+      req.on('response', (res) => {
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try { const j = JSON.parse(data); resolve({ ok: res.statusCode < 400 && !!j.ok, status: res.statusCode, ...j }); }
+          catch (_) { resolve({ ok: false, status: res.statusCode, error: (data || '').slice(0, 200) }); }
+        });
+      });
+      req.on('error', (err) => resolve({ ok: false, error: String(err && err.message || err) }));
+      req.write(body);
+      req.end();
+    });
+  });
 }
 
 app.whenReady().then(() => {

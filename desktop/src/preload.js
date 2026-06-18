@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('sv', {
   downloadUpdate: () => ipcRenderer.invoke('upd:download'),
   installUpdate: () => ipcRenderer.invoke('upd:install'),
 
+  // 反馈(发到中央服务器匿名端点)
+  submitFeedback: (payload) => ipcRenderer.invoke('feedback:submit', payload),
+
   // 事件订阅(返回取消函数)
   onStatus: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on('sv:status', h); return () => ipcRenderer.removeListener('sv:status', h); },
   onLog: (cb) => { const h = (_e, p) => cb(p); ipcRenderer.on('sv:log', h); return () => ipcRenderer.removeListener('sv:log', h); },

@@ -100,6 +100,28 @@ function renderUpdate(u) {
   }
 }
 
+// ── 反馈 ──
+async function submitFeedback() {
+  const text = $('fbText').value.trim();
+  const email = $('fbEmail').value.trim();
+  const status = $('fbStatus');
+  if (!text) { status.textContent = '请先填写问题描述'; return; }
+  $('fbSubmitBtn').disabled = true; status.textContent = '提交中…';
+  try {
+    const r = await sv.submitFeedback({ freeText: text, email });
+    if (r && r.ok) {
+      status.textContent = email ? '已收到,处理后会发到你的邮箱,谢谢' : '已收到,谢谢';
+      $('fbText').value = '';
+    } else {
+      status.textContent = '提交失败:' + ((r && (r.detail || r.error)) || '请稍后再试');
+    }
+  } catch (e) {
+    status.textContent = '提交失败:' + (e && e.message || '网络错误');
+  } finally {
+    $('fbSubmitBtn').disabled = false;
+  }
+}
+
 // ── 绑定 ──
 async function init() {
   $('appVersion').textContent = 'v' + await sv.appVersion();
@@ -122,6 +144,7 @@ async function init() {
   $('checkUpdBtn').addEventListener('click', async () => { renderUpdate({ state: 'checking' }); const r = await sv.checkUpdate(); if (!r.ok) renderUpdate({ state: 'error', message: r.reason }); });
   $('downloadUpdBtn').addEventListener('click', () => sv.downloadUpdate());
   $('installUpdBtn').addEventListener('click', () => sv.installUpdate());
+  $('fbSubmitBtn').addEventListener('click', submitFeedback);
 
   sv.onStatus(renderStatus);
   sv.onLog(appendLog);

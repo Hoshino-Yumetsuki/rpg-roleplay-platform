@@ -43,6 +43,39 @@ _VALID_DECISIONS = {"ok", "nsfw_terminate", "spam"}
 # admin 角色门控收敛到 _deps.require_admin(唯一来源);保留本名供 Depends(_require_admin) 旧引用。
 _require_admin = require_admin
 
+# 匿名(桌面本地版)反馈:同一 IP 每小时上限,防滥用(无登录闸,这是主要节流)。
+_ANON_RATE_PER_HOUR = 20
+
+
+def _match_user_id_by_email(db, contact_email: str) -> int | None:
+    """给定联系邮箱,找「重名登录账户」并归属过去(用户诉求:本地邮箱==登录邮箱则默认同一账户)。
+
+    匹配规则与登录完全一致(security.normalize_username/normalize_email):
+      - path A:username 就是邮箱(多数历史账户),用 normalize_username 精确匹配;
+      - path B:独立 email 列,用 normalize_email 且要求 email_verified(防冒名,与登录 email 路径一致)。
+    优先 path A 精确命中。匹配不到返回 None(=真匿名)。
+    """
+    email = (contact_email or "").strip()
+    if not email or "@" not in email:
+        return None
+    from ..security import normalize_email, normalize_username
+    uname_key = normalize_username(email)
+    email_key = normalize_email(email)
+    row = db.execute(
+        """
+        select id from users
+        where deactivated_at is null
+          and (
+            username = %s
+            or (lower(email) = %s and email_verified = true and length(email) > 0)
+          )
+        order by case when username = %s then 0 else 1 end
+        limit 1
+        """,
+        (uname_key, email_key, uname_key),
+    ).fetchone()
+    return int(row["id"]) if row else None
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # POST /api/feedback — 用户提交
@@ -59,6 +92,8 @@ async def submit_feedback(request: Request, user=Depends(require_user)):
     excerpts = body.get("excerpts", []) or []
     consent_token: str = body.get("consent_token", "") or ""
     app_version: str = body.get("app_version", "") or ""
+    # 登录用户也可选填联系邮箱:想另收一份邮件回执时用(默认用账户邮箱)。
+    contact_email: str = (body.get("contact_email", "") or "").strip()[:320]
 
     # ── 校验 consent_token（SHA256 hex，64 字符）──────────────────────────────
     if not consent_token or len(consent_token) != 64:
@@ -167,8 +202,8 @@ async def submit_feedback(request: Request, user=Depends(require_user)):
         row = db.execute(
             """
             insert into feedback
-              (user_id, free_text, excerpts_jsonb, consent_token, ua, app_version, ip)
-            values (%s, %s, %s::jsonb, %s, %s, %s, %s)
+              (user_id, free_text, excerpts_jsonb, consent_token, ua, app_version, ip, contact_email)
+            values (%s, %s, %s::jsonb, %s, %s, %s, %s, %s)
             returning id
             """,
             (
@@ -179,6 +214,7 @@ async def submit_feedback(request: Request, user=Depends(require_user)):
                 ua,
                 app_version,
                 ip,
+                contact_email or None,
             ),
         ).fetchone()
         feedback_id = row["id"]
@@ -200,6 +236,124 @@ async def submit_feedback(request: Request, user=Depends(require_user)):
         verdict.action,
     )
     return json_response({"ok": True, "feedback_id": feedback_id})
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# POST /api/feedback/anon — 桌面本地版匿名提交(无需登录;留邮箱收回执)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@router.post("/api/feedback/anon")
+async def submit_feedback_anon(request: Request):
+    """桌面本地版(无登录)反馈接入服务器。可留联系邮箱;若邮箱与某登录账户重名,
+    默认归并到该账户(用户诉求)。NSFW 预审 + 按 IP 限流防滥用。consent_token 可选
+    (桌面安装已同意 AUP),提供则须 64-hex。"""
+    body = await request.json()
+    ip = _client_ip(request)
+    ua = request.headers.get("user-agent", "")
+
+    free_text: str = body.get("free_text", "") or ""
+    excerpts = body.get("excerpts", []) or []
+    contact_email: str = (body.get("contact_email", "") or "").strip()[:320]
+    client_id: str = (body.get("client_id", "") or "").strip()[:128]
+    app_version: str = (body.get("app_version", "") or "")[:64]
+    _env = body.get("env_snapshot")
+    env_snapshot = _env if isinstance(_env, dict) else None
+    consent_token: str = body.get("consent_token", "") or ""
+
+    if not free_text.strip():
+        raise HTTPException(status_code=400, detail="反馈内容不能为空")
+    if consent_token:
+        if len(consent_token) != 64:
+            raise HTTPException(status_code=400, detail="consent_token 格式不正确")
+        try:
+            int(consent_token, 16)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="consent_token 不是合法 hex")
+    if not isinstance(excerpts, list):
+        raise HTTPException(status_code=400, detail="excerpts 须为数组")
+
+    excerpts_raw = json.dumps(excerpts, ensure_ascii=False)
+    env_raw = json.dumps(env_snapshot or {}, ensure_ascii=False)
+    total_bytes = (
+        len(free_text.encode("utf-8"))
+        + len(excerpts_raw.encode("utf-8"))
+        + len(env_raw.encode("utf-8"))
+    )
+    if total_bytes > _MAX_PAYLOAD_BYTES:
+        raise HTTPException(status_code=400, detail=f"内容超过 50KB 上限(当前 {total_bytes} 字节)")
+
+    # 按 IP 限流(无登录闸,这是主要防滥用手段)
+    with connect() as db:
+        recent = db.execute(
+            "select count(*) as n from feedback where ip = %s and created_at > now() - interval '1 hour'",
+            (ip,),
+        ).fetchone()
+        if recent and int(recent["n"]) >= _ANON_RATE_PER_HOUR:
+            raise HTTPException(status_code=429, detail="提交过于频繁,请稍后再试")
+
+    # NSFW 预审(与登录路径同一把关)
+    verdict = await moderate_feedback(free_text + "\n" + excerpts_raw)
+
+    with connect() as db:
+        linked_user_id = _match_user_id_by_email(db, contact_email)
+
+        if verdict.action == "auto_reject":
+            _csam_summary = json.dumps(
+                {"__moderation__": {"action": "auto_reject", "categories": verdict.categories}},
+                ensure_ascii=False,
+            )
+            db.execute(
+                """
+                insert into feedback
+                  (user_id, free_text, excerpts_jsonb, consent_token, ua, app_version, ip,
+                   contact_email, client_id, env_snapshot, reviewed_at, review_decision)
+                values (%s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s::jsonb, now(), 'nsfw_terminate')
+                """,
+                (linked_user_id, "[CSAM filter triggered — content not stored]", _csam_summary,
+                 consent_token, ua, app_version, ip, contact_email or None, client_id or None, env_raw),
+            )
+            if linked_user_id is not None:
+                from ..dmca import queue_account_termination
+                queue_account_termination(
+                    db, linked_user_id,
+                    reason=f"anon feedback CSAM auto_reject: categories={verdict.categories}",
+                )
+            log.error("anon feedback auto_reject CSAM: ip=%s linked=%s cats=%s", ip, linked_user_id, verdict.categories)
+            raise HTTPException(
+                status_code=403,
+                detail={"error_key": "feedback.nsfw_terminate", "message": "反馈内容违反 AUP §2.J 红线。"},
+            )
+
+        excerpts_with_verdict = list(excerpts)
+        excerpts_with_verdict.append({
+            "__moderation__": {
+                "action": verdict.action,
+                "categories": verdict.categories,
+                "scores": {k: round(v, 4) for k, v in verdict.scores.items() if v > 0.001},
+            },
+            "__source__": "desktop_anon",
+        })
+        row = db.execute(
+            """
+            insert into feedback
+              (user_id, free_text, excerpts_jsonb, consent_token, ua, app_version, ip,
+               contact_email, client_id, env_snapshot)
+            values (%s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            returning id
+            """,
+            (linked_user_id, free_text, json.dumps(excerpts_with_verdict, ensure_ascii=False),
+             consent_token, ua, app_version, ip, contact_email or None, client_id or None, env_raw),
+        ).fetchone()
+        feedback_id = row["id"]
+        if consent_token:
+            db.execute(
+                "insert into feedback_consent_log (user_id, consent_text_hash, app_version, ip, client_id) "
+                "values (%s, %s, %s, %s, %s)",
+                (linked_user_id, consent_token, app_version, ip, client_id or None),
+            )
+
+    log.info("anon feedback: id=%s linked_user=%s moderation=%s", feedback_id, linked_user_id, verdict.action)
+    return json_response({"ok": True, "feedback_id": feedback_id, "linked": linked_user_id is not None})
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -417,8 +571,17 @@ async def admin_feedback_reply(
     reply 为空 = 撤回回复(置空)。审核决定(decision)与回复互不影响,可分别操作。"""
     body = await request.json()
     reply = (body.get("reply") or "").strip()
+    emailed = False
     with connect() as db:
-        row = db.execute("select id from feedback where id = %s", (feedback_id,)).fetchone()
+        row = db.execute(
+            """
+            select f.id, f.free_text, f.contact_email, f.user_id,
+                   u.email as user_email, u.email_verified
+            from feedback f left join users u on u.id = f.user_id
+            where f.id = %s
+            """,
+            (feedback_id,),
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="反馈不存在")
         if reply:
@@ -431,4 +594,18 @@ async def admin_feedback_reply(
                 "update feedback set admin_reply = null, replied_at = null where id = %s",
                 (feedback_id,),
             )
-    return json_response({"ok": True, "reply": reply})
+
+        # 邮件回执:优先反馈时留的联系邮箱,否则用账户已验证邮箱。失败不阻断(同 auth.py 模式)。
+        if reply:
+            to_email = (row["contact_email"] or "").strip()
+            if not to_email and row["user_email"] and row["email_verified"]:
+                to_email = (row["user_email"] or "").strip()
+            if to_email:
+                try:
+                    from .. import email as email_mod
+                    email_mod.send_feedback_reply_email(to_email, reply, row["free_text"] or "")
+                    db.execute("update feedback set reply_emailed_at = now() where id = %s", (feedback_id,))
+                    emailed = True
+                except Exception as exc:
+                    log.warning("feedback reply email failed: id=%s err=%s", feedback_id, exc)
+    return json_response({"ok": True, "reply": reply, "emailed": emailed})

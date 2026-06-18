@@ -52,6 +52,7 @@ export async function submitFeedback({
   consentText = CONSENT_TEXT,
   includeRuntime = false,
   includeRecentDialog = true,
+  contactEmail = '',
 } = {}) {
   const token = await sha256hex(consentText);
   if (includeRuntime) {
@@ -76,6 +77,7 @@ export async function submitFeedback({
       excerpts,
       consent_token: token,
       app_version: window.__APP_VERSION__ || '',
+      ...(contactEmail ? { contact_email: contactEmail } : {}),
     }),
   });
   const data = await res.json();

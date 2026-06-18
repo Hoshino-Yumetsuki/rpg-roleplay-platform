@@ -1968,6 +1968,19 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
                  false, wb.priority, '[]'::jsonb, wb.metadata
             from worldbook_entries wb where wb.enabled""",
     ]),
+    (75, "feedback_anon_desktop_email", [
+        # 桌面本地版匿名反馈接入服务器 + 邮箱回执(P1)。
+        # user_id 改可空:本地版无登录,反馈来自匿名(或按联系邮箱归并到同名登录账户)。
+        "alter table feedback alter column user_id drop not null",
+        "alter table feedback_consent_log alter column user_id drop not null",
+        # 联系邮箱(收回执)、桌面端 client_id、桌面环境快照、回执邮件发送时间。
+        "alter table feedback add column if not exists contact_email text",
+        "alter table feedback add column if not exists client_id text",
+        "alter table feedback add column if not exists env_snapshot jsonb",
+        "alter table feedback add column if not exists reply_emailed_at timestamptz",
+        "alter table feedback_consent_log add column if not exists client_id text",
+        "create index if not exists idx_feedback_contact_email on feedback(lower(contact_email)) where contact_email is not null",
+    ]),
 ]
 
 

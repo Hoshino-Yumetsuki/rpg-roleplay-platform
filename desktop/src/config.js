@@ -21,6 +21,7 @@ const DEFAULTS = {
   backendPort: 0,
   pgPort: 0,
   masterKey: '',
+  clientId: '',
   extraEnv: {},
   updateChannel: 'stable',
   autoStartLocal: true,
@@ -35,11 +36,11 @@ function load() {
     data = JSON.parse(fs.readFileSync(P.configFile(), 'utf8'));
   } catch (_) { /* 首次无文件 */ }
   _cache = { ...DEFAULTS, ...data };
-  // 首启生成 master key(一次性,持久化)
-  if (!_cache.masterKey) {
-    _cache.masterKey = crypto.randomBytes(32).toString('hex');
-    save(_cache);
-  }
+  // 首启生成 master key + 设备 client_id(一次性,持久化)
+  let _dirty = false;
+  if (!_cache.masterKey) { _cache.masterKey = crypto.randomBytes(32).toString('hex'); _dirty = true; }
+  if (!_cache.clientId) { _cache.clientId = crypto.randomUUID(); _dirty = true; }
+  if (_dirty) save(_cache);
   return _cache;
 }
 

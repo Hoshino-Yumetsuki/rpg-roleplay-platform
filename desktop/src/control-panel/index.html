@@ -100,6 +100,24 @@
         <div class="progress" id="updProgress" hidden><div class="bar" id="updBar"></div></div>
       </div>
     </section>
+
+    <!-- 反馈 -->
+    <section class="card">
+      <div class="card-h">反馈问题</div>
+      <div class="form">
+        <label>问题描述
+          <textarea id="fbText" rows="3" placeholder="遇到的问题、建议…"></textarea>
+        </label>
+        <label>邮箱(选填,收处理结果)
+          <input type="email" id="fbEmail" placeholder="you@example.com" />
+        </label>
+        <p class="hint">留邮箱,我们处理后把结果发给你。若与你的登录邮箱一致,将并入你的账户反馈记录。</p>
+        <div class="row">
+          <button class="btn primary" id="fbSubmitBtn">提交反馈</button>
+          <span class="hint" id="fbStatus"></span>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script src="panel.js"></script>
