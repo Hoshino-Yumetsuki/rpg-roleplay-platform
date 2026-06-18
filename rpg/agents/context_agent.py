@@ -28,7 +28,8 @@ from context_providers import (
     resolve_content_pack,
     run_providers,
 )
-from retrieval import retrieve_context
+from retrieval import retrieve_context  # noqa: F401 (retrieve_fn_compat 内部委托;保留以兼容)
+from kb.recall import retrieve_fn_compat  # P5:统一召回 flag 门控包装(默认 off=委托 retrieve_context)
 from timeline_index import timeline_filter_for_label
 from timeline_state import detect_time_directives
 
@@ -313,7 +314,7 @@ def run_context_agent(
         script_id=script_id,
         book_id=book_id,
         save_id=save_id,  # task 107E
-        retrieve_fn=retrieve_context,
+        retrieve_fn=retrieve_fn_compat,  # P5:flag off→retrieve_context;on→recall;shadow→双跑
         timeline_filter_fn=timeline_filter_for_label,
     )
     contributions, used_ids = run_providers(state, manifest, demand, services)
