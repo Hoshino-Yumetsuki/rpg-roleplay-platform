@@ -106,3 +106,131 @@ def backfill_reveal_anchors(script_id: int) -> dict[str, Any]:
             prev_key = a["anchor_key"]
             seeded += 1
     return {"ok": True, "script_id": sid, "anchors": seeded}
+
+
+# ── P4:存档前沿(reached-set / DAG 可见集) ──────────────────────────────────
+# 全部确定性、无 LLM。可见集 = 前沿锚点 + 其 requires 传递闭包(DAG 祖先)。
+# 这套替代标量 progress_chapter 做剧透天花板;派生 progress_chapter = 可见锚点的 MAX(chapter_max)
+# (确定性,绝不会像旧猜章器那样冲到玩家没到的章 → 根治「跳章」)。
+
+_CLOSURE_CTE = """
+with recursive closure(anchor_key, requires) as (
+    select ra.anchor_key, ra.requires from reveal_anchors ra
+      where ra.script_id = %(scr)s
+        and ra.anchor_key in (select anchor_key from save_reveal_frontier where save_id = %(sid)s)
+  union
+    select pred.anchor_key, pred.requires
+      from closure c
+      cross join lateral jsonb_array_elements_text(c.requires) as req(key)
+      join reveal_anchors pred on pred.script_id = %(scr)s and pred.anchor_key = req.key
+)
+select anchor_key from closure
+"""
+
+
+def _script_id_for_save(db, save_id: int) -> int | None:
+    r = db.execute("select script_id from game_saves where id=%s", (int(save_id),)).fetchone()
+    return int(r["script_id"]) if r and r.get("script_id") is not None else None
+
+
+def recompute_visible_set(db, save_id: int, script_id: int) -> int:
+    """重算 save_visible_anchors = 前沿锚点的 requires 传递闭包。返回可见锚点数。"""
+    sid, scr = int(save_id), int(script_id)
+    db.execute("delete from save_visible_anchors where save_id=%s", (sid,))
+    rows = db.execute(_CLOSURE_CTE, {"sid": sid, "scr": scr}).fetchall()
+    for r in rows:
+        db.execute(
+            "insert into save_visible_anchors(save_id, anchor_key) values (%s,%s) "
+            "on conflict (save_id, anchor_key) do nothing",
+            (sid, r["anchor_key"]),
+        )
+    return len(rows)
+
+
+def seed_frontier(save_id: int) -> dict[str, Any]:
+    """P4:从 save_anchor_states(occurred/variant)确定性回填 save_reveal_frontier + 重算可见集。
+    幂等。anchor_key 与 reveal_anchors 对齐(同 chapter:{n}:event:{idx} 体系)。"""
+    init_db()
+    sid = int(save_id)
+    with connect() as db:
+        scr = _script_id_for_save(db, sid)
+        if not scr:
+            return {"ok": False, "reason": f"save {sid} 无 script_id"}
+        reached = db.execute(
+            "select anchor_key, source_chapter, occurred_at_turn, drift_score, status "
+            "from save_anchor_states where save_id=%s and status in ('occurred','variant')",
+            (sid,),
+        ).fetchall()
+        for r in reached:
+            db.execute(
+                """
+                insert into save_reveal_frontier (save_id, script_id, anchor_key, reached_at_turn,
+                                                  reached_via, drift_score, worldline_key)
+                values (%s, %s, %s, %s, %s, %s, 'main')
+                on conflict (save_id, anchor_key) do nothing
+                """,
+                (sid, scr, r["anchor_key"], r.get("occurred_at_turn"),
+                 'seed', r.get("drift_score") or 0),
+            )
+        visible = recompute_visible_set(db, sid, scr)
+    return {"ok": True, "save_id": sid, "script_id": scr,
+            "frontier_seeded": len(reached), "visible": visible}
+
+
+def mark_anchor_reached(save_id: int, anchor_key: str, *, turn: int | None = None,
+                        via: str = "gm", drift: float = 0.0) -> dict[str, Any]:
+    """P4:把一条锚点加入前沿(GM 声明到达)+ 增量并入可见集。前沿只增不减(回退走 rewind)。"""
+    init_db()
+    sid = int(save_id)
+    key = (anchor_key or "").strip()
+    if not key:
+        return {"ok": False, "reason": "anchor_key 为空"}
+    with connect() as db:
+        scr = _script_id_for_save(db, sid)
+        if not scr:
+            return {"ok": False, "reason": f"save {sid} 无 script_id"}
+        db.execute(
+            """
+            insert into save_reveal_frontier (save_id, script_id, anchor_key, reached_at_turn,
+                                              reached_via, drift_score, worldline_key)
+            values (%s, %s, %s, %s, %s, %s, coalesce(
+                (select worldline_key from reveal_anchors where script_id=%s and anchor_key=%s), 'main'))
+            on conflict (save_id, anchor_key) do nothing
+            """,
+            (sid, scr, key, turn, via, drift, scr, key),
+        )
+        visible = recompute_visible_set(db, sid, scr)
+    return {"ok": True, "save_id": sid, "anchor_key": key, "visible": visible}
+
+
+def derived_progress_chapter(save_id: int, *, db=None) -> int:
+    """派生只读进度 = 可见锚点的 MAX(chapter_max)。确定性,绝不超过玩家真实到达的章(根治跳章)。
+    无可见锚点(新档/未回填)→ 返回 1(保守开局)。"""
+    def _q(_db):
+        r = _db.execute(
+            "select coalesce(max(ra.chapter_max), 0) as c from reveal_anchors ra "
+            "join save_visible_anchors sva on sva.anchor_key = ra.anchor_key "
+            "where ra.script_id = (select script_id from game_saves where id=%s) and sva.save_id=%s",
+            (int(save_id), int(save_id)),
+        ).fetchone()
+        return max(1, int((r or {}).get("c") or 0))
+    if db is not None:
+        return _q(db)
+    init_db()
+    with connect() as db2:
+        return _q(db2)
+
+
+def reveal_clause_v2(save_id: int, mode: str = "none", prefix: str = "") -> tuple[str, list[Any]]:
+    """收口剧透门控(替代标量 _reveal_clause)。返回 (SQL 片段, 参数列表)。
+    节点可见 ⇔ 无揭示锚点(NULL) 或 其锚点在 save_visible_anchors。partial 再放行 public_knowledge。
+    调用方把片段嵌进 WHERE 并按顺序传参。reveal_anchor_key 列名前缀由 prefix 指定(如 'cc.')。"""
+    p = prefix or ""
+    m = (mode or "none").strip().lower()
+    if m == "omniscient":
+        return "true", []
+    base = (f"({p}reveal_anchor_key is null or {p}reveal_anchor_key in "
+            f"(select anchor_key from save_visible_anchors where save_id=%s))")
+    if m == "partial":
+        return f"({base} or {p}public_knowledge)", [int(save_id)]
+    return base, [int(save_id)]
