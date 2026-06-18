@@ -207,6 +207,52 @@ def _t_get_chapter_context(user_id: int, script_id: int | None, args: dict, stat
         return f"失败: {type(exc).__name__}: {exc}"
 
 
+def _t_get_chapter_text(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
+    """读取某章【完整正文】(script_chapters.content)。修锚点/核对设定/写作参考前读真正文,而不是只看
+    可能被垃圾污染的摘要(群反馈 行者无疆:之前 agent 没有直接读完整章节正文的工具)。owner/订阅可读;
+    长章用 offset 分段续读。"""
+    sid = _resolve_sid(script_id, args)
+    if sid is None:
+        return "失败: script_id 必填"
+    try:
+        ci = int(args.get("chapter_index"))
+    except (TypeError, ValueError):
+        return "失败: chapter_index 必填(整数章号)"
+    try:
+        offset = max(0, int(args.get("offset") or 0))
+    except (TypeError, ValueError):
+        offset = 0
+    try:
+        max_chars = int(args.get("max_chars") or 12000)
+    except (TypeError, ValueError):
+        max_chars = 12000
+    max_chars = max(500, min(max_chars, 20000))
+    try:
+        from platform_app.db import connect, init_db
+        init_db()
+        with connect() as db:
+            if not _user_can_read_script(db, sid, user_id):
+                return f"失败 (权限): 剧本 #{sid} 不属于当前用户或未订阅"
+            row = db.execute(
+                "select title, content from script_chapters where script_id=%s and chapter_index=%s",
+                (sid, ci),
+            ).fetchone()
+        if not row:
+            return f"失败: 剧本 #{sid} 第 {ci} 章不存在"
+        title = str(row.get("title") or "")
+        content = str(row.get("content") or "")
+        total = len(content)
+        if total == 0:
+            return f"【第{ci}章 {title}】(本章正文为空)"
+        chunk = content[offset:offset + max_chars]
+        end = offset + len(chunk)
+        head = f"【第{ci}章 {title}】 正文共 {total} 字符,本段 [{offset}, {end})"
+        head += (f";还有更多 → 再调本工具传 offset={end} 续读" if end < total else ";(本章已读完)")
+        return head + "\n\n" + chunk
+    except Exception as exc:
+        return f"失败: {type(exc).__name__}: {exc}"
+
+
 def _t_extract_from_selection(user_id: int, script_id: int | None, args: dict, state: Any) -> str:
     """对用户选中的一段正文跑结构化提取(复用 extract/per_chapter.extract_chapter 的提取器,含其
     反史实/反编造/中文别名归并铁律),返回提议的人物/势力/地点/概念/事件/摘要 —— 供 agent 按用户意愿
@@ -1066,6 +1112,27 @@ def register_script_write_tools() -> None:
                 "required": ["story_time_label", "chapter_min", "chapter_max"],
             },
             executor=_t_create_anchor,
+            scope="script",
+            origins=_SCRIPT_WRITE_ORIGINS,
+            destructive=False,
+        ),
+        ToolSpec(
+            name="get_chapter_text",
+            description=(
+                "读取某章【完整正文】(章节原著 content)。修锚点 / 核对设定 / 写作参考前,"
+                "用它读真正文 —— 不要只看可能被污染的摘要(summary/sample_summary)。"
+                "必填 chapter_index;长章用 offset 分段续读(返回会提示下一段 offset)。只读,owner/订阅者可用。"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "chapter_index": {"type": "integer", "description": "章号"},
+                    "offset": {"type": "integer", "description": "起始字符偏移(分段读长章,默认 0)"},
+                    "max_chars": {"type": "integer", "description": "本段最多字符(默认 12000,上限 20000)"},
+                },
+                "required": ["chapter_index"],
+            },
+            executor=_t_get_chapter_text,
             scope="script",
             origins=_SCRIPT_WRITE_ORIGINS,
             destructive=False,

@@ -151,11 +151,26 @@ def _summary_section(db, script_id: int, chapter_index: int | None) -> str:
         return ""
     lines, used = [], 0
     for r in sorted(rows, key=lambda x: x["chapter_index"]):
-        chunk = f"- 第{r['chapter_index']}章：{_clip(str(r.get('summary') or ''), 280)}"
+        raw = str(r.get("summary") or "")
+        if _is_garbage_summary(raw):
+            continue  # 跳过分隔线/纯符号污染(如 "======")— 否则前情提要喂垃圾给 GM(群反馈)
+        chunk = f"- 第{r['chapter_index']}章：{_clip(raw, 280)}"
         if used + len(chunk) > _CAP_SUMMARY:
             break
         lines.append(chunk); used += len(chunk)
     return "\n".join(lines)
+
+
+def _is_garbage_summary(s: str) -> bool:
+    """判定摘要是否是垃圾(分隔线/纯标点符号,无实际内容)。删去 CJK/字母/数字后剩的若仍占绝大多数
+    且实义字符极少 → 垃圾(如 '====' / '；===；')。确定性,防把分隔线当前情喂给 GM。"""
+    import re
+    t = (s or "").strip()
+    if len(t) < 4:
+        return True
+    real = re.sub(r"[^\w一-鿿]", "", t)  # 保留中日韩 + 字母数字下划线
+    real = re.sub(r"_", "", real)
+    return len(real) < 4
 
 
 def build_editor_environment(
