@@ -1568,6 +1568,23 @@ def _stage_canon_extract(
         _log.getLogger(__name__).warning(
             "[canon→facts] backfill failed: %s", exc, exc_info=True,
         )
+
+    # 时间感知 KB(P1/P4):canon + chapter_facts.events 已就绪 → 物化揭示锚点 DAG + 三实体表
+    # reveal_anchor_key 映射,使该剧本的【新游戏】立刻具备前沿门控/统一召回(防剧透 + 进度按锚点)。
+    # 不挂这里则新导入的剧本无 reveal_anchors → 其上的新游戏退化为"不防剧透"。非致命,失败只告警。
+    try:
+        from kb.reveal import backfill_entity_reveal_anchors, backfill_reveal_anchors
+        _ra = backfill_reveal_anchors(script_id)
+        _ea = backfill_entity_reveal_anchors(script_id)
+        import logging as _log
+        _log.getLogger(__name__).info(
+            "[temporal-kb] script_id=%s reveal_anchors=%s entity_mapped=%s",
+            script_id, _ra.get("anchors"), _ea.get("total"),
+        )
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("[temporal-kb] anchor backfill failed: %s", exc, exc_info=True)
+
     ctl.update(stage_progress=1, stage_total=1)
     return canon_n, anchors_n, canon_status, anchors_status
 
