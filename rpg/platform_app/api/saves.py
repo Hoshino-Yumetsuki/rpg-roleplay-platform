@@ -558,23 +558,19 @@ async def api_save_progress_rewind(save_id: int, request: Request, user=Depends(
                 "returning id",
                 (save_id, target),
             ).fetchall()
-            # P4(S7.3):flag on 时同步收缩前沿 —— 否则前沿只增不减,derived_progress 不随 rewind 降,
-            # 新门控不响应回退(违 I3/I4 不变式)。删被回退章的前沿条目后重算可见闭包。
-            try:
-                from kb.reveal import _frontier_on, recompute_visible_set
-                if _frontier_on(save_id):
-                    db.execute(
-                        "delete from save_reveal_frontier where save_id=%s and anchor_key in "
-                        "(select anchor_key from save_anchor_states where save_id=%s and source_chapter > %s)",
-                        (save_id, save_id, target))
-                    _scr = db.execute(
-                        "select script_id from game_saves where id=%s", (save_id,)).fetchone()
-                    if _scr and _scr.get("script_id"):
-                        recompute_visible_set(db, save_id, int(_scr["script_id"]))
-            except Exception as _fr_exc:
-                import logging
-                logging.getLogger("platform_app.api.saves").warning(
-                    "[rewind] 前沿收缩失败(非致命): %s", _fr_exc)
+            # P4(S7.3):flag on 时同步收缩前沿 —— 必须与进度降/锚点重锁【同事务原子】。
+            # 【不吞异常】:任何失败传播给外层 with 连接 → 整笔 rewind 回滚(否则前沿与 anchor_states
+            # 脱节、derived 仍返回回退前章数、门控仍放行已重锁实体 = 违 I3/I4)。
+            from kb.reveal import _frontier_on, recompute_visible_set
+            if _frontier_on(save_id):
+                db.execute(
+                    "delete from save_reveal_frontier where save_id=%s and anchor_key in "
+                    "(select anchor_key from save_anchor_states where save_id=%s and source_chapter > %s)",
+                    (save_id, save_id, target))
+                _scr = db.execute(
+                    "select script_id from game_saves where id=%s", (save_id,)).fetchone()
+                if _scr and _scr.get("script_id"):
+                    recompute_visible_set(db, save_id, int(_scr["script_id"]))
         return json_response({"ok": True, "progress_chapter": target,
                               "relocked": len(relocked or [])})
     except Exception as exc:

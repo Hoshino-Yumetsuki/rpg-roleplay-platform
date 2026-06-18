@@ -445,8 +445,12 @@ class NovelWorldbookProvider(ContextProvider):
                 data.get("player", {}).get("current_location", ""),
                 data.get("world", {}).get("time", ""),
             ])
-            # P4(S4):读进度+元知识,供世界书前沿门控(flag off 时 _active_worldbook 不门控,行为不变)。
-            _progress, _mode = _read_progress_and_mode(state, services.save_id)
+            # P4(S4):仅在前沿/影子启用时才读进度+元知识(否则 flag off 每回合多一次无效 DB 往返)。
+            # flag off → mode=omniscient,与旧「世界书不门控」语义一致(_load_worldbook_db use_v2=False)。
+            from kb.reveal import _frontier_on, _frontier_shadow
+            _mode = "omniscient"
+            if services.save_id is not None and (_frontier_on(services.save_id) or _frontier_shadow()):
+                _progress, _mode = _read_progress_and_mode(state, services.save_id)
             entries = _active_worldbook(scan_text, world, state,
                                         script_id=services.script_id,
                                         book_id=services.book_id,

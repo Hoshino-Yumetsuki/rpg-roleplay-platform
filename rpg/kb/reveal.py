@@ -311,19 +311,28 @@ def backfill_entity_reveal_anchors(script_id: int) -> dict[str, Any]:
 
 
 def reveal_clause_v2(save_id: int, mode: str = "none", prefix: str = "",
-                     has_public_knowledge: bool = True) -> tuple[str, list[Any]]:
+                     has_public_knowledge: bool = True,
+                     has_famous: bool = True) -> tuple[str, list[Any]]:
     """收口剧透门控(替代标量 _reveal_clause)。返回 (SQL 片段, 参数列表)。
-    节点可见 ⇔ 无揭示锚点(NULL) 或 其锚点在 save_visible_anchors。partial 再放行 public_knowledge。
-    调用方把片段嵌进 WHERE 并按顺序传参。reveal_anchor_key 列名前缀由 prefix 指定(如 'cc.')。
+    节点可见 ⇔ 无揭示锚点(NULL) 或 其锚点在 save_visible_anchors。partial 再放行 public_knowledge
+    与 metadata.famous(穿越者模糊预知大事,与旧 _reveal_clause partial 语义对齐)。
+    调用方把片段嵌进 WHERE 并按顺序传参。reveal_anchor_key 列名前缀由 prefix 指定(如 'p.')。
 
-    has_public_knowledge:目标表是否有 public_knowledge 列。仅 kb_canon_entities 有(默认 True);
-      character_cards / worldbook_entries 没有该列 → 传 False,partial 模式不附加该子句(否则 SQL 报错)。"""
+    has_public_knowledge / has_famous:目标表是否有 public_knowledge 列 / metadata 列。仅 kb_canon_entities
+      两者皆有(默认 True);character_cards / worldbook_entries 都没有 → 传 False,partial 模式不附加对应
+      子句(否则引用不存在的列 SQL 报错)。"""
     p = prefix or ""
     m = (mode or "none").strip().lower()
     if m == "omniscient":
         return "true", []
     base = (f"({p}reveal_anchor_key is null or {p}reveal_anchor_key in "
             f"(select anchor_key from save_visible_anchors where save_id=%s))")
-    if m == "partial" and has_public_knowledge:
-        return f"({base} or {p}public_knowledge)", [int(save_id)]
+    if m == "partial":
+        extras = []
+        if has_public_knowledge:
+            extras.append(f"{p}public_knowledge")
+        if has_famous:
+            extras.append(f"({p}metadata->>'famous') = 'true'")
+        if extras:
+            return f"({base} or " + " or ".join(extras) + ")", [int(save_id)]
     return base, [int(save_id)]

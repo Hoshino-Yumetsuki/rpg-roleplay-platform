@@ -64,11 +64,19 @@ def read_settings(db, save_id: int) -> dict:
     out["progress_chapter"] = wl.get("progress_chapter")
     # P4(S7):flag on 时 progress_chapter 降级为【前沿派生只读】(与 GM 门控同源,根治 over-shoot);
     # 过渡期保留 _legacy(=worldline 标量)供前端/影子核对。前端数值语义不变(玩家读到第几章)。
+    # floor 用【已确认锚点最大原著章】(可靠、确定性)而非 worldline 标量 —— 后者可能被旧猜章器冲高,
+    # 拿它当 floor 会把 over-shoot 带回显示。前沿未种时(灰度窗口)floor 兜住,不坍缩到第1章;
+    # 前沿已种时 derived==floor。与 retrieval.py:495 的 max(1,_last_sat,_derived) 同源。
     try:
         from kb.reveal import _frontier_on, derived_progress_chapter
         if _frontier_on(save_id):
             out["progress_chapter_legacy"] = out.get("progress_chapter")
-            out["progress_chapter"] = derived_progress_chapter(save_id, db=db)
+            _derived = derived_progress_chapter(save_id, db=db)
+            _fr = db.execute(
+                "select coalesce(max(source_chapter),0) c from save_anchor_states "
+                "where save_id=%s and status in ('occurred','variant')", (save_id,)).fetchone()
+            _floor = max(1, int((_fr or {}).get("c") or 0))
+            out["progress_chapter"] = max(_floor, int(_derived))
     except Exception:
         pass
     return out

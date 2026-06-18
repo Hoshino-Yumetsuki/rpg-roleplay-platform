@@ -60,6 +60,13 @@ class FrontierGatingEquiv(unittest.TestCase):
                 canon_repo.upsert_canon_entity(
                     db, cls.script_id, lk, name=name, type="faction",
                     first_revealed_chapter=frc, importance=80, entity_subtype="x")
+            # partial 模式 famous 分支测试用:两个未来(frc=400)概念,一个 famous 一个普通。
+            canon_repo.upsert_canon_entity(
+                db, cls.script_id, "cfame", name="名概念", type="concept",
+                first_revealed_chapter=400, importance=70, metadata={"famous": "true"})
+            canon_repo.upsert_canon_entity(
+                db, cls.script_id, "cplain", name="普通概念", type="concept",
+                first_revealed_chapter=400, importance=70)
             # 角色卡 npc:同 frc 谱
             for name, frc in (("角色1", 1), ("角色5", 5), ("角色10", 10), ("角色0", 0)):
                 db.execute(
@@ -157,6 +164,23 @@ class FrontierGatingEquiv(unittest.TestCase):
         self.assertEqual(old, {"设定1", "设定5", "设定10", "设定0"}, "旧路径应无门控(全集)")
         self.assertEqual(new, {"设定1", "设定5", "设定0"}, "新门控应挡掉 ch10 未揭示条目")
         self.assertTrue(new < old)
+
+    # ── 6b. S1+审计修复:partial 模式 famous 分支 新 ≡ 旧 ───────────────────────
+    def test_canon_partial_famous_equiv(self):
+        from kb import canon_repo
+        from platform_app.db import connect
+        with connect() as db:
+            self._flag_off()
+            old = {r["name"] for r in canon_repo.read_canon_entities(
+                db, self.script_id, progress_chapter=_LAST_REACHED, mode="partial",
+                entity_type="concept")}
+            self._flag_on()
+            new = {r["name"] for r in canon_repo.read_canon_entities(
+                db, self.script_id, progress_chapter=None, mode="partial",
+                entity_type="concept", save_id=self.save_id)}
+        self.assertEqual(old, new, "partial 模式 famous 分支 新≠旧(reveal_clause_v2 漏 famous)")
+        self.assertIn("名概念", new, "famous=true 的未来概念在 partial 模式应可见")
+        self.assertNotIn("普通概念", new, "非 famous 的未来概念在 partial 模式应被挡")
 
     # ── 6. omniscient 模式不门控(两路一致) ─────────────────────────────────────
     def test_omniscient_unfiltered(self):
@@ -273,6 +297,39 @@ class FrontierWritePath(unittest.TestCase):
                            "and anchor_key=%s", (sid, "chapter:4:event:0")).fetchone()["c"]
         self.assertEqual(n, 1, "GM 工具标记后前沿应含该锚点")
         self.assertEqual(derived_progress_chapter(sid), 4, "派生进度应随前沿推进到 4")
+
+    # ── S7.2+审计修复 #4:read_settings 派生进度 floor 兜底 ─────────────────────
+    def test_read_settings_floor(self):
+        from platform_app.db import connect
+        from psycopg.types.json import Jsonb
+        from gm_serving.settings import read_settings
+        os.environ["RPG_TKB_FRONTIER"] = "on"
+        # (a) 前沿已种:read_settings 进度 == derived == 3
+        sid = self._seed_save(3)
+        self._set_progress(sid, 3)
+        with connect() as db:
+            self.assertEqual(read_settings(db, sid)["progress_chapter"], 3)
+        # (b) 前沿【未种】+ worldline 标量被旧猜章器冲到 9:read_settings 应取「已确认锚点 floor=3」,
+        #     既不坍缩到 1(derived),也不带回 over-shoot 的 9(legacy 标量)。
+        with connect() as db:
+            sid2 = int(db.execute(
+                "insert into game_saves(user_id, script_id, title, state_path) "
+                "values (%s,%s,%s,%s) returning id",
+                (self.owner_id, self.script_id, "fw_noseed",
+                 f"/tmp/fw_noseed_{self.owner_id}.json")).fetchone()["id"])
+            for n in range(1, 4):
+                db.execute(
+                    "insert into save_anchor_states(save_id, script_id, anchor_key, source_chapter, "
+                    "status, summary) values (%s,%s,%s,%s,'occurred',%s)",
+                    (sid2, self.script_id, f"chapter:{n}:event:0", n, f"ch{n}"))
+            db.execute("insert into game_sessions(save_id, user_id, worldline) values (%s,%s,%s)",
+                       (sid2, self.owner_id, Jsonb({"progress_chapter": 9})))
+        # 不调 seed_frontier → save_visible_anchors 空 → derived=1
+        from kb.reveal import derived_progress_chapter
+        self.assertEqual(derived_progress_chapter(sid2), 1, "前沿未种时 derived 应=1")
+        with connect() as db:
+            ps = read_settings(db, sid2)["progress_chapter"]
+        self.assertEqual(ps, 3, "未种前沿时应取已确认锚点 floor=3(不坍缩到1,也不带回 over-shoot 的9)")
 
     # ── S7.3:rewind 收缩前沿 → derived 下降 ────────────────────────────────────
     def test_rewind_shrinks_frontier(self):
