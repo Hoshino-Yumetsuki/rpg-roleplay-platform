@@ -560,6 +560,18 @@ async def api_rebuild_full_pipeline(request: Request, script_id: int, user=Depen
     return await api_script_import_pipeline(request, script_id, user)
 
 
+# ⚠️ 通用兜底:必须放在上面所有字面 /rebuild/<module> 路由之后(字面路由先注册先命中,本路由只兜
+# 字面没覆盖的形态)。根治「章节摘要重做 405 Method Not Allowed」——前端 module 键是下划线
+# chapter_facts(matrix 把后端 dash 'chapter-facts' 归一成下划线显示,派发时没转回),而字面路由是连字符,
+# 故无路由匹配→405。这条把任意模块名(下划线/别名)经 normalize_rebuild_module 归一后派发。
+# 新增具体 rebuild 路由必须加在本路由之前。
+@router.post("/api/scripts/{script_id}/rebuild/{module}")
+async def api_rebuild_module_generic(request: Request, script_id: int, module: str, user=Depends(require_user)):
+    """通用重做派发(前端契约 POST /rebuild/{module})。module 经 _rebuild_dispatch→normalize_rebuild_module
+    归一(chapter_facts→chapter-facts 等);未知模块返 {ok:false,error}。"""
+    return await _rebuild_response(request, script_id, module, user)
+
+
 @router.get("/api/scripts/rebuild-jobs/{job_id}/stream")
 async def api_rebuild_job_stream(request: Request, job_id: str, user=Depends(require_user)):
     """phase_backend: 与 /import-jobs/{job_id}/stream 同款 SSE 但 event payload 额外
