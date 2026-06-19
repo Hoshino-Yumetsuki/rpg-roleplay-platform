@@ -146,7 +146,9 @@ def _table_columns(db: Any, table: str) -> frozenset[str]:
         "where table_schema = current_schema() and table_name = %s",
         (table,),
     ).fetchall()
-    cols = frozenset(r[0] for r in rows)
+    # 连接池配 row_factory=dict_row → 行是 dict,r[0] 会 KeyError(0)(被全局 handler 格式化成
+    # 「missing field: 0」误导用户,且自包含存档导入半途失败留孤儿剧本)。按列名取。
+    cols = frozenset(r["column_name"] for r in rows)
     _COL_CACHE[table] = cols
     return cols
 

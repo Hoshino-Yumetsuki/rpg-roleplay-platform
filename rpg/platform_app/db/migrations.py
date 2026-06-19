@@ -2007,6 +2007,12 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "alter table kb_edges              alter column script_id type bigint",
         "alter table kb_edges              alter column save_id   type bigint",
     ]),
+    (78, "ai_images_message_index", [
+        # 反馈#74:聊天内生图刷新后丢失。根因=图片↔消息绑定只活在前端 localStorage + 有竞态的
+        # SSE handler,刷新后 null-key 图落进 __last 桶 → 挂错消息/消失。后端在入队时记录目标
+        # 消息索引(本回合 assistant 消息位),列表端点返回,前端据此确定性还原。
+        "alter table ai_images add column if not exists message_index integer",
+    ]),
 ]
 
 

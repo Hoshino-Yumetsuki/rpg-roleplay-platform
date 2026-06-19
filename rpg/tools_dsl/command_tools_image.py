@@ -239,6 +239,17 @@ def _execute_generate_image(state: Any, args: dict[str, Any]) -> str | dict[str,
     # user_id 查询时已用过 save_id_raw；直接复用，转为 str 传给 enqueue。
     enqueue_save_id: str | None = str(save_id_raw) if save_id_raw is not None else None
 
+    # ── 反馈#74:聊天内生图记录所属 assistant 消息索引,刷新后据此确定性还原(不再靠前端
+    # localStorage + 有竞态的 SSE 映射)。本回合 user+assistant 由 record_turn 在回合末才追加,
+    # 故此刻 state.history 仅含既往回合;本回合 assistant 的未来索引 = len(history)+1。
+    _msg_index: int | None = None
+    if kind == "chat":
+        try:
+            _hist = (getattr(state, "data", {}) or {}).get("history") or []
+            _msg_index = len(_hist) + 1
+        except Exception:
+            _msg_index = None
+
     # ── 入队 ──────────────────────────────────────────────────────────────
     try:
         result = enqueue_image_generation(
@@ -250,6 +261,7 @@ def _execute_generate_image(state: Any, args: dict[str, Any]) -> str | dict[str,
             origin=origin,
             extra=extra if extra else None,
             save_id=enqueue_save_id,
+            message_index=_msg_index,
         )
         # 每日配额超限
         if result.get("error") == "quota_exceeded":

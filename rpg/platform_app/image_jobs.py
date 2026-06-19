@@ -51,6 +51,7 @@ def enqueue_image_generation(
     extra: dict[str, Any] | None = None,
     attach: dict[str, Any] | None = None,
     save_id: str | None = None,
+    message_index: int | None = None,
 ) -> dict[str, Any]:
     """建 ai_images 记录(status='pending')，入 postproc_queue，返回 {image_id, status}.
 
@@ -116,6 +117,7 @@ def enqueue_image_generation(
         model=_model,
         params=extra or {},
         save_id=save_id or None,
+        message_index=message_index,
     )
 
     # 2. 入 chat_postproc_tasks

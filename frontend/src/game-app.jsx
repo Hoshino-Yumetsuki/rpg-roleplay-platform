@@ -810,7 +810,12 @@ export function useSaveImages(saveId, lastKeyRef) {
         if (cancelled) return;
         const done = Array.isArray(list) ? list.filter((im) => im.status === 'done' && im.url) : [];
         const map = mapRef.current;
-        setImages(done.map((im) => ({ id: im.id, url: im.url, kind: im.kind || 'game', key: (map[im.id] != null ? String(map[im.id]) : null) })));
+        // 反馈#74:优先用后端权威 message_index(刷新后确定性还原),旧行回退 localStorage 映射。
+        setImages(done.map((im) => ({
+          id: im.id, url: im.url, kind: im.kind || 'game',
+          key: (im.message_index != null ? String(im.message_index)
+                : (map[im.id] != null ? String(map[im.id]) : null)),
+        })));
       } catch (_) { /* 后端未实装时静默 */ }
     })();
     return () => { cancelled = true; };

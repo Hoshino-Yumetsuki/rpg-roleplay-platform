@@ -62,10 +62,12 @@ def create_image_record(
     model: str | None = None,
     params: dict | None = None,
     save_id: str | None = None,
+    message_index: int | None = None,
 ) -> int:
     """INSERT 一行 ai_images，返回新行 id。
 
     save_id: 可选，关联游戏存档 ID（Phase 3 新增）。
+    message_index: 可选，聊天内生图所属 assistant 消息索引(反馈#74:刷新后据此确定性还原)。
     """
     from psycopg.types.json import Jsonb
 
@@ -73,8 +75,8 @@ def create_image_record(
     with connect() as db:
         row = db.execute(
             """
-            insert into ai_images (user_id, kind, api_id, model, prompt, params, status, save_id)
-            values (%s, %s, %s, %s, %s, %s, 'pending', %s)
+            insert into ai_images (user_id, kind, api_id, model, prompt, params, status, save_id, message_index)
+            values (%s, %s, %s, %s, %s, %s, 'pending', %s, %s)
             returning id
             """,
             (
@@ -85,6 +87,7 @@ def create_image_record(
                 prompt,
                 Jsonb(params or {}),
                 save_id or None,
+                message_index,
             ),
         ).fetchone()
     if not row:
@@ -380,7 +383,7 @@ async def api_list_images(request: Request):
     with connect() as db:
         rows = db.execute(
             """
-            select id, url, kind, prompt, status, created_at
+            select id, url, kind, prompt, status, created_at, message_index
               from ai_images
              where user_id = %s and save_id = %s
              order by created_at desc
@@ -396,6 +399,7 @@ async def api_list_images(request: Request):
             "prompt": r["prompt"] or "",
             "status": r["status"] or "pending",
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "message_index": r["message_index"],
         }
         for r in rows
     ]

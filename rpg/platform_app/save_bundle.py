@@ -134,7 +134,17 @@ def import_save_bundle(user_id: int, zip_bytes: bytes) -> dict[str, Any]:
     _remap_script_id(save_payload, int(old_raw) if old_raw is not None else None, new_script_id)
 
     # 3. 导入 per-save(import_save 校验 script_id 归属 → 现在是导入者自己的新剧本)
-    save_res = save_io.import_save(user_id, save_payload)
+    #    补偿回滚(反馈#71):import_script_pack 已 commit 剧本,若存档导入失败必须删掉刚建的剧本,
+    #    否则留下「有剧本无存档」的孤儿(且旧 missing-field 报错误导用户)。
+    try:
+        save_res = save_io.import_save(user_id, save_payload)
+    except Exception:
+        try:
+            from platform_app.script_import import delete_script
+            delete_script(user_id, new_script_id, force=True)
+        except Exception:
+            pass
+        raise
 
     warnings = list(pack_res.get("warnings", [])) + list(save_res.get("warnings", []))
     return {
