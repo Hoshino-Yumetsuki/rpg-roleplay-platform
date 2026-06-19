@@ -873,6 +873,19 @@ class GameMaster:
             "role": "user",
             "content": self._turn_message(user_input, state, retrieved_context),
         })
+        # BUGFIX(上下文用量 breakdown):native tools 路径(anthropic/vertex/openai_compat,supports_native_tools=True)
+        # 此前不写 last_context 的 token 估算 → breakdown 的「系统提示/工具/对话历史」全归 0,
+        # 「对话历史」只剩 user_input 层(= 当前输入长度),表现为「随对话进行反而变少」。
+        # 与 respond_stream_with_tools 文本路径同款修复:把真实发送构成估进 last_context。
+        try:
+            from context_engine.core import _estimate_tokens as _ctx_est
+            _lc = ((getattr(state, "data", {}) or {}).get("memory") or {}).get("last_context")
+            if isinstance(_lc, dict):
+                _lc["system_prompt_tokens"] = _ctx_est(system)
+                _lc["tools_tokens"] = sum(_ctx_est(str(_t)) for _t in (tools or []))
+                _lc["history_tokens"] = sum(_ctx_est((m or {}).get("content") or "") for m in messages)
+        except Exception:
+            pass
         # 没有 tools 时退化
         if not tools:
             for chunk in self._backend.stream(system, messages, max_tokens=max_tokens):

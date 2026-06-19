@@ -419,11 +419,11 @@ export function TavernChatArea({ history, running, saveId, charName, charInitial
           );
         })}
         {isWaiting && (
-          <div className="gc-waiting-gm" aria-live="polite">
-            <span className="gc-waiting-gm-dot" />
-            <span className="gc-waiting-gm-dot" style={{ animationDelay: '0.2s' }} />
-            <span className="gc-waiting-gm-dot" style={{ animationDelay: '0.4s' }} />
-            <span className="gc-waiting-gm-label">{charName ? `${charName} ` : ''}正在思考…</span>
+          // 等待首 token:复用「思考过程」折叠条的克制样式(标签 + 右侧转圈),
+          // 不再用突兀的大圆角浮条。正文/思考流一到达就由 TavernThinkingBlock 接管。
+          <div className="tvp-thinking tvp-thinking-waiting" aria-live="polite" role="status">
+            <span className="tvp-thinking-label">{charName ? `${charName} ` : ''}思考中…</span>
+            <span className="gc-spinner spin" aria-hidden="true" />
             {elapsedLabel ? <span className="gc-waiting-gm-elapsed mono muted-2">{elapsedLabel}</span> : null}
           </div>
         )}

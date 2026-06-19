@@ -302,6 +302,16 @@
   border-color: var(--line);
 }
 .tvp-thinking-label { color: var(--text-quiet); }
+/* 等待首 token 的克制指示:与「思考过程」折叠条同样的低调样式,标签 + 右侧转圈,无大圆角浮条 */
+.tvp-thinking-waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--text-quiet);
+}
+.tvp-thinking-waiting .gc-waiting-gm-elapsed { margin-left: 2px; }
 .tvp-thinking-body {
   margin-top: 4px;
   padding: 8px 10px;

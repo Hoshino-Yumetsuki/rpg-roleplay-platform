@@ -758,8 +758,20 @@ def _ensure_loaded(api_user: dict[str, Any] | None = None, *, ensure_gm: bool = 
                 _cached_commit = int(_lru_get(_state_commit_id_by_user, uid) or 0)
                 save_drift = _rt_save and _cached_save and _rt_save != _cached_save
                 commit_drift = _rt_commit and _cached_commit and _rt_commit != _cached_commit
-                if save_drift or commit_drift:
+                # 模型漂移(跨 worker):/api/models/select 改 DB session_model 但**不 bump commit**,
+                # save/commit drift 抓不到 → 本 worker 缓存的 state+GM 仍是旧模型,用户「切了不生效、
+                # 永远跑某个固定模型」。这里拿 DB 真值 session_model(随 read_runtime 一并取,无额外查询)
+                # 与本 worker 缓存 state 的 session_model 比对,变了就同时失效 state + GM,下方按新模型重建。
+                _rt_sm = _rt.get("session_model") or {}
+                _cur_sm = (getattr(cached, "data", {}) or {}).get("session_model") or {}
+                model_drift = bool(_rt_sm.get("model_id")) and (
+                    (_rt_sm.get("model_id"), _rt_sm.get("api_id"))
+                    != (_cur_sm.get("model_id"), _cur_sm.get("api_id"))
+                )
+                if save_drift or commit_drift or model_drift:
                     cached = None
+                if model_drift:
+                    _gm_by_user.pop(uid, None)
             except Exception:
                 pass
         if cached is None:
