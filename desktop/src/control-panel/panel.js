@@ -1,5 +1,9 @@
 'use strict';
 // panel.js —— RPG Roleplay 控制台渲染层(左导航 + 8 面板)。只经 window.sv(preload 白名单)。
+// ⚠️ 整体包进 IIFE:否则顶层 `const sv = window.sv` 与 contextBridge 暴露的【不可配置】
+// 全局属性 window.sv 同名 → "Identifier 'sv' has already been declared" SyntaxError →
+// 整个 panel.js 不执行(版本显示 v—、所有按钮失效、且无报错横幅)。i18n.js 同样是 IIFE。
+(function () {
 
 const $ = (id) => document.getElementById(id);
 const sv = window.sv;
@@ -516,3 +520,5 @@ async function init() {
   sv.onStatus(renderStatus); sv.onLog(appendLog); sv.onUpdate(renderUpdate);
 }
 init().catch((e) => { document.body.insertAdjacentHTML('afterbegin', `<pre style="color:#c8675d;padding:12px">初始化失败: ${e && e.message}</pre>`); });
+
+})();
