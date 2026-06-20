@@ -1324,8 +1324,8 @@ async def run_gm_phase(
 
             # Q Phase 2 史官三合一(flag on):一次 recorder LLM 调用同时产 ops + 锚点判定,
             # 替代「extractor-skip(regex 兜底)+ 独立 anchor_reconcile LLM」。off 时走原路径。
-            # 酒馆豁免:tavern_gm 的 GM 已用自己的工具写状态(无 slim 收口),史官三合一会重复抽取/
-            # 多一次 LLM,且酒馆无锚点 → 走原 apply_gm_json_ops 即可,不启用史官。
+            # 酒馆豁免:tavern_gm 的 GM 已用自己的工具写状态(slim 已豁免、工具齐全),史官三合一对酒馆
+            # 实测不增 KB(关系/事实同结果)却多一次 LLM,且酒馆无锚点 → 走原 apply_gm_json_ops 即可。
             if _recorder_unified(api_user) and _gm_mode != "tavern_gm":
                 _ru_sid = ctx.early_active_save_id or 0
                 _ru_uid = int(api_user["id"]) if api_user and api_user.get("id") else 0

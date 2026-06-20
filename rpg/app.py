@@ -773,6 +773,13 @@ def _kb_backed_state(state: "GameState", save_id: int, commit_id: int) -> "GameS
                 db.commit()
         mat = save_kb.materialize(db, save_id, commit_id)
     data = {k: v for k, v in mat.items() if not k.startswith("_")}
+    # 酒馆等【不写 messages 表】的存档(对话历史在 state.history blob):materialize 从 messages
+    # 重建 history 会得空 → 若直接用空 history,GM 每回合丢上下文、对话不累积、KB 也无从建立。
+    # 用已加载 blob(传入的 state)的 history 兜底。scripted 存档写 messages,materialize 有 history,
+    # 不触发此兜底,行为不变。blob 每回合都被 record_runtime_turn 持久化,故 history 始终最新。
+    _blob_hist = (getattr(state, "data", {}) or {}).get("history") or []
+    if not data.get("history") and _blob_hist:
+        data["history"] = _blob_hist
     data["_active_save_id"] = save_id  # materialize 丢瞬态指针,这里补回
     return GameState(data)
 
