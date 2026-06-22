@@ -221,7 +221,7 @@ def _search_entities(
     use_v2 = save_id is not None and _frontier_on(save_id)
     _OLD_GATE = "(%s::integer is null or first_revealed_chapter <= %s)"
     if use_v2:
-        gate_sql, gate_params = reveal_clause_v2(int(save_id), mode, prefix="", has_public_knowledge=False, has_famous=False)
+        gate_sql, gate_params = reveal_clause_v2(int(save_id), mode, prefix="", has_public_knowledge=False, has_famous=False, progress_chapter=chapter_max)
     else:
         gate_sql, gate_params = _OLD_GATE, [chapter_max, chapter_max]
 
@@ -234,7 +234,7 @@ def _search_entities(
     def _shadow(table: str, extra: str, tag: str) -> None:
         """对比旧标量门控 vs 新前沿门控的放行全集(与 vector 排序/limit 无关)。"""
         old_g, old_p = _OLD_GATE, [chapter_max, chapter_max]
-        new_g, new_p = reveal_clause_v2(int(save_id), mode, prefix="", has_public_knowledge=False, has_famous=False)
+        new_g, new_p = reveal_clause_v2(int(save_id), mode, prefix="", has_public_knowledge=False, has_famous=False, progress_chapter=chapter_max)
         _shadow_diff_log(tag, _gate_ids(table, extra, old_g, old_p),
                          _gate_ids(table, extra, new_g, new_p))
 

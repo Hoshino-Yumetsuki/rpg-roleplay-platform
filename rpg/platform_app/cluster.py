@@ -128,25 +128,59 @@ def cleanup_old_stop_signals(max_age_sec: int = 3600) -> int:
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  Advisory lock: 防止多 worker 同时跑同一个 import_job
+#  Job lock: 防止同 job_id 被多 worker 重复跑
 # ══════════════════════════════════════════════════════════════════════
-def try_acquire_job_lock(job_key: str, worker_id: str = WORKER_ID) -> bool:
-    """非阻塞 advisory lock。返回 False = 已被其他 worker 占。
+# ⚠️ 原实现用 session 级 pg_advisory_lock:连接经 PgBouncer 事务池借还,acquire 与 release 落在
+#    不同后端会话 → unlock 永远 no-op、锁泄漏;且锁随连接归还/重置即失效 → 形同虚设,多 worker
+#    可同跑同一 import job(数据重复/损坏)。改用 DB 行锁(与 stop_signals 同套路,跨连接/事务池可靠),
+#    带 stale 接管做崩溃恢复(持有者崩溃后超时可被另一 worker 接管)。
+try:
+    _JOB_LOCK_STALE_SEC = max(300, int(os.getenv("RPG_JOB_LOCK_STALE_SEC", "7200")))
+except ValueError:
+    _JOB_LOCK_STALE_SEC = 7200
 
-    用 sha256 派生稳定 int8 lock_id (跨进程一致), 不再受 PYTHONHASHSEED 影响。
-    """
+_JOB_LOCK_DDL = """
+create table if not exists job_locks (
+  job_key text primary key,
+  worker_id text not null,
+  acquired_at timestamptz not null default now()
+)
+"""
+
+
+def _ensure_job_lock_table() -> None:
     init_db()
-    lock_id = _stable_lock_id(job_key)
     with connect() as db:
-        row = db.execute("select pg_try_advisory_lock(%s) as ok", (lock_id,)).fetchone()
-    return bool(row and row["ok"])
+        db.execute(_JOB_LOCK_DDL)
 
 
-def release_job_lock(job_key: str) -> None:
-    lock_id = _stable_lock_id(job_key)
+def try_acquire_job_lock(job_key: str, worker_id: str = WORKER_ID) -> bool:
+    """非阻塞抢锁。返回 False = 已被其他 worker 持有(且未 stale)。"""
+    _ensure_job_lock_table()
+    with connect() as db:
+        # 新建即抢到;冲突仅当旧锁 stale(持有者疑似崩溃)才接管;否则 RETURNING 空 → 抢锁失败。
+        row = db.execute(
+            """
+            insert into job_locks(job_key, worker_id, acquired_at) values (%s, %s, now())
+            on conflict (job_key) do update
+              set worker_id = excluded.worker_id, acquired_at = now()
+              where job_locks.acquired_at < now() - (interval '1 second' * %s)
+            returning job_key
+            """,
+            (job_key, worker_id, int(_JOB_LOCK_STALE_SEC)),
+        ).fetchone()
+    return bool(row)
+
+
+def release_job_lock(job_key: str, worker_id: str = WORKER_ID) -> None:
+    """释放本 worker 持有的锁(只删自己的,不动别人 stale 接管后的锁)。"""
     try:
+        _ensure_job_lock_table()
         with connect() as db:
-            db.execute("select pg_advisory_unlock(%s)", (lock_id,))
+            db.execute(
+                "delete from job_locks where job_key = %s and worker_id = %s",
+                (job_key, worker_id),
+            )
     except Exception:
         pass
 

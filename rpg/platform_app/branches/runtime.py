@@ -158,14 +158,7 @@ def persist_runtime_state(
         # 否则二者并发(多 tab:一 tab 发回合创建 commit N+1,另一 tab 改 state 触发 autosave)时,
         # autosave 可能在回合提交后用过时 commit_id 回退活跃指针 + 覆盖刚提交回合 → 丢回合。
         # 持锁后回合无法在本函数读 save 与写 UPDATE 之间提交,save.active 在事务内稳定。
-        try:
-            uid_for_lock = int(user_id or (save_id * 7919))
-            db.execute(
-                "select pg_advisory_xact_lock(hashtext(%s)::int, hashtext(%s)::int)",
-                (f"rpg_turn_{uid_for_lock}", f"save_{save_id}"),
-            )
-        except Exception:
-            pass
+        acquire_save_advisory_lock(db, save_id, user_id)
         save = db.execute("select * from game_saves where id = %s", (save_id,)).fetchone()
         if user_id and (not save or int(save["user_id"]) != int(user_id)):
             return {"ok": False, "reason": "runtime 不属于当前用户"}

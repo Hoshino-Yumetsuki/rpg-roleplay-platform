@@ -744,14 +744,14 @@ function UnifiedSearch({ open, onClose, setPage }) {
     ] : []),
   ];
 
-  const scripts = platform.scripts.map(s => ({
+  const scripts = (platform.scripts || []).map(s => ({
     id: "scr-" + s.id, label: s.title, kind: "script",
     sub: `${Number(s.chapter_count || 0).toLocaleString()} 章 · ${((s.word_count || 0) / 10000).toFixed(1)}万字`,
     icon: "book", keywords: s.uid + " " + s.description,
     hash: "scripts",
   }));
 
-  const saves = platform.saves.map(s => ({
+  const saves = (platform.saves || []).map(s => ({
     id: "sv-" + s.id, label: s.title, kind: "save",
     sub: `${s.branch_count} 节点 · ${s.updated_at}`,
     icon: "play", keywords: s.uid,

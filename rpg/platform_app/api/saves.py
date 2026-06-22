@@ -267,8 +267,11 @@ async def api_continue_branch(request: Request, user=Depends(require_user)):
 async def api_activate_branch(request: Request, user=Depends(require_user)):
     body = await request.json()
     try:
-        result = branches.activate_node(user["id"], int(body.get("node_id")))
-    except ValueError as exc:
+        nid = body.get("node_id")
+        if nid is None:
+            return json_response({"ok": False, "error": "node_id 必填"}, status_code=400)
+        result = branches.activate_node(user["id"], int(nid))
+    except (TypeError, ValueError) as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
     # commit 级 activate 后必须清 app.py 进程内 state 缓存。
     # 之前 _ensure_loaded 自检只比较 save_id,同 save 内换 commit 缓存不会失效
@@ -285,9 +288,12 @@ async def api_activate_branch(request: Request, user=Depends(require_user)):
 @router.post("/api/branches/delete")
 async def api_delete_branch(request: Request, user=Depends(require_user)):
     body = await request.json()
+    nid = body.get("node_id")
+    if nid is None:
+        return json_response({"ok": False, "error": "node_id 必填"}, status_code=400)
     try:
-        return json_response(branches.delete_subtree(user["id"], int(body.get("node_id"))))
-    except ValueError as exc:
+        return json_response(branches.delete_subtree(user["id"], int(nid)))
+    except (TypeError, ValueError) as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 

@@ -441,11 +441,62 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             if save_data.get("kb_native") and state_imported.get("kb_entities", 0) > 0:
                 db.execute("update game_saves set kb_native = true where id = %s", (new_save_id,))
 
+        # 5. 导入 messages(导出包含 messages,但旧实现从未写回 → 导入后 messages 表为空,
+        #    save_kb 按 save_id 查 messages 拿不到对话历史,GM 上下文全盲)。
+        #    先建一行 game_sessions(仅存 session_id 关联),再逐条 remap session_id → new_session_id,
+        #    save_id → new_save_id 写入。payload v1 可能无 messages 字段,静默跳过。
+        messages_raw = payload.get("messages") or []
+        messages_imported = 0
+        if messages_raw:
+            # 取(或建)该 save 的 session:先查是否已在 step 4 的 state 里间接建了 session,
+            # 否则直接 insert 一行最小 session。
+            new_session_row = db.execute(
+                "select id from game_sessions where save_id = %s order by id limit 1",
+                (new_save_id,),
+            ).fetchone()
+            if new_session_row is None:
+                new_session_row = db.execute(
+                    """
+                    insert into game_sessions(save_id, context_size)
+                    values (%s, 8192)
+                    on conflict do nothing
+                    returning id
+                    """,
+                    (new_save_id,),
+                ).fetchone()
+            new_session_id: int | None = int(new_session_row["id"]) if new_session_row else None
+
+            if new_session_id is not None:
+                # 允许的 messages 列(防注入;content/metadata/role/turn 是固定结构,直接枚举白名单)
+                _msg_allowed = frozenset({"session_id", "save_id", "turn", "role", "content", "metadata"})
+                _msg_jsonb = frozenset({"metadata"})
+                for raw_msg in messages_raw:
+                    if not isinstance(raw_msg, dict):
+                        continue
+                    row = dict(raw_msg)
+                    # 剥离 id / created_at;强制覆盖外键
+                    row.pop("id", None)
+                    row.pop("created_at", None)
+                    row["session_id"] = new_session_id
+                    row["save_id"] = new_save_id
+                    # content 截断保护
+                    if isinstance(row.get("content"), str) and len(row["content"].encode()) > MAX_TEXT_BYTES:
+                        row["content"] = row["content"].encode()[:MAX_TEXT_BYTES].decode("utf-8", errors="ignore")
+                    try:
+                        sql, vals = _build_insert("messages", row, new_save_id, _msg_allowed, _msg_jsonb)
+                        with db.transaction():
+                            db.execute(sql, vals)
+                        messages_imported += 1
+                    except Exception as exc:
+                        warnings.append(f"messages 单行导入失败: {type(exc).__name__}: {str(exc)[:120]}")
+                        break
+
     return {
         "ok": True,
         "save_id": new_save_id,
         "commits_imported": len(old_to_new),
         "state_imported": state_imported,
+        "messages_imported": messages_imported,
         "warnings": warnings,
         "script_id": script_id,
         "save_kind": save_kind,

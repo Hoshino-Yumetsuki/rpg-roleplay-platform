@@ -192,8 +192,10 @@ async def api_login_code_verify(request: Request):
     body = await request.json()
     ip = _client_ip(request)
     try:
-        user, token = _auth.confirm_login_code(body.get("email", ""), body.get("code", ""), ip=ip)
-        workspace.ensure_default(user["id"])
+        user, token = await asyncio.to_thread(
+            _auth.confirm_login_code, body.get("email", ""), body.get("code", ""), ip=ip
+        )
+        await asyncio.to_thread(workspace.ensure_default, user["id"])
         response = json_response({"ok": True, "user": public_user(user), "platform": platform_for(user)})
         _set_session_cookie(response, request, token)
         return response
@@ -272,11 +274,11 @@ async def api_magic_consume(request: Request):
     ip = _client_ip(request)
     try:
         # Step 1: 校验 magic_token + email 匹配 + 30 天有效期
-        _auth.consume_magic_token(token, email)
+        await asyncio.to_thread(_auth.consume_magic_token, token, email)
         # Step 2: 直接登录(查/建 user + issue session) — 跳过 OTP
-        result = _auth.login_via_magic_token(email, ip=ip)
+        result = await asyncio.to_thread(_auth.login_via_magic_token, email, ip=ip)
         # Step 3: 保证 workspace 已建好
-        workspace.ensure_default(result["user_id"])
+        await asyncio.to_thread(workspace.ensure_default, result["user_id"])
         token = result.pop("session_token", "")  # SEC(M-6): 仅经 HTTPOnly cookie 下发,不写响应体
         response = json_response({"ok": True, **result})
         _set_session_cookie(response, request, token)

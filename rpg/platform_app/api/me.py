@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Request, UploadFile
 from psycopg.types.json import Jsonb
 
 from ..db import connect
-from ..security import public_user
+from ..security import normalize_username, public_user
 from ._deps import SESSION_COOKIE, json_response, require_user
 
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8 MB
@@ -104,7 +104,7 @@ async def api_my_profile(user=Depends(require_user)):
 async def api_patch_profile(request: Request, user=Depends(require_user)):
     """首次注册补充昵称用。body: {username?, display_name?, co_builder_opt_out?}"""
     body = await request.json()
-    username = (body.get("username") or "").strip()[:32]
+    username = normalize_username((body.get("username") or "").strip())[:32]
     display_name = (body.get("display_name") or "").strip()[:64]
     co_builder_opt_out = body.get("co_builder_opt_out")
     if not username and not display_name and co_builder_opt_out is None:
