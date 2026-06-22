@@ -290,9 +290,25 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
         items = sorted(data["data"], key=lambda x: x["index"])
         return [item["embedding"] for item in items]
 
+    def _guard_dim(vecs: list[list[float]] | None) -> list[list[float]] | None:
+        # 维度卫士:有的模型(如 BAAI/bge-m3 固定 1024)不支持降到 EMBED_DIM(768),会静默返回
+        # 异维向量 → 既存不进 vector(768) 列(索引侧 with_vec=0),又在召回侧维度不符报错被吞 →
+        # 用户「RAG 完全失效」却查不出原因。这里维度不符即「响亮失败」+ 写人话错误供前端引导换模型。
+        global _last_openai_embed_error
+        if vecs and EMBED_DIM and len(vecs[0]) != EMBED_DIM:
+            _last_openai_embed_error = (
+                f"向量嵌入模型「{model}」输出 {len(vecs[0])} 维,但系统统一用 {EMBED_DIM} 维"
+                f"(该模型不支持降到 {EMBED_DIM})。请到「设置 → RAG / 向量模型」改用支持 {EMBED_DIM} 维的模型"
+                f"(如 Qwen/Qwen3-Embedding-* 带降维、OpenAI text-embedding-3-*、Gemini text-embedding-004),并重新拆书。"
+            )
+            log.warning("[embedding] dim mismatch: model=%s got=%d want=%d → 拒绝异维向量", model, len(vecs[0]), EMBED_DIM)
+            return None
+        return vecs
+
     try:
-        result = _post(with_dim=bool(EMBED_DIM))
-        _last_openai_embed_error = ""  # BUGFIX(导入报错弹窗刷新仍在): 成功即清 sticky 错误,否则"向量嵌入配置可能有问题"横幅永久残留
+        result = _guard_dim(_post(with_dim=bool(EMBED_DIM)))
+        if result is not None:
+            _last_openai_embed_error = ""  # 仅真正成功才清 sticky 错误(维度不符已写错误,别清掉)
         return result
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
@@ -300,8 +316,9 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
         # 带 dimensions 被 400 拒(模型不支持降维)→ 去掉 dimensions 重试一次
         if code == 400 and EMBED_DIM:
             try:
-                result = _post(with_dim=False)
-                _last_openai_embed_error = ""  # 同上:重试成功也清错误
+                result = _guard_dim(_post(with_dim=False))  # 去 dimensions 重试后,模型可能吐回原生维度 → 仍须卡维
+                if result is not None:
+                    _last_openai_embed_error = ""  # 仅真正成功才清错误(维度不符已写错误,别清掉)
                 return result
             except urllib.error.HTTPError as e2:
                 body = e2.read().decode(errors="replace"); code = e2.code
