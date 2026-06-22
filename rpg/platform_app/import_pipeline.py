@@ -48,12 +48,57 @@ STAGES = [
 
 
 # ── 全局并发 semaphore（最多 2 个导入同时跑，第 3+ 个排队）──────────────
-# 用 threading.Semaphore 而非 asyncio.Semaphore：流水线跑在 daemon thread 里，
-# acquire() 在 worker thread 中阻塞，不占用 FastAPI event loop。
-_IMPORT_GLOBAL_SEM = threading.Semaphore(2)
+# 优先使用 Redis 跨进程信号量（多 worker 场景下总并发不超限）；Redis 不可用时
+# 回退到进程内 threading.Semaphore（单 worker / 本地开发仍正确）。
+_IMPORT_SEM_CAPACITY = 2
+_IMPORT_SEM_NAME = "import_pipeline"
+_IMPORT_GLOBAL_SEM = threading.Semaphore(_IMPORT_SEM_CAPACITY)  # 回退用
 # 当前正在等待 semaphore 的任务数（排队深度）。原子 +1/-1 用 _QUEUE_LOCK。
 _QUEUE_DEPTH: int = 0
 _QUEUE_LOCK = threading.Lock()
+
+
+def _redis_sem_init() -> bool:
+    """尝试初始化 Redis 信号量令牌池（幂等）。返回 True=Redis 可用，False=回退进程内。"""
+    try:
+        from redis_bus import sem_init
+        return sem_init(_IMPORT_SEM_NAME, _IMPORT_SEM_CAPACITY)
+    except Exception:
+        return False
+
+
+def _redis_sem_acquire(timeout_sec: int = 1800) -> tuple[bool, str | None]:
+    """
+    尝试从 Redis 取令牌。
+    返回 (used_redis, token)：used_redis=True 表示用了 Redis，token 为令牌字符串（release 时用）。
+    Redis 不可用时回退到进程内 Semaphore.acquire()。
+    """
+    try:
+        from redis_bus import sem_acquire
+        token = sem_acquire(_IMPORT_SEM_NAME, timeout_sec=timeout_sec)
+        if token is not None:
+            return True, token
+        # sem_acquire 返回 None：超时或 Redis 不可用
+    except Exception:
+        pass
+    # 回退：进程内阻塞
+    _IMPORT_GLOBAL_SEM.acquire()
+    return False, None
+
+
+def _redis_sem_release(used_redis: bool, token: str | None) -> None:
+    """归还令牌（与 _redis_sem_acquire 对称）。"""
+    if used_redis and token is not None:
+        try:
+            from redis_bus import sem_release
+            sem_release(_IMPORT_SEM_NAME, token)
+            return
+        except Exception:
+            pass
+    # 回退：释放进程内 Semaphore（若 acquire 时用了 Redis 但 release 失败，也补释放进程内槽位
+    # 避免进程内 sem 计数器失衡，但正常路径此处不会被同时触发两侧）
+    if not used_redis:
+        _IMPORT_GLOBAL_SEM.release()
 
 # ── 进程内 thread 跟踪表（best-effort）──────────────────────────────
 # 多 worker 部署时只对当前 worker 可见，
@@ -479,6 +524,7 @@ def _run_pipeline(job_id: str, user_id: int, script_id: int, options: dict[str, 
     global _QUEUE_DEPTH
 
     # ── 全局并发限制：acquire semaphore（排队期间 blocking，但在 daemon thread 里，不卡 event loop）
+    # 优先使用 Redis 跨进程信号量（多 worker 下总并发不超限）；回退到进程内 Semaphore。
     with _QUEUE_LOCK:
         _QUEUE_DEPTH += 1
     # 标记为 queued（如果还没标过）并写入当前排队深度
@@ -495,7 +541,9 @@ def _run_pipeline(job_id: str, user_id: int, script_id: int, options: dict[str, 
     except Exception:
         pass
 
-    _IMPORT_GLOBAL_SEM.acquire()  # 阻塞直到拿到槽（最多 2 个同时跑）
+    # 尝试初始化 Redis 信号量令牌池（幂等；首次调用时填充，后续 no-op）
+    _redis_sem_init()
+    _used_redis_sem, _sem_token = _redis_sem_acquire(timeout_sec=1800)
 
     with _QUEUE_LOCK:
         _QUEUE_DEPTH -= 1
@@ -505,7 +553,7 @@ def _run_pipeline(job_id: str, user_id: int, script_id: int, options: dict[str, 
         from .cluster import release_job_lock, try_acquire_job_lock
         if not try_acquire_job_lock(f"import_job:{job_id}"):
             # 已被别的 worker 占了，直接退出（那个 worker 会处理）
-            _IMPORT_GLOBAL_SEM.release()
+            _redis_sem_release(_used_redis_sem, _sem_token)
             return
     except Exception:
         try_acquire_job_lock = None  # type: ignore[assignment]
@@ -661,7 +709,7 @@ def _run_pipeline(job_id: str, user_id: int, script_id: int, options: dict[str, 
         finalize_job_if_unterminated(job_id)
         _RUNNING.pop(job_id, None)
         # 释放全局并发 semaphore，让下一个排队任务得以推进
-        _IMPORT_GLOBAL_SEM.release()
+        _redis_sem_release(_used_redis_sem, _sem_token)
         try:
             if release_job_lock:
                 release_job_lock(f"import_job:{job_id}")

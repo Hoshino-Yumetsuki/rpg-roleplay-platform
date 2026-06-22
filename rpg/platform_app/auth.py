@@ -99,7 +99,9 @@ def _check_rate_limit(ip: str, username: str) -> None:
     # Redis 可用时用共享锁定键(跨 worker 一致,根治多 worker 限流 ×N 绕过);
     # 不可用回落进程内(单进程语义)。
     ip_key = ip or "-"
-    user_key = (username or "").lower()
+    # [round-3-P2] 用 normalize_username 做规范键(不只 .lower()):调用方虽多已先归一,
+    # 但内部统一规范可彻底消除「同一账号经不同表示得到不同限流桶」的绕过面(只会合并桶,不会放宽)。
+    user_key = normalize_username(username)
     import redis_bus
     if redis_bus.get_sync_client() is not None:
         for scope, k in (("ip", ip_key), ("user", user_key)):
@@ -147,7 +149,9 @@ def _record_login_fail(ip: str, username: str) -> int:
     """记录一次失败。返回 username bucket 内累计失败次数。超阈值会被锁定。"""
     # P2-5: 分别记录 per-IP 和 per-username bucket
     ip_key = ip or "-"
-    user_key = (username or "").lower()
+    # [round-3-P2] 用 normalize_username 做规范键(不只 .lower()):调用方虽多已先归一,
+    # 但内部统一规范可彻底消除「同一账号经不同表示得到不同限流桶」的绕过面(只会合并桶,不会放宽)。
+    user_key = normalize_username(username)
     import redis_bus
     if redis_bus.get_sync_client() is not None:
         ip_cnt = redis_bus.rate_incr(f"loginfail:ip:{ip_key}", _IP_WINDOW_SEC) or 0
@@ -184,7 +188,9 @@ def _record_login_fail(ip: str, username: str) -> int:
 
 def _record_login_success(ip: str, username: str) -> None:
     ip_key = ip or "-"
-    user_key = (username or "").lower()
+    # [round-3-P2] 用 normalize_username 做规范键(不只 .lower()):调用方虽多已先归一,
+    # 但内部统一规范可彻底消除「同一账号经不同表示得到不同限流桶」的绕过面(只会合并桶,不会放宽)。
+    user_key = normalize_username(username)
     import redis_bus
     if redis_bus.get_sync_client() is not None:
         for scope, k in (("ip", ip_key), ("user", user_key)):
@@ -247,7 +253,9 @@ def _mask_email(email: str) -> str:
 def admin_unlock(ip: str, username: str) -> None:
     """admin 手动解锁某个用户/IP（暴露给 /api/admin/login/unlock 用）"""
     ip_key = ip or "-"
-    user_key = (username or "").lower()
+    # [round-3-P2] 用 normalize_username 做规范键(不只 .lower()):调用方虽多已先归一,
+    # 但内部统一规范可彻底消除「同一账号经不同表示得到不同限流桶」的绕过面(只会合并桶,不会放宽)。
+    user_key = normalize_username(username)
     # Redis 模式:清共享锁定键 + 失败计数
     try:
         import redis_bus
@@ -1415,6 +1423,10 @@ def verify_passwordless_and_login(email: str, code: str, ip: str = "") -> dict:
     code = (code or "").strip()
     if len(code) != 6 or not code.isdigit():
         raise ValueError("请输入 6 位数字验证码")
+    # [Fix-2 round-3-P2] 镜像 confirm_login_code 的 per-email 验证码暴破防护:
+    # 无此则 passwordless 路径可对单邮箱无限猜码(仅受 IP 速率限,换 IP 即绕过)。
+    if _verify_locked(email_norm):
+        raise ValueError("验证尝试次数过多，请稍后重新获取验证码")
     _check_rate_limit(ip, email_norm)
     init_db()
     with connect() as db:
@@ -1433,6 +1445,7 @@ def verify_passwordless_and_login(email: str, code: str, ip: str = "") -> dict:
         ).fetchone()
         if not verif or not verify_email_code(code, verif["code_hash"]):
             # 错码或无记录：不消费，只计失败
+            _record_verify_fail(email_norm)  # [Fix-2 round-3-P2] per-email 验证码失败计数(达上限锁定该 email)
             _record_login_fail(ip, email_norm)
             raise ValueError("验证码错误或已过期")
 

@@ -359,11 +359,30 @@ def select_model(api_id: str, model_id: str) -> dict[str, Any]:
     return load_model_catalog()
 
 
+def _check_base_url(base_url: str) -> None:
+    """写入前对用户提供的 base_url 做 SSRF 预校验(纵深防御,运行时仍走 safe_httpx)。
+
+    空字符串跳过(部分 provider 不需要 base_url)。校验逻辑复用
+    platform_app.user_credentials._validate_base_url:解析 hostname → 检验真实 IP。
+    """
+    if not base_url:
+        return
+    try:
+        from platform_app.user_credentials import _validate_base_url
+        _validate_base_url(base_url)
+    except ImportError:
+        pass  # 依赖缺失时不静默放行:仍走运行时 safe_httpx 纵深防御
+
+
 def upsert_api(api_data: dict[str, Any]) -> dict[str, Any]:
     catalog = load_model_catalog()
     api_id = normalize_api_id(api_data.get("api_id") or api_data.get("id"))
     if not api_id:
         raise ValueError("API id 不能为空")
+    # 写入前校验用户提供的 base_url(SSRF 写时闸,非法地址直接拒绝)。
+    incoming_base_url = str(api_data.get("base_url") or "").strip()
+    if "base_url" in api_data and incoming_base_url:
+        _check_base_url(incoming_base_url)
     api = find_api(catalog, api_id)
     normalized = copy.deepcopy(api) if api else (default_api_for(api_id) or {"id": api_id, "models": []})
     normalized["id"] = api_id

@@ -175,20 +175,38 @@ def lock_clear(name: str) -> None:
 
 # ── 跨进程并发信号量(令牌列表 + 阻塞 BLPOP)──────────────────────────────
 
+# 信号量幂等初始化 Lua 脚本:
+#   KEYS[1] = tokens 列表键
+#   ARGV[1] = capacity (字符串)
+# 仅当 tokens 列表不存在(或已空且从未被初始化过:用 EXISTS 判)时填入令牌。
+# 不设 TTL:令牌是长期资源,TTL 过期会丢失令牌导致死锁;重启 Redis 时令牌自然消失,
+# worker 重新 init 即可(EXISTS=0 → 重新 seed)。
+# 原 SETNX 哨兵方案的问题:SETNX 成功但 rpush 崩溃 → 哨兵存在但令牌为空 → 永久死锁;
+# 本 Lua 脚本以 tokens 列表是否存在为唯一来源,消除哨兵崩溃窗口。
+_SEM_INIT_LUA = """
+local exists = redis.call('EXISTS', KEYS[1])
+if exists == 0 then
+  local cap = tonumber(ARGV[1])
+  if cap and cap > 0 then
+    for i = 0, cap - 1 do
+      redis.call('RPUSH', KEYS[1], tostring(i))
+    end
+  end
+end
+return redis.call('LLEN', KEYS[1])
+"""
+
+
 def sem_init(name: str, capacity: int) -> bool:
-    """幂等初始化令牌池:仅当 key 不存在时填入 capacity 个令牌。
-    用 SETNX 哨兵防止多 worker 重复填充。Redis 不可用 → False。"""
+    """幂等初始化令牌池:仅当 tokens 列表不存在时原子填入 capacity 个令牌。
+    不设 TTL(令牌是长期资源)。用 Lua 脚本保证原子性:不存在 → 填充;已存在 → no-op。
+    Redis 不可用 → False。"""
     cli = get_sync_client()
     if cli is None:
         return False
     try:
-        sentinel = f"rpg:sem:{name}:init"
-        # SET NX:只有第一个 worker 成功,负责填充令牌池
-        if cli.set(sentinel, "1", nx=True):
-            tokens_key = f"rpg:sem:{name}:tokens"
-            cli.delete(tokens_key)
-            if capacity > 0:
-                cli.rpush(tokens_key, *[str(i) for i in range(capacity)])
+        tokens_key = f"rpg:sem:{name}:tokens"
+        cli.eval(_SEM_INIT_LUA, 1, tokens_key, str(capacity))
         return True
     except Exception as exc:
         log.warning("[redis] sem_init failed: %s", exc)

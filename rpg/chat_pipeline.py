@@ -247,6 +247,7 @@ class PipelineContext:
 
     # 流程控制
     early_return: bool = False
+    tavern_character_set: bool = False  # Phase 4 酒馆角色卡工具成功(first_mes 可能为空,非 error)
 
 
 # 类型别名:phase generator 产物
@@ -1285,6 +1286,7 @@ async def run_gm_phase(
             if _gm_mode == "tavern_gm" and event.get("tool") in ("set_tavern_character", "import_character_card") and event.get("ok"):
                 _fm = str(((getattr(state, "data", {}) or {}).get("tavern") or {}).get("first_mes") or "").strip()
                 response = _fm
+                ctx.tavern_character_set = True  # first_mes 可能为空,Phase 5 不应视为 error
                 if _fm:
                     yield ("token", {"text": _fm})
                 _gm_stop.set()
@@ -1930,6 +1932,9 @@ async def persist_turn_phase(
     if not visible_response.strip():
         if ctx.directive_updates:
             # /set 已落盘，GM 空响应无需报错
+            yield ("done", {"status": payload_fn(api_user), "interrupted": False, "empty": True})
+        elif ctx.tavern_character_set:
+            # 酒馆角色卡工具成功但 first_mes 为空 — 正常干净结束,不报 error
             yield ("done", {"status": payload_fn(api_user), "interrupted": False, "empty": True})
         else:
             log.warning(f"[chat] WARN: GM 返回空响应, len(raw)={len(response)} "

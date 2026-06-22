@@ -382,7 +382,8 @@ export function MobileGame(gc) {
 
   const closeAll = () => { setLeftOpen(false); setRightOpen(false); };
 
-  // 长按消息 → 操作 sheet
+  // 长按消息 → 操作 sheet；unmount 时清理挂起的 timer 防内存泄漏
+  useEffect(() => () => clearTimeout(lpTimer.current), []);
   const startPress = (idx) => { lpTimer.current = setTimeout(() => { setPressed(idx); if (navigator.vibrate) navigator.vibrate(12); setSheet({ type: 'msg', data: idx }); }, 420); };
   const cancelPress = () => clearTimeout(lpTimer.current);
 

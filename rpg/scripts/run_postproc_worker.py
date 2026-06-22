@@ -75,9 +75,12 @@ async def _handle_phase_digest(payload: dict[str, Any]) -> None:
 
 
 async def _handle_acceptance_verifier(payload: dict[str, Any]) -> None:
-    """跑 acceptance verifier,把 unmet 写到 audit_log。"""
+    """跑 acceptance verifier,把 unmet 写到 audit_log。
+    用函数内延迟 import 避免 worker 启动时拉入整个 FastAPI app 对象树（重量级）。"""
     try:
-        from app import _acceptance_verifier_mode as _avm, _verify_acceptance as _va
+        # 延迟 import：app.py 依赖 FastAPI/路由/中间件，worker 只需其中两个函数。
+        # 在调用时才 import 可将 worker 启动内存开销降到最低，且不影响功能正确性。
+        from app import _acceptance_verifier_mode as _avm, _verify_acceptance as _va  # noqa: PLC0415
         curator_plan = payload.get("curator_plan") or {}
         acceptance = curator_plan.get("acceptance") or []
         gm_output = payload.get("gm_output") or ""
@@ -207,14 +210,16 @@ async def consume(conn: psycopg.Connection) -> None:
 
     while True:
         _reap_stuck_running(conn)
+        # 不用 FOR UPDATE SKIP LOCKED — 认领路径已改为 _process_one 里的 CAS UPDATE...RETURNING。
+        # SELECT 只是候选行扫描，实际认领由 CAS 原子完成；多 worker 同时读到同一行时，
+        # CAS 保证只有一个 worker 能置 running，其余跳过（claimed is None）。
         rows = conn.execute(
             "SELECT id, user_id, save_id, commit_id, task_kind, payload, attempts "
             "FROM chat_postproc_tasks "
             "WHERE status IN ('pending', 'failed') AND attempts < %s "
             "AND scheduled_at <= now() "
             "ORDER BY scheduled_at "
-            "LIMIT %s "
-            "FOR UPDATE SKIP LOCKED",
+            "LIMIT %s",
             (MAX_ATTEMPTS, MAX_TASKS_PER_POLL),
         ).fetchall()
 

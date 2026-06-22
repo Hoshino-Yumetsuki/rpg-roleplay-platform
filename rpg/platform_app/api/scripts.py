@@ -1611,13 +1611,13 @@ async def api_patch_canon(request: Request, script_id: int, user=Depends(require
       {"op": "merge_entity", "from_key": "...", "into_key": "..."}  # from 的别名并入 into,删 from
       {"op": "delete_entity", "logical_key": "..."}
     """
+    try:
+        body = await request.json()
+    except Exception:
+        return json_response({"ok": False, "error": "body 必须是合法 JSON"}, status_code=400)
     with connect() as db:
         if not _owned_script(db, script_id, user["id"]):
             return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
-        try:
-            body = await request.json()
-        except Exception:
-            return json_response({"ok": False, "error": "body 必须是合法 JSON"}, status_code=400)
         op = (body.get("op") or "").strip()
         if op == "update_entity":
             lk = (body.get("logical_key") or "").strip()
@@ -1668,6 +1668,8 @@ async def api_patch_canon(request: Request, script_id: int, user=Depends(require
             return json_response({"ok": True, "merged": True})
         if op == "delete_entity":
             lk = (body.get("logical_key") or "").strip()
+            if not lk:
+                return json_response({"ok": False, "error": "缺 logical_key"}, status_code=400)
             n = db.execute("delete from kb_canon_entities where script_id=%s and logical_key=%s", (script_id, lk)).rowcount
             return json_response({"ok": True, "deleted": n})
         return json_response({"ok": False, "error": f"未知 op: {op}"}, status_code=400)

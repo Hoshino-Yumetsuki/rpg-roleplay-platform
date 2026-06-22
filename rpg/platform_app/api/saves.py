@@ -624,13 +624,13 @@ async def api_save_settings_patch(request: Request, save_id: int, user=Depends(r
     Body: {"updates": {...}, "is_create": bool}
     """
     from gm_serving import settings as _set
+    try:
+        body = await request.json()
+    except Exception:
+        return json_response({"ok": False, "error": "body 必须是合法 JSON"}, status_code=400)
     with connect() as db:
         if not owns_save(db, save_id, user["id"]):
             return json_response({"ok": False, "error": "无权访问该存档"}, status_code=403)
-        try:
-            body = await request.json()
-        except Exception:
-            return json_response({"ok": False, "error": "body 必须是合法 JSON"}, status_code=400)
         updates = body.get("updates") if isinstance(body.get("updates"), dict) else {}
         res = _set.apply_settings(db, save_id, updates, is_create=bool(body.get("is_create")))
     return json_response({"ok": True, **res})

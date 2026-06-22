@@ -5,7 +5,7 @@ import json
 import re
 import time
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, Dict, Set
 
 import httpx
 
@@ -64,12 +64,15 @@ class _OpenAICompatBackend:
     supports_native_tools = True
 
     # 类级状态：记录已经验证过不支持 native tools 的 (api_id, model) 组合，
-    # 同一进程内之后直接走 text marker 不再重试
-    _unsupported_combos: set[tuple[str, str]] = set()
+    # 同一进程内之后直接走 text marker 不再重试。
+    # 已知限制：进程内缓存，多 worker 模式下各自独立学习（不跨进程共享），可接受——
+    # 最坏情况是同一 (api_id, model) 在多 worker 上各自发一次失败请求后才降级。
+    _unsupported_combos: Set[tuple[str, str]] = set()
 
     # 类级状态：记录拒绝自定义 temperature(只接受默认/=1)的 (api_id, model) 组合，
     # 同一进程内之后直接不发 temperature。见 _create / _is_temperature_rejected。
-    _fixed_temp_combos: set[tuple[str, str]] = set()
+    # 已知限制：进程内缓存，多 worker 模式下各自独立学习（不跨进程共享），可接受。
+    _fixed_temp_combos: Set[tuple[str, str]] = set()
 
     def _create(self, **kwargs):
         """self.client.chat.completions.create 的包装,带 temperature 自愈。

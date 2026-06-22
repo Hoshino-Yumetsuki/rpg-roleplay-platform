@@ -253,29 +253,49 @@ def create_save(
                                 f"[identity] bind failed save={save['id']} "
                                 f"char={char_kind}:{char_ref} id={identity_card_id}: {_bind_err}"
                             )
-    branches.seed_tree(save["id"], str(SAVE_FILE))
-    # task 136: 新存档创建后异步 seed 世界线收束锚点。
-    # 800 章 × 5 events 量级,放后台不阻塞 UI;失败也不影响存档创建。
-    #
-    # 注意 (task 141 修正):**不**默认调 claim_protagonist_pov。
-    # isekai 语义是「玩家的现代灵魂 + 用户自创角色卡的肉身,与原作主角【平行共存】」,
-    # 不是「玩家接管原作主角 POV」。原作主角应作为独立 NPC 触发其登场 anchor,
-    # 玩家(用户角色卡)在同一场景平行加入。两人可能在 ch1 相遇,但不是同一个人。
-    # claim_protagonist_pov 工具保留,但只在玩家显式声明"我就是 X"时由 GM 主动调。
-    # 锚点 seed:**同步**做(改自原后台 daemon 线程)。原因(bug 修复):daemon 线程不保证在
-    # 玩家第一回合前完成 → 新存档常 0 pending 锚点 → 时间线锚点标记/收束整段失效(E2E 实测到)。
-    # 锚点 seed 是纯 DB 写(从 chapter_facts 批量 insert),即便 800 章量级也就秒级,放创建路径里
-    # 保证「存档一建好就有完整锚点」远比省那点延迟重要。失败不影响存档创建。
+    # seed_tree / anchor_seed / kb_seed 运行在已提交的 save 行之外（各自开独立连接）。
+    # 若任一步骤抛出非预期异常，save 行已提交却无可用状态 → 孤儿存档。
+    # 补偿策略：用 try/except 包裹全部后续步骤；任一不可恢复的异常触发补偿删除，
+    # 把孤儿存档清掉后再重新抛出，让调用方（create_save API）返回 500 而非静默留孤儿。
+    # branches.seed_tree / anchor_seed / kb_seed 内部已各自捕获并 log 自身的业务异常，
+    # 这里只捕获它们之外的意外异常（如 DB 连接断开等）；正常失败路径不会到达 except。
+    _save_id = save["id"]
     try:
-        from agents.anchor_seed_agent import seed_anchors_for_save
-        res = seed_anchors_for_save(save["id"])
-        log.info(f"[anchor_seed] save={save['id']} (sync) result={res}")
-    except Exception as _seed_err:
-        log.error(f"[anchor_seed] sync seed failed save={save['id']}: {type(_seed_err).__name__}: {_seed_err}")
-    # 封死新存档入口:创建即 seed 进 KB + 打 kb_native 标记(新档按新实现)。
-    # 用回写后的 save["state_snapshot"](含 identity_card_id),而非建档前的旧 snapshot 局部变量,
-    # 否则 KB seed 拿不到身份卡 id。
-    _seed_kb_at_creation(save["id"], script_id, save.get("state_snapshot") or snapshot)
+        branches.seed_tree(_save_id, str(SAVE_FILE))
+        # task 136: 新存档创建后异步 seed 世界线收束锚点。
+        # 800 章 × 5 events 量级,放后台不阻塞 UI;失败也不影响存档创建。
+        #
+        # 注意 (task 141 修正):**不**默认调 claim_protagonist_pov。
+        # isekai 语义是「玩家的现代灵魂 + 用户自创角色卡的肉身,与原作主角【平行共存】」,
+        # 不是「玩家接管原作主角 POV」。原作主角应作为独立 NPC 触发其登场 anchor,
+        # 玩家(用户角色卡)在同一场景平行加入。两人可能在 ch1 相遇,但不是同一个人。
+        # claim_protagonist_pov 工具保留,但只在玩家显式声明"我就是 X"时由 GM 主动调。
+        # 锚点 seed:**同步**做(改自原后台 daemon 线程)。原因(bug 修复):daemon 线程不保证在
+        # 玩家第一回合前完成 → 新存档常 0 pending 锚点 → 时间线锚点标记/收束整段失效(E2E 实测到)。
+        # 锚点 seed 是纯 DB 写(从 chapter_facts 批量 insert),即便 800 章量级也就秒级,放创建路径里
+        # 保证「存档一建好就有完整锚点」远比省那点延迟重要。失败不影响存档创建。
+        try:
+            from agents.anchor_seed_agent import seed_anchors_for_save
+            res = seed_anchors_for_save(_save_id)
+            log.info(f"[anchor_seed] save={_save_id} (sync) result={res}")
+        except Exception as _seed_err:
+            log.error(f"[anchor_seed] sync seed failed save={_save_id}: {type(_seed_err).__name__}: {_seed_err}")
+        # 封死新存档入口:创建即 seed 进 KB + 打 kb_native 标记(新档按新实现)。
+        # 用回写后的 save["state_snapshot"](含 identity_card_id),而非建档前的旧 snapshot 局部变量,
+        # 否则 KB seed 拿不到身份卡 id。
+        _seed_kb_at_creation(_save_id, script_id, save.get("state_snapshot") or snapshot)
+    except Exception as _post_err:
+        # 意外异常（非 seed 内部的业务失败）：补偿删除已插入的孤儿 save 行，再重抛。
+        log.error(
+            f"[create_save] post-insert step failed save={_save_id}, compensating delete: "
+            f"{type(_post_err).__name__}: {_post_err}"
+        )
+        try:
+            with connect() as _cdb:
+                _cdb.execute("delete from game_saves where id = %s", (_save_id,))
+        except Exception as _del_err:
+            log.error(f"[create_save] compensation delete failed save={_save_id}: {_del_err}")
+        raise
     return expose(save)  # type: ignore[return-value]
 
 

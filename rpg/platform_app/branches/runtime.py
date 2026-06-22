@@ -37,6 +37,7 @@ def record_runtime_turn(
     runtime_state_path: str | None = None,
     user_id: int | None = None,
     state_data: dict[str, Any] | None = None,
+    _depth: int = 0,
 ) -> dict[str, Any]:
     """多用户安全：调用方应传 state_data=state.data 而不是依赖 runtime_state_path 读文件。"""
     meta = _runtime_module.read_runtime(user_id=user_id) or bootstrap_runtime_binding(user_id=user_id)
@@ -119,9 +120,11 @@ def record_runtime_turn(
                     import logging as _lg
                     _lg.getLogger("kb_state").warning("[kb_state] persist import/maintain skip: %s", _kbe)
     if missing_parent:
+        if _depth >= 2:
+            return {"ok": False, "reason": "runtime 指向的父节点不存在(重绑后仍缺失)"}
         rebound = bootstrap_runtime_binding(user_id=user_id)
         if rebound and rebound.get("active_commit_id") != parent_id:
-            return record_runtime_turn(player_input, gm_response, runtime_state_path, user_id=user_id)
+            return record_runtime_turn(player_input, gm_response, runtime_state_path, user_id=user_id, _depth=_depth + 1)
         return {"ok": False, "reason": "runtime 指向的父节点不存在"}
     effective_user_id = user_id or int(save.get("user_id") or 0)
     runtime_info = _runtime_module.update_active_node(

@@ -491,10 +491,11 @@ function ModelsSection() {
   }, [useMock, loadConfiguredApis]);
 
   const toggleApi = async (id) => {
-    setApis(arr => arr.map(a => a.id === id ? { ...a, enabled: !a.enabled } : a));
+    const api = apis.find(a => a.id === id);
+    const newEnabled = !api?.enabled;
+    setApis(arr => arr.map(a => a.id === id ? { ...a, enabled: newEnabled } : a));
     try {
-      const api = apis.find(a => a.id === id);
-      await window.api.models.upsertApi({ api_id: id, enabled: !api?.enabled });
+      await window.api.models.upsertApi({ api_id: id, enabled: newEnabled });
     } catch (_) {}
   };
   const toggleModel = async (apiId, mId) => {
@@ -515,10 +516,10 @@ function ModelsSection() {
     try { await window.api.models.upsertModel({ api_id: apiId, real_name: mId, display_name: display }); } catch (_) {}
   };
   const setModelVisibility = async (apiId, ids) => {
+    const api = apis.find(a => a.id === apiId);
     setApis(arr => arr.map(a => a.id === apiId
       ? { ...a, models: a.models.map(m => ({ ...m, visible: ids.includes(m.id) })) }
       : a));
-    const api = apis.find(a => a.id === apiId);
     if (api) {
       await Promise.all(api.models.map(m => {
         const body = { api_id: apiId, model: m.id, visible: ids.includes(m.id) };

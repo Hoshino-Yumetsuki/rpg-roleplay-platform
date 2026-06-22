@@ -384,6 +384,7 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
 
         # 4. task 69: 导入 9 张 per-save 状态表(v2 才有)
         state_imported: dict[str, int] = {}
+        state_errors: dict[str, int] = {}  # 每张表行级失败计数（供 warnings 汇总）
         # identity_cards 导入时分配新 id(全局序列);save_character_identities.identity_id
         # 指向旧 id → 必须按 old→new 重映射,否则 FK 永远指向孤儿或其他存档的行。
         old_identity_to_new: dict[int, int] = {}
@@ -395,6 +396,7 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 allowed_cols = _table_columns(db, table)
                 jsonb_cols = _jsonb_columns(db, table)
                 count = 0
+                err_count = 0
                 for raw_row in rows:
                     if not isinstance(raw_row, dict):
                         continue
@@ -456,12 +458,18 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                                 db.execute(sql, vals)
                         count += 1
                     except Exception as exc:
-                        # 单行失败不阻断整体导入(schema 漂移容错);savepoint 已回滚,外层事务仍可用。
-                        if not allow_missing:
-                            warnings.append(f"{table} 单行导入失败: {type(exc).__name__}: {str(exc)[:120]}")
+                        # 单行失败不阻断同表其余行(行级独立,schema 漂移容错);
+                        # savepoint 已回滚,外层事务仍可用。累计错误,末尾汇总一条 warning。
+                        err_count += 1
                         # else: 静默吞,allow_missing 表整张表都可能不存在
-                        break  # 同表多行同样错就别再撞了
+                        if err_count == 1 and not allow_missing:
+                            # 只记首次出错详情,避免 warnings 列表爆炸
+                            warnings.append(f"{table} 行导入失败(首次): {type(exc).__name__}: {str(exc)[:120]}")
+                        continue
                 state_imported[table] = count
+                state_errors[table] = err_count
+                if err_count > 1 and not allow_missing:
+                    warnings.append(f"{table} 共 {err_count} 行导入失败(已跳过,成功导入 {count} 行)")
             # 原存档是 kb_native(新 KB 流,带完整 kb_* 状态)且确实导入了 KB 行 → 新存档也标 kb_native,
             # 否则加载时被当旧档走 migrate-on-load 从 blob 重建,刚导入的 KB 状态白导。
             if save_data.get("kb_native") and state_imported.get("kb_entities", 0) > 0:
@@ -496,6 +504,7 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 # 允许的 messages 列(防注入;content/metadata/role/turn 是固定结构,直接枚举白名单)
                 _msg_allowed = frozenset({"session_id", "save_id", "turn", "role", "content", "metadata"})
                 _msg_jsonb = frozenset({"metadata"})
+                _msg_err_count = 0
                 for raw_msg in messages_raw:
                     if not isinstance(raw_msg, dict):
                         continue
@@ -514,8 +523,12 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                             db.execute(sql, vals)
                         messages_imported += 1
                     except Exception as exc:
-                        warnings.append(f"messages 单行导入失败: {type(exc).__name__}: {str(exc)[:120]}")
-                        break
+                        _msg_err_count += 1
+                        if _msg_err_count == 1:
+                            warnings.append(f"messages 单行导入失败(首次): {type(exc).__name__}: {str(exc)[:120]}")
+                        continue  # 行级独立:单条消息失败不影响其余消息
+                if _msg_err_count > 1:
+                    warnings.append(f"messages 共 {_msg_err_count} 行导入失败(已跳过,成功导入 {messages_imported} 条)")
 
     return {
         "ok": True,

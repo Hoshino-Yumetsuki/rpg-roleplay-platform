@@ -48,7 +48,57 @@ _MAX_EMBED_BATCH_RETRIES = 5
 PER_CHUNK_CHAR_LIMIT = 1200
 # 进程内 cache,避免 ChatPipeline 每次 _embed_query 都重新 import vertex SDK
 _VERTEX_CLIENT_CACHE: dict[str, Any] = {}
-_EMBED_QUEUE_RUNNING: dict[int, bool] = {}  # script_id → 是否在跑
+_EMBED_QUEUE_RUNNING: dict[int, bool] = {}  # script_id → 是否在跑(进程内降级标志,多 worker 各自独立)
+
+# Redis key 前缀,用于跨进程去重;TTL 略大于预期最长 embed 时长,兼做宕机自动解锁。
+_EMBED_REDIS_PREFIX = "rpg:embed_running:"
+_EMBED_REDIS_TTL = 3600  # 1 小时,足够大,宕机后 Redis 自动释放锁
+
+
+def _embed_redis_acquire(script_id: int) -> bool:
+    """跨进程去重:用 Redis SETNX+EXPIRE 申请运行权。
+
+    返回 True 表示本进程/worker 拿到运行权;False 表示已有其它 worker 在跑该 script。
+    Redis 不可用时 → 优雅降级,返回 True(进程内标志兜底,单 worker 语义不变)。
+    """
+    try:
+        from redis_bus import get_sync_client
+        r = get_sync_client()
+        if r is None:
+            return True  # Redis 未配或不可达,降级到进程内标志
+        key = f"{_EMBED_REDIS_PREFIX}{script_id}"
+        acquired = r.set(key, "1", nx=True, ex=_EMBED_REDIS_TTL)
+        return bool(acquired)
+    except Exception as exc:
+        log.warning("[embedding] redis acquire failed (graceful degradation): %s", exc)
+        return True  # 降级:允许本进程继续,进程内标志兜底
+
+
+def _embed_redis_release(script_id: int) -> None:
+    """释放 Redis 运行权锁(finally 保证调用)。Redis 不可达时静默忽略。"""
+    try:
+        from redis_bus import get_sync_client
+        r = get_sync_client()
+        if r is None:
+            return
+        r.delete(f"{_EMBED_REDIS_PREFIX}{script_id}")
+    except Exception as exc:
+        log.warning("[embedding] redis release failed (TTL will auto-expire): %s", exc)
+
+
+def _embed_is_running(script_id: int) -> bool:
+    """检查某 script 是否有任意 worker 在跑 embedding(跨进程感知)。
+
+    优先查 Redis;Redis 不可达时退回本进程内标志。
+    """
+    try:
+        from redis_bus import get_sync_client
+        r = get_sync_client()
+        if r is not None:
+            return bool(r.exists(f"{_EMBED_REDIS_PREFIX}{script_id}"))
+    except Exception:
+        pass
+    return _EMBED_QUEUE_RUNNING.get(script_id, False)
 # 最近一次 _embed_via_openai 失败的友好描述(405/401/404 等),供前端引导用户去 RAG 设置用。
 _last_openai_embed_error: str = ""
 
@@ -196,7 +246,8 @@ def _get_vertex_client(user_id: int | None = None):
         credentials, project_id = load_sa_credentials(user_id, allow_platform_fallback=allow_fb)
         if credentials is None or project_id is None:
             log.warning("[embedding] no Vertex SA available (user_id=%s)", user_id)
-            _VERTEX_CLIENT_CACHE[cache_key] = None
+            # 不缓存 None:SA 暂时不可用(文件未配/key 刷新中)时,下次请求应重试,
+            # 永久缓存 None 会让本进程整个生命周期都无法恢复。
             return None
         # Vertex AI text-embedding 走 location='us-central1' 比 global 稳定
         client = genai.Client(
@@ -375,7 +426,14 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
 
 
 def _embed_via_gemini(model: str, api_key: str, texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]] | None:
-    """Gemini native embedContent API, avoiding OpenAI-compatible batchEmbed quota."""
+    """Gemini native embedContent API, avoiding OpenAI-compatible batchEmbed quota.
+
+    注意:此处对多文本逐条串行调用 embedContent(v1beta)。
+    Gemini 也提供 batchEmbedContents 批量端点,可一次请求处理多条文本,
+    但该端点与 outputDimensionality 参数的兼容性在不同模型版本下不稳定,
+    且 API 配额限制与 embedContent 共享同一个池——串行代码逻辑更简单可靠。
+    如 texts 条数大、性能成为瓶颈,可考虑改用 batchEmbedContents 合并请求。
+    """
     import urllib.request
     import urllib.error
     import json as _json
@@ -667,7 +725,7 @@ def embed_status(script_id: int) -> dict[str, Any]:
             (script_id,),
         ).fetchone()["c"]
     return {
-        "running": _EMBED_QUEUE_RUNNING.get(script_id, False),
+        "running": _embed_is_running(script_id),
         "chunks": {"done": chunks_done, "total": chunks_total},
         "cards": {"done": cards_done, "total": cards_total},
         "worldbook": {"done": wb_done, "total": wb_total},
@@ -692,6 +750,7 @@ def _embed_chunks_loop(script_id: int, user_id: int) -> None:
         log.warning("[embedding] loop crashed for script %s: %s", script_id, exc, exc_info=True)
     finally:
         _EMBED_QUEUE_RUNNING[script_id] = False
+        _embed_redis_release(script_id)  # 释放跨进程锁(Redis 不可达时静默忽略)
         log.info("[embedding] done script_id=%s (flag cleared)", script_id)
 
 
@@ -846,12 +905,17 @@ def embed_script(user_id: int, script_id: int) -> dict[str, Any]:
         ).fetchone()
     if not row:
         raise ValueError("无权访问该剧本")
-    if _EMBED_QUEUE_RUNNING.get(script_id):
+    if _embed_is_running(script_id):
         return {"ok": True, "already_running": True, "status": embed_status(script_id)}
     # 检查 embedding provider 是否可用：生产鉴权模式必须有用户 BYOK/API key。
     preflight = embedding_preflight(user_id)
     if not preflight.get("ok"):
         return preflight
+    # 申请运行权(跨进程 SETNX,降级到进程内标志)。
+    # 二次检查 + acquire 之间存在极小窗口,最坏情况两 worker 同时进入跑一次重复 embed;
+    # embed 本身幂等(skip already-embedded rows),重复可接受。
+    if not _embed_redis_acquire(script_id):
+        return {"ok": True, "already_running": True, "status": embed_status(script_id)}
     _EMBED_QUEUE_RUNNING[script_id] = True
     threading.Thread(target=_embed_chunks_loop, args=(script_id, user_id), daemon=True).start()
     return {"ok": True, "status": embed_status(script_id)}
