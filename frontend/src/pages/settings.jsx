@@ -3223,8 +3223,8 @@ function DeploySection() {
                 try {
                   const r = await window.api.admin.saveDeploymentConfig({});
                   void r;
-                  const t = await window.api.raw?.POST("/api/v1/admin/smtp/test", {});
-                  ok = !!(t && t.ok !== false);
+                  const smtpTestResp = await window.api.raw?.POST("/api/v1/admin/smtp/test", {});
+                  ok = !!(smtpTestResp && smtpTestResp.ok !== false);
                 } catch (_) { ok = false; }
                 setSmtpTesting(false);
                 setSmtpLastTestAt(new Date().toISOString());

@@ -367,7 +367,9 @@ def _call_openai_compat_json_mode(
     try:
         with safe_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
-        text = payload["choices"][0]["message"]["content"]
+        if not payload.get("choices"):
+            raise RuntimeError(f"provider 响应结构异常: {str(payload)[:200]}")
+        text = (payload.get("choices") or [{}])[0].get("message", {}).get("content") or ""
         # 响应是 {"ops": [...]} 格式 → 提取 ops 数组
         try:
             obj = json.loads(text)
@@ -390,7 +392,9 @@ def _call_openai_compat_json_mode(
         )
         with safe_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
-        return payload["choices"][0]["message"]["content"]
+        if not payload.get("choices"):
+            raise RuntimeError(f"provider 响应结构异常: {str(payload)[:200]}")
+        return (payload.get("choices") or [{}])[0].get("message", {}).get("content") or ""
 
 
 def _api_base_url(api_id: str) -> str:

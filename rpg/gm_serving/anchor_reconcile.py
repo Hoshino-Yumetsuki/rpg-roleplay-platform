@@ -625,7 +625,10 @@ def _reconcile_impl(
     from kb.reveal import _frontier_on as _frontier_on_save
     est_on = _estimate_enabled() and not _frontier_on_save(save_id)
     est_ctx: dict[str, Any] | None = None
-    if est_on and _judge is None:
+    # 无论 _judge 是否由 recorder_bridge 注入,只要 est_on 就加载 est_ctx —— 它提供估章的 prev 基线。
+    # 原 `and _judge is None` 让生产路径(recorder_bridge 总注入 _judge)恒不加载 → est_prev 恒为 1 →
+    # ceiling=max(floor,1)+12 锁死在 13,第 13 章后进度永远推不动(用户长期反馈的「进度卡住」)。
+    if est_on:
         try:
             est_ctx = _load_estimate_context(save_id)
         except Exception as exc:

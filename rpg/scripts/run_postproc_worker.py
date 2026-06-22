@@ -183,14 +183,18 @@ async def _process_one(conn: psycopg.Connection, row: dict[str, Any]) -> None:
 def _reap_stuck_running(conn: psycopg.Connection) -> None:
     """回收僵死任务:被置 running 后 worker 崩溃/被 kill,该行永卡 running,
     而消费查询只捞 pending/failed → 永不重投、静默丢失(用户反馈"丢事件"的后处理侧)。
-    把 running 超过 5 分钟的行视为僵死,降级回 pending(attempts 已自增,仍受 MAX_ATTEMPTS 收口)。"""
+    把 running 超过 5 分钟的行视为僵死:attempts >= MAX_ATTEMPTS 直接标 failed,
+    否则降级回 pending 重投(防止 attempts 已饱和时永久僵尸循环)。"""
     try:
         n = conn.execute(
-            "UPDATE chat_postproc_tasks SET status='pending' "
-            "WHERE status='running' AND started_at < now() - interval '5 minutes'"
+            "UPDATE chat_postproc_tasks "
+            "SET status = CASE WHEN attempts >= %s THEN 'failed' ELSE 'pending' END, "
+            "    error_message = CASE WHEN attempts >= %s THEN 'reaped after max attempts' ELSE error_message END "
+            "WHERE status='running' AND started_at < now() - interval '5 minutes'",
+            (MAX_ATTEMPTS, MAX_ATTEMPTS),
         ).rowcount
         if n:
-            log.warning("[postproc] reaped %d stuck-running task(s) back to pending", n)
+            log.warning("[postproc] reaped %d stuck-running task(s) (failed or back to pending)", n)
     except Exception:
         log.exception("[postproc] reap stuck-running failed")
 

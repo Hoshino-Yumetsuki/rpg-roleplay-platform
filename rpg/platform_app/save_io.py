@@ -384,6 +384,9 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
 
         # 4. task 69: 导入 9 张 per-save 状态表(v2 才有)
         state_imported: dict[str, int] = {}
+        # identity_cards 导入时分配新 id(全局序列);save_character_identities.identity_id
+        # 指向旧 id → 必须按 old→new 重映射,否则 FK 永远指向孤儿或其他存档的行。
+        old_identity_to_new: dict[int, int] = {}
         if pv >= 2:
             state_tables = payload.get("state_tables") or {}
             for table, allow_missing in _STATE_TABLES:
@@ -395,6 +398,8 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 for raw_row in rows:
                     if not isinstance(raw_row, dict):
                         continue
+                    # 保留旧 id(供 identity_cards→save_character_identities 重映射)再剥离
+                    old_row_id = raw_row.get("id")
                     row = _strip_id_and_save_id(raw_row)
                     if not row:
                         continue
@@ -421,13 +426,34 @@ def import_save(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                             break
                     if _orphan:
                         continue
+                    # save_character_identities.identity_id → 重映射为本次导入分配的新 id。
+                    # NOT NULL FK;映射不到 → 跳过该行(别插孤儿绑定)。
+                    if table == "save_character_identities" and "identity_id" in row:
+                        try:
+                            _old_iid = int(row["identity_id"])
+                        except (TypeError, ValueError):
+                            _old_iid = None
+                        _new_iid = old_identity_to_new.get(_old_iid) if _old_iid is not None else None
+                        if _new_iid is None:
+                            continue  # identity_card 行未导入成功,跳过此绑定
+                        row["identity_id"] = _new_iid
                     try:
                         sql, vals = _build_insert(table, row, new_save_id, allowed_cols, jsonb_cols)
                         # 存档点:单行插入失败只回滚到此,不污染外层事务。否则(psycopg)失败语句会把整个
                         # 事务标记 aborted → 后续任何语句(下一张表的 _table_columns)都 InFailedSqlTransaction
                         # → 500 → with connect() 退出回滚 → 整个 save 丢失(用户报的「导入失败/只有剧本没存档」)。
                         with db.transaction():
-                            db.execute(sql, vals)
+                            if table == "identity_cards" and old_row_id is not None:
+                                # 需要捕获新分配的 id 以便重映射。_build_insert 生成 on conflict do nothing,
+                                # 追加 RETURNING id;on conflict 时返回空集 → 映射缺失 → 下游绑定行自动跳过。
+                                ret = db.execute(sql.rstrip() + " returning id", vals).fetchone()
+                                if ret is not None:
+                                    try:
+                                        old_identity_to_new[int(old_row_id)] = int(ret["id"])
+                                    except (TypeError, ValueError, KeyError):
+                                        pass
+                            else:
+                                db.execute(sql, vals)
                         count += 1
                     except Exception as exc:
                         # 单行失败不阻断整体导入(schema 漂移容错);savepoint 已回滚,外层事务仍可用。

@@ -1649,17 +1649,23 @@ async def api_patch_canon(request: Request, script_id: int, user=Depends(require
             if not frm or not into:
                 return json_response({"ok": False, "error": "缺 from_key/into_key"}, status_code=400)
             src = db.execute("select name, aliases from kb_canon_entities where script_id=%s and logical_key=%s", (script_id, frm)).fetchone()
-            if src:
-                from psycopg.types.json import Jsonb
-                merged_aliases = list({*(src.get("aliases") or []), src["name"]})
-                db.execute(
-                    "update kb_canon_entities set aliases = (select to_jsonb(array(select distinct e from unnest("
-                    "  array(select jsonb_array_elements_text(coalesce(aliases,'[]'::jsonb))) || %s::text[]) e))) "
-                    "where script_id=%s and logical_key=%s",
-                    (merged_aliases, script_id, into),
-                )
-                db.execute("delete from kb_canon_entities where script_id=%s and logical_key=%s", (script_id, frm))
-            return json_response({"ok": True, "merged": bool(src)})
+            if not src:
+                return json_response({"ok": False, "error": f"from_key 不存在: {frm}"}, status_code=404)
+            dst = db.execute("select 1 from kb_canon_entities where script_id=%s and logical_key=%s", (script_id, into)).fetchone()
+            if not dst:
+                return json_response({"ok": False, "error": f"into_key 不存在: {into}"}, status_code=400)
+            from psycopg.types.json import Jsonb
+            merged_aliases = list({*(src.get("aliases") or []), src["name"]})
+            updated = db.execute(
+                "update kb_canon_entities set aliases = (select to_jsonb(array(select distinct e from unnest("
+                "  array(select jsonb_array_elements_text(coalesce(aliases,'[]'::jsonb))) || %s::text[]) e))) "
+                "where script_id=%s and logical_key=%s",
+                (merged_aliases, script_id, into),
+            ).rowcount
+            if updated == 0:
+                return json_response({"ok": False, "error": "into_key 更新失败,未执行 DELETE"}, status_code=500)
+            db.execute("delete from kb_canon_entities where script_id=%s and logical_key=%s", (script_id, frm))
+            return json_response({"ok": True, "merged": True})
         if op == "delete_entity":
             lk = (body.get("logical_key") or "").strip()
             n = db.execute("delete from kb_canon_entities where script_id=%s and logical_key=%s", (script_id, lk)).rowcount

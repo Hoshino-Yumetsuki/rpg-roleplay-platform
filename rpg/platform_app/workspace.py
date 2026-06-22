@@ -1192,9 +1192,32 @@ def saves_page(user_id: int, limit: int | str | None = None, cursor: str | None 
     with connect() as db:
         rows = db.execute(
             f"""
-            select {_SAVE_LIST_COLUMNS} from game_saves
-            where user_id = %s and (%s::bigint is null or id < %s)
-            order by id desc
+            select {_SAVE_LIST_COLUMNS},
+                   s.title as script_title,
+                   (
+                     select sum(
+                       case
+                         when n.kind = 'gm' and exists (
+                           select 1 from branch_commits p
+                           where p.id = n.parent_id
+                             and p.kind = 'player'
+                             and p.turn_index = n.turn_index
+                         ) then 0
+                         else 1
+                       end
+                     )::int
+                     from branch_commits n
+                     where n.save_id = game_saves.id
+                   ) as branch_count,
+                   (game_saves.id = (
+                     select ur.save_id from user_runtime ur
+                     where ur.user_id = game_saves.user_id
+                     limit 1
+                   )) as current
+            from game_saves
+            left join scripts s on s.id = game_saves.script_id
+            where game_saves.user_id = %s and (%s::bigint is null or game_saves.id < %s)
+            order by game_saves.id desc
             limit %s
             """,
             (user_id, before_id, before_id, page_limit + 1),

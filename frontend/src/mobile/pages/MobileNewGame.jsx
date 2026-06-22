@@ -1094,10 +1094,12 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
         spoiler_guard: spoiler,
       };
 
-      const created = await window.__createAndEnterSave(payload);
-      // 新建后写入向导收集的 4 项设置(foreknowledge_mode/npc_awareness/steering_strength/spoiler_guard)
-      // __createAndEnterSave 的 payload 不透传这些字段,需在 create 返回 save id 后单独 PATCH。
-      const newSaveId = created && (created.id || created.save?.id);
+      // window.__createAndEnterSave 仅在桌面 PlatformShellCS 注册;移动外壳(MobileRoot)下它 undefined,
+      // 调用即 TypeError → 移动端新游戏永远失败。改为直接 saves.create + 写设置 + nav.openGame(=launchSave 激活并跳游戏台)。
+      const created = await window.api.saves.create(payload);
+      if (created && created.ok === false) throw new Error(created.error || created.detail || t('mobile.new_game.create_failed'));
+      const save = (created && (created.save || created)) || null;
+      const newSaveId = save && save.id;
       if (newSaveId) {
         try {
           await window.api.saves.updateSettings(newSaveId, {
@@ -1108,11 +1110,10 @@ export function MobileNewGame({ nav, scriptId: propScriptId, onDone }) {
           }, true);
         } catch (_) { /* 设置写失败不阻断进入游戏 */ }
       }
-
-      // 成功后清草稿(如果 __createAndEnterSave 跳页了就不会执行到这里)
       lsRemove(DRAFT_KEY);
       onDone?.();
-      nav.pop();
+      if (newSaveId && nav.openGame) { nav.openGame(save); }   // 激活存档 + 跳转游戏台
+      else { nav.pop(); }
     } catch (e) {
       const msg = e?.message || (e?.payload && (e.payload.error || e.payload.detail)) || t('mobile.new_game.create_failed');
       setSubmitErr(msg);

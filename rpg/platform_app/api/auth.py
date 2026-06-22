@@ -293,10 +293,10 @@ async def api_magic_consume(request: Request):
         return json_response({"ok": False, "error": "缺 magic_token 或 email"}, status_code=400)
     ip = _client_ip(request)
     try:
-        # Step 1: 校验 magic_token + email 匹配 + 30 天有效期
+        # Step 1: 校验 magic_token + email 匹配 + 30 天有效期（快速失败预筛，真正消费在 Step 2）
         await asyncio.to_thread(_auth.consume_magic_token, token, email)
-        # Step 2: 直接登录(查/建 user + issue session) — 跳过 OTP
-        result = await asyncio.to_thread(_auth.login_via_magic_token, email, ip=ip)
+        # Step 2: 直接登录(查/建 user + 原子消费 allowlist + issue session) — 跳过 OTP
+        result = await asyncio.to_thread(_auth.login_via_magic_token, email, ip=ip, magic_token=token)
         # Step 3: 保证 workspace 已建好
         await asyncio.to_thread(workspace.ensure_default, result["user_id"])
         token = result.pop("session_token", "")  # SEC(M-6): 仅经 HTTPOnly cookie 下发,不写响应体
