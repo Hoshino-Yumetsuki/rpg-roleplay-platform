@@ -47,9 +47,13 @@ def continue_from(user_id: int, node_id: int) -> dict[str, Any]:
         ref_row = ref
         _set_save_active(db, save_id, active_commit_id, active_ref_id)
         _write_checkout(db, user_id, save_id, active_ref_id, active_commit_id)
-        # 在 advisory 锁仍持有(with 未退出)时写 runtime,串行化 user_runtime 与 game_saves 指针;
-        # 否则锁释放后再写,两 tab 并发可让 user_runtime 指向旧节点、与 game_saves 不一致(下回合从错分支起)。
-        runtime_info = _runtime_module.activate_state_snapshot(user_id, save_id, active_commit_id, state_snapshot, state_path, ref_id=active_ref_id)
+    # [hotfix] runtime 写必须在 with 块外(advisory 锁已释放 + 本 conn 已归还池)。
+    # 原来锁内调 activate_state_snapshot → _db_write_runtime 会【另开一条 conn】去
+    # `update game_saves set last_played_at where id=save_id`,而本事务未提交的 _set_save_active
+    # 已持有该 game_saves 行锁 → 新 conn 等行锁、本 conn 在 Python 里等新 conn 返回 → 互等死锁。
+    # 因本 conn 是 idle-in-transaction(非 DB 阻塞),Postgres 检测不到、又无 lock_timeout → 永久挂,
+    # 开档/切档每次必卡 "signal timed out"。锁外写不影响指针正确性(指针在锁内已落定)。
+    runtime_info = _runtime_module.activate_state_snapshot(user_id, save_id, active_commit_id, state_snapshot, state_path, ref_id=active_ref_id)
     result = tree(user_id, save_id)
     result["ok"] = True
     result["runtime"] = runtime_info
@@ -76,8 +80,8 @@ def activate_node(user_id: int, node_id: int) -> dict[str, Any]:
         state_path = node["state_path"]
         state_snapshot = commit_state(node)
         active_ref_id = ref["id"]
-        # 锁内写 runtime(串行化 user_runtime 与 game_saves 指针,见 continue_from 注释)
-        runtime_info = _runtime_module.activate_state_snapshot(user_id, save_id, node_id, state_snapshot, state_path, ref_id=active_ref_id)
+    # [hotfix] runtime 写移出 with 块,避免锁内嵌套连接 update 同一 game_saves 行的自死锁(见 continue_from)。
+    runtime_info = _runtime_module.activate_state_snapshot(user_id, save_id, node_id, state_snapshot, state_path, ref_id=active_ref_id)
     result = tree(user_id, save_id)
     result["ok"] = True
     result["runtime"] = runtime_info
@@ -127,10 +131,10 @@ def activate_save(user_id: int, save_id: int) -> dict[str, Any]:
         state_path = commit_row.get("state_path") or save.get("state_path") or ""
         active_ref_id = ref["id"]
         active_commit_id = commit_row["id"]
-        # 锁内写 runtime(串行化 user_runtime 与 game_saves 指针,见 continue_from 注释)
-        runtime_info = _runtime_module.activate_state_snapshot(
-            user_id, save_id, active_commit_id, state_snapshot, state_path, ref_id=active_ref_id,
-        )
+    # [hotfix] runtime 写移出 with 块,避免锁内嵌套连接 update 同一 game_saves 行的自死锁(见 continue_from)。
+    runtime_info = _runtime_module.activate_state_snapshot(
+        user_id, save_id, active_commit_id, state_snapshot, state_path, ref_id=active_ref_id,
+    )
     return {
         "ok": True,
         "active_save_id": save_id,
