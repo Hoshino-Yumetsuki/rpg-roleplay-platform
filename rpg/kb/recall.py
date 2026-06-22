@@ -213,7 +213,7 @@ def recall(save_id: int, query: str, *, mode: str = "none", token_budget: int = 
         if _script_id:
             try:
                 from platform_app.knowledge._search import _search_chunks
-                chunk_rows = _search_chunks(_db, int(_script_id), tokens, None, ceil_chap, 4) or []
+                chunk_rows = _search_chunks(_db, int(_script_id), tokens, None, ceil_chap, 4, user_id=_owner_id) or []
             except Exception as exc:
                 log.debug("[recall] chunks 跳过: %s", exc)
 
