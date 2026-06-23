@@ -363,10 +363,12 @@ function McpSection({ toast }) {
 function SkillsSection({ toast }) {
   const { t } = useTranslation();
   const [items, setItems] = useState([]);
+  const [personaItems, setPersonaItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [importOpen, setImportOpen] = useState(false);
   const [file, setFile] = useState(null);
+  const [repoUrl, setRepoUrl] = useState('');
   const [importBusy, setImportBusy] = useState(false);
   const fileRef = useRef(null);
 
@@ -387,24 +389,55 @@ function SkillsSection({ toast }) {
     } finally {
       setLoading(false);
     }
+    // 用户人格 skill(独立列表,失败不影响可执行 skill 展示)
+    try {
+      const pr = await window.api.personaSkills.list();
+      setPersonaItems((pr && pr.items) || []);
+    } catch { /* noop */ }
   }, [t]);
 
   useEffect(() => { load(); }, [load]);
 
+  // 导入路由:GitHub 链接 / .md → 人格 skill(蒸馏成角色卡);.zip/.tgz → 可执行 skill 包(原路径)。
   const handleImport = async () => {
-    if (!file) { toast(t('mobile.caps.skills.select_file_required'), 'warn'); return; }
+    const url = repoUrl.trim();
+    const isPersonaFile = file && /\.md$/i.test(file.name || '');
+    if (!url && !file) { toast('请填 GitHub 链接或选择文件', 'warn'); return; }
     setImportBusy(true);
     try {
-      await window.api.skills.importPack(file);
-      toast(t('mobile.caps.skills.toast.imported'), 'ok');
-      setImportOpen(false);
-      setFile(null);
+      if (url || isPersonaFile) {
+        let body;
+        if (url) {
+          body = { source: 'github', repo_url: url };
+        } else {
+          const content = await file.text();
+          body = { source: 'upload', files: [{ name: file.name, content }] };
+        }
+        const r = await window.api.personaSkills.import(body);
+        if (r && r.ok) {
+          const nm = (r.card && r.card.name) || '角色卡';
+          const img = r.image_status === 'queued' ? '(人设图生成中)' : '';
+          toast(`已生成角色卡「${nm}」${img}`, 'ok');
+        } else {
+          throw new Error((r && r.error) || '导入失败');
+        }
+      } else {
+        // .zip/.tar.gz 可执行 skill 包(admin)
+        await window.api.skills.importPack(file);
+        toast(t('mobile.caps.skills.toast.imported'), 'ok');
+      }
+      setImportOpen(false); setFile(null); setRepoUrl('');
       load();
     } catch (e) {
       toast(t('mobile.caps.skills.toast.import_failed', { msg: e?.message || '' }), 'danger');
     } finally {
       setImportBusy(false);
     }
+  };
+
+  const removePersona = async (id) => {
+    try { await window.api.personaSkills.remove(id); setPersonaItems(p => p.filter(x => x.id !== id)); }
+    catch (e) { toast(e?.message || '删除失败', 'danger'); }
   };
 
   return (
@@ -449,15 +482,48 @@ function SkillsSection({ toast }) {
             ))}
           </div>
         )}
+
+        {personaItems.length > 0 && (
+          <div style={{ marginTop: 18 }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: 14, color: 'var(--text)' }}>我的人格 skill</h3>
+            <div style={{ display: 'grid', gap: 9 }}>
+              {personaItems.map((it) => (
+                <div key={it.id} style={{ border: '1px solid var(--line-soft)', borderRadius: 14, background: 'var(--panel)', padding: '11px 12px', display: 'flex', alignItems: 'center', gap: 11 }}>
+                  {it.avatar_path
+                    ? <img src={it.avatar_path} alt="" style={{ width: 40, height: 40, borderRadius: 9, objectFit: 'cover', flexShrink: 0 }} />
+                    : <div className="pl-row-ic" style={{ width: 40, height: 40, borderRadius: 9, flexShrink: 0 }}><Icon name="spark" size={16} /></div>}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</div>
+                    <div className="mono" style={{ fontSize: 10.5, color: 'var(--muted-2)' }}>{it.source === 'github' ? 'GitHub' : '上传'} · 已生成角色卡</div>
+                  </div>
+                  <button className="pl-icon-btn" title="删除" onClick={() => removePersona(it.id)} style={{ flexShrink: 0 }}>
+                    <Icon name="trash" size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      <Sheet open={importOpen} title={t('mobile.caps.skills.sheet.title')} hint="POST /api/v1/skills/import" onClose={() => setImportOpen(false)} zIndex={70} maxHeight="88%">
+      <Sheet open={importOpen} title="导入 skill" hint="人格 skill 蒸馏成角色卡" onClose={() => setImportOpen(false)} zIndex={70} maxHeight="88%">
         <div style={{ padding: '4px 4px 8px' }}>
-          <MField label={t('mobile.caps.skills.form.file_label')} desc={t('mobile.caps.skills.form.file_desc')}>
+          <MField label="GitHub 链接" desc="公开仓库地址,如 https://github.com/owner/repo —— 拉取其中的 skill.md/角色档案蒸馏成角色卡 + 人设图">
+            <input
+              type="text"
+              inputMode="url"
+              placeholder="https://github.com/owner/repo"
+              value={repoUrl}
+              onChange={e => setRepoUrl(e.target.value)}
+              style={{ marginTop: 4, width: '100%', height: 44, borderRadius: 10, border: '1px solid var(--line-soft)', background: 'var(--panel-2)', color: 'var(--text)', padding: '0 12px', fontSize: 14 }}
+            />
+          </MField>
+          <div style={{ textAlign: 'center', color: 'var(--muted-2)', fontSize: 12, margin: '4px 0' }}>或</div>
+          <MField label="本地文件" desc=".md 角色档案(人格 skill)→ 角色卡;.zip/.tar.gz → 可执行 skill 包(管理员)">
             <input
               ref={fileRef}
               type="file"
-              accept=".zip,.tar.gz,.tgz"
+              accept=".md,.zip,.tar.gz,.tgz"
               style={{ display: 'none' }}
               onChange={e => setFile(e.target.files?.[0] || null)}
             />
@@ -472,8 +538,8 @@ function SkillsSection({ toast }) {
           </MField>
           <div className="sheet-actions" style={{ marginTop: 8 }}>
             <button className="sheet-btn" onClick={() => setImportOpen(false)}>{t('common.cancel')}</button>
-            <button className="sheet-btn primary" onClick={handleImport} disabled={importBusy || !file}>
-              {importBusy ? t('mobile.caps.skills.form.importing') : t('mobile.caps.skills.form.import_deploy')}
+            <button className="sheet-btn primary" onClick={handleImport} disabled={importBusy || (!file && !repoUrl.trim())}>
+              {importBusy ? t('mobile.caps.skills.form.importing') : '导入'}
             </button>
           </div>
         </div>

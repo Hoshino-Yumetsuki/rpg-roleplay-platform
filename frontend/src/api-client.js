@@ -911,6 +911,13 @@
         return _send(`${API_PREFIX}/skills/import`, { method: "POST", body: fd });
       },
     },
+    // 用户人格 skill(skill.md 上传 / GitHub 拉取 → 蒸馏角色卡 + 人设图;纯数据,每用户隔离)
+    personaSkills: {
+      list: () => GET(`${API_PREFIX}/me/persona-skills`),
+      // body: {source:'upload',files:[{name,content}]} 或 {source:'github',repo_url}
+      import: (body) => POST(`${API_PREFIX}/me/persona-skills/import`, body || {}),
+      remove: (id) => POST(`${API_PREFIX}/me/persona-skills/` + id + "/delete", {}),
+    },
     // task 50：plugins 列表 (BE 已有，FE 之前没 wrapper)
     plugins: {
       list: () => GET(`${API_PREFIX}/plugins`),

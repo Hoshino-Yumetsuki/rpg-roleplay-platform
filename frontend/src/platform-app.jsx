@@ -3581,9 +3581,8 @@ function CapPage({ kind }) {
             { key: "env", label: "环境变量 / Headers", type: "textarea",
               placeholder: "每行一个：KEY=VALUE", rows: 3 },
           ] : kind === "skills" ? [
-            { key: "file", label: "Skill 包", type: "file", required: true, hint: ".zip / .tar.gz" },
-            { key: "name", label: "显示名", placeholder: "默认使用包内 manifest 名" },
-            { key: "version", label: "版本", placeholder: "默认 v0.1" },
+            { key: "repo_url", label: "GitHub 链接", mono: true, placeholder: "https://github.com/owner/repo（人格 skill → 角色卡 + 人设图）" },
+            { key: "file", label: "本地文件", type: "file", hint: ".md → 角色卡 / .zip · .tar.gz → 可执行 Skill 包(管理员)" },
           ] : [
             { key: "id", label: "插件 ID", required: true, mono: true, placeholder: "例：timeline-viz" },
             { key: "name", label: "显示名", required: true, placeholder: "例：时间线可视化" },
@@ -3611,9 +3610,25 @@ function CapPage({ kind }) {
               window.__apiToast?.("MCP 服务器已添加 · 正在校验", { kind: "ok", duration: 2000 });
               try { await window.api.mcp.validate({ name: vals.name }); } catch (_) {}
             } else if (kind === "skills") {
-              if (!vals.file) throw new Error("请选择 Skill 包文件");
-              await window.api.skills.importPack(vals.file);
-              window.__apiToast?.("Skill 已导入", { kind: "ok", duration: 1800 });
+              const repo = String(vals.repo_url || "").trim();
+              const f = vals.file;
+              const isMd = f && /\.md$/i.test(f.name || "");
+              if (!repo && !f) throw new Error("请填 GitHub 链接或选择文件");
+              if (repo || isMd) {
+                // 人格 skill → 蒸馏成角色卡 + 人设图(纯数据,每用户隔离)
+                const body = repo
+                  ? { source: "github", repo_url: repo }
+                  : { source: "upload", files: [{ name: f.name, content: await f.text() }] };
+                const r = await window.api.personaSkills.import(body);
+                if (!r || !r.ok) throw new Error((r && r.error) || "导入失败");
+                const nm = (r.card && r.card.name) || "角色卡";
+                const img = r.image_status === "queued" ? "(人设图生成中)" : "";
+                window.__apiToast?.(`已生成角色卡「${nm}」${img}`, { kind: "ok", duration: 2600 });
+              } else {
+                // .zip/.tar.gz 可执行 Skill 包(管理员)
+                await window.api.skills.importPack(f);
+                window.__apiToast?.("Skill 已导入", { kind: "ok", duration: 1800 });
+              }
             } else {
               // plugins 没有专用 POST，只能在前端打 toast 解释
               window.__apiToast?.("插件由平台预置 · 暂不支持自定义新增", { kind: "warn", duration: 2400 });
