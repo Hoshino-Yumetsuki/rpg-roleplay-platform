@@ -472,6 +472,8 @@
       // 撤销本章最近一次 AI 改动(恢复改前全文);undoable 查是否有可撤销改动。
       undoChapter: (sid, idx) => POST(`${API_PREFIX}/scripts/${sid}/chapters/${idx}/undo`, {}),
       chapterUndoable: (sid, idx) => GET(`${API_PREFIX}/scripts/${sid}/chapters/${idx}/undoable`),
+      // 通用撤销:世界书条目 / NPC 角色卡 恢复到上次 AI 改动之前。
+      undoEdit: (sid, table, entityId) => POST(`${API_PREFIX}/scripts/${sid}/undo-edit`, { table, entity_id: entityId }),
       mergeChapter: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/chapters/merge`, body),
       // 批量删除章节(一次删整批再重排,避免逐章删 index 漂移)。indexes:number[]。
       deleteChapters: (sid, indexes) => POST(`${API_PREFIX}/scripts/${sid}/chapters/delete`, { indexes }),

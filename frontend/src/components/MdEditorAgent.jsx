@@ -29,6 +29,16 @@ const TOOL_LABELS = {
 };
 function toolLabel(name) { return TOOL_LABELS[name] || name; }
 
+// 某工具调用是否可撤销(done 且未撤过 + 是「编辑已有」类写入):章节 / 世界书条目 / NPC 卡。
+function _undoInfo(tc) {
+  if (!tc || tc.status !== 'done' || tc.undone) return null;
+  const a = tc.args || {};
+  if (tc.tool === 'update_script_chapter' && a.chapter_index != null) return { kind: 'chapter', ci: a.chapter_index };
+  if (tc.tool === 'upsert_worldbook_entry' && a.entry_id != null) return { kind: 'edit', table: 'worldbook_entries', id: a.entry_id };
+  if (tc.tool === 'update_npc_card' && a.card_id != null) return { kind: 'edit', table: 'character_cards', id: a.card_id };
+  return null;
+}
+
 // 用户铁律:前端禁止出现 emoji。SSE 流 / 历史里模型吐的 emoji 一律【确定性】剥除,不靠模型自觉。
 // 剥除常见 emoji / 符号区(图形符号、Dingbats ✓✗⚠★、杂项符号、变体选择子、ZWJ);保留箭头 → 等文本标点。
 const _EMOJI_RE = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}]/gu;
@@ -542,16 +552,22 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
   tryRefreshRef.current = tryRefresh;
 
   // 一键撤销 agent 对某章的改动:调后端恢复改前全文 → 刷新编辑器标签 → 标记该工具已撤销。
-  const undoChapterEdit = useCallback(async (msgIdx, toolIdx, ci) => {
-    if (!scriptId || ci == null) return;
+  // 通用撤销:章节正文 / 世界书条目 / NPC 角色卡。info 由 _undoInfo(tc) 给出。
+  const doUndo = useCallback(async (msgIdx, toolIdx, info) => {
+    if (!scriptId || !info) return;
     try {
-      const r = await window.api?.scripts?.undoChapter?.(scriptId, ci);
+      const r = info.kind === 'chapter'
+        ? await window.api?.scripts?.undoChapter?.(scriptId, info.ci)
+        : await window.api?.scripts?.undoEdit?.(scriptId, info.table, info.id);
       if (r && r.ok) {
-        window.__apiToast?.(t('components.md_editor_agent.undo_ok', { defaultValue: '已撤销,正文已恢复改前内容' }), { kind: 'ok' });
+        window.__apiToast?.(t('components.md_editor_agent.undo_ok', { defaultValue: '已撤销,已恢复改前内容' }), { kind: 'ok' });
         setMessages((m) => m.map((msg, i) => i === msgIdx
           ? { ...msg, tools: (msg.tools || []).map((tc, j) => j === toolIdx ? { ...tc, undone: true } : tc) }
           : msg));
-        try { onWriteComplete?.('chapter', ci); } catch (_) {}
+        try {
+          if (info.kind === 'chapter') onWriteComplete?.('chapter', info.ci);
+          else onWriteComplete?.(info.table === 'character_cards' ? 'card' : 'worldbook', info.id);
+        } catch (_) {}
       } else {
         window.__apiToast?.((r && r.error) || t('components.md_editor_agent.undo_fail', { defaultValue: '撤销失败' }), { kind: 'error' });
       }
@@ -742,8 +758,8 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
                   ? <MdeAgentPanel key={j} tc={tc} t={t} />
                   : <MdeToolBlock
                       key={j} tc={tc} t={t} busy={busy}
-                      canUndo={tc.tool === 'update_script_chapter' && tc.status === 'done' && tc.args?.chapter_index != null}
-                      onUndo={() => undoChapterEdit(i, j, tc.args?.chapter_index)}
+                      canUndo={!!_undoInfo(tc)}
+                      onUndo={() => doUndo(i, j, _undoInfo(tc))}
                     />
               ))}
               {m.text ? (

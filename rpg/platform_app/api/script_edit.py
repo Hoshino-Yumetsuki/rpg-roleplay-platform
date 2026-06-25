@@ -434,6 +434,78 @@ async def api_undo_chapter_edit(script_id: int, chapter_index: int, user=Depends
                           "reverted_commit_id": commit_id})
 
 
+# 通用撤销:把世界书条目 / NPC 角色卡 恢复到最近一次 AI 改动之前(与章节撤销同款安全网,确定性、
+# 作者主动触发)。依赖各写工具落 commit 时存了 payload.before + undoable。
+_UNDO_SPEC = {
+    "worldbook_entries": ("worldbook_edit", "entry_id"),
+    "character_cards": ("card_edit", "card_id"),
+}
+
+
+@router.post("/api/scripts/{script_id}/undo-edit")
+async def api_undo_edit(request: Request, script_id: int, user=Depends(require_user)):
+    """撤销某世界书条目 / 角色卡最近一次可撤销的 AI 改动。body: {table, entity_id}。"""
+    try:
+        body = await request.json()
+    except Exception:
+        return json_response({"ok": False, "error": "body 必须是合法 JSON"}, status_code=400)
+    table = str(body.get("table") or "")
+    if table not in _UNDO_SPEC:
+        return json_response({"ok": False, "error": "不支持的 table"}, status_code=400)
+    try:
+        entity_id = int(body.get("entity_id"))
+    except (TypeError, ValueError):
+        return json_response({"ok": False, "error": "entity_id 必填且为整数"}, status_code=400)
+    kind, id_key = _UNDO_SPEC[table]
+    uid = int(user["id"])
+    with connect() as db:
+        if not script_owned(db, script_id, uid):
+            return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+        row = db.execute(
+            """SELECT id, payload FROM script_commits
+               WHERE script_id=%s AND kind=%s
+                 AND coalesce((payload->>'undoable')::boolean, false) IS TRUE
+                 AND coalesce((payload->>'undone')::boolean, false) IS FALSE
+                 AND coalesce(payload->'ids'->>%s,'') = %s
+               ORDER BY id DESC LIMIT 1""",
+            (script_id, kind, id_key, str(entity_id)),
+        ).fetchone()
+        if not row:
+            return json_response({"ok": False, "error": "没有可撤销的 AI 改动"}, status_code=404)
+        before = ((row["payload"] or {}).get("before") or {})
+        commit_id = int(row["id"])
+        if not before:
+            return json_response({"ok": False, "error": "该改动未存改前快照,无法撤销"}, status_code=409)
+
+        if table == "worldbook_entries":
+            sets, params = [], []
+            for c in ("title", "content", "priority", "token_budget", "sticky_turns",
+                      "cooldown_turns", "probability", "enabled", "insertion_position"):
+                if c in before:
+                    sets.append(f"{c}=%s"); params.append(before[c])
+            for c in ("keys", "regex_keys", "character_filter", "scene_filter"):
+                if c in before:
+                    sets.append(f"{c}=%s"); params.append(Jsonb(before[c] or []))
+            if sets:
+                sets.append("updated_at=now()")
+                params.extend([entity_id, script_id])
+                db.execute(f"update worldbook_entries set {', '.join(sets)} "
+                           f"where id=%s and script_id=%s", tuple(params))
+        elif table == "character_cards":
+            from platform_app.knowledge.character_cards import upsert_character_card
+            upsert_character_card(uid, script_id, {**before, "id": entity_id})
+
+        db.execute("UPDATE script_commits SET payload = jsonb_set(payload, '{undone}', 'true') WHERE id=%s",
+                   (commit_id,))
+        _write_commit(db, script_id=script_id, user_id=uid, kind=f"{kind}_revert",
+                      message=f"撤销 {table} #{entity_id} 的改动",
+                      payload={"table": table, "op": "revert", "ids": {id_key: entity_id},
+                               "reverted_commit_id": commit_id})
+        db.commit()
+    return json_response({"ok": True, "table": table, "entity_id": entity_id,
+                          "reverted_commit_id": commit_id})
+
+
 # ─── pin / unpin ──────────────────────────────────────────────────────────────
 
 @router.post("/api/scripts/{script_id}/pin")

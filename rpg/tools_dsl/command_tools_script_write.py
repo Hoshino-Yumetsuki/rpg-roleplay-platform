@@ -521,11 +521,18 @@ def _wb_upsert_one(db: Any, sid: int, user_id: int, args: dict) -> dict:
         except (TypeError, ValueError):
             return {"ok": False, "id": None, "action": None, "title": "", "error": "entry_id 必须是整数"}
         before = db.execute(
-            "select id, title from worldbook_entries where id = %s and script_id = %s",
+            "select id, title, content, priority, token_budget, sticky_turns, cooldown_turns, "
+            "probability::float8 as probability, enabled, keys, regex_keys, character_filter, "
+            "scene_filter, insertion_position from worldbook_entries where id = %s and script_id = %s",
             (eid, sid),
         ).fetchone()
         if not before:
             return {"ok": False, "id": eid, "action": None, "title": "", "error": f"条目 #{eid} 不存在或不属于剧本 #{sid}"}
+        # 撤销快照:存改前全字段,供作者一键撤回 AI 对世界书的改动(与章节撤销同款安全网)。
+        _wb_before = {k: before[k] for k in (
+            "title", "content", "priority", "token_budget", "sticky_turns", "cooldown_turns",
+            "probability", "enabled", "keys", "regex_keys", "character_filter", "scene_filter",
+            "insertion_position")}
         sets, params = [], []
         for col in ("title", "content", "insertion_position"):
             if col in args and args[col] is not None:
@@ -556,7 +563,8 @@ def _wb_upsert_one(db: Any, sid: int, user_id: int, args: dict) -> dict:
         try:
             _write_commit(db, script_id=sid, user_id=user_id, kind="worldbook_edit",
                           message=f"编辑 worldbook #{eid}",
-                          payload={"table": "worldbook_entries", "op": "edit", "ids": {"entry_id": eid}})
+                          payload={"table": "worldbook_entries", "op": "edit", "ids": {"entry_id": eid},
+                                   "before": _wb_before, "undoable": True})
         except Exception:
             pass
         return {"ok": True, "id": eid, "action": "updated", "title": (args.get("title") or before["title"]), "error": None}
@@ -721,6 +729,13 @@ def _t_update_npc_card(user_id: int, script_id: int | None, args: dict, state: A
             if not existing:
                 return f"失败: 角色卡 #{cid} 不存在或不属于剧本 #{sid}"
         base = dict(existing)
+        # 撤销快照:存改前全字段(供作者一键撤回 AI 对角色卡的改动)。upsert 是全量覆盖式,
+        # 把这些原值喂回即可还原。
+        _card_before = {k: base.get(k) for k in (
+            "name", "full_name", "aliases", "identity", "appearance", "personality",
+            "speech_style", "current_status", "secrets", "background", "sample_dialogue",
+            "importance", "first_revealed_chapter", "enabled")}
+        _card_before["metadata"] = base.get("metadata") or {}
         # 只接受这些字段(不收 avatar_path —— 头像走专用端点)。
         editable = (
             "name", "full_name", "aliases", "identity", "appearance", "personality",
@@ -754,7 +769,8 @@ def _t_update_npc_card(user_id: int, script_id: int | None, args: dict, state: A
                         message=f"编辑 NPC 角色卡 #{cid}",
                         payload={"table": "character_cards", "op": "edit",
                                  "ids": {"card_id": cid},
-                                 "fields": [k for k in editable if args.get(k) is not None]},
+                                 "fields": [k for k in editable if args.get(k) is not None],
+                                 "before": _card_before, "undoable": True},
                     )
                     adb.commit()
         except Exception:
