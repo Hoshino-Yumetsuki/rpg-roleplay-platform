@@ -4054,6 +4054,16 @@
       "hint": "输入关键词,回车搜全书",
       "none": "0 命中",
       "count": "{{total}} 处命中 · {{n}} 章"
+    },
+    "history": {
+      "btn": "版本历史",
+      "title": "第{{n}}章 · AI 改动历史",
+      "none": "本章暂无 AI 改动历史",
+      "restore": "恢复到此前",
+      "restored": "已恢复到该版本之前",
+      "restore_fail": "恢复失败",
+      "revert": "回滚",
+      "undone": "已撤销"
     }
   },
   "tavern_page": {

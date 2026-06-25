@@ -1393,6 +1393,70 @@ async def api_checkout_commit(
     )
 
 
+@router.get("/api/scripts/{script_id}/chapters/{chapter_index}/history")
+async def api_chapter_history(script_id: int, chapter_index: int, user=Depends(require_user)):
+    """某章的 AI 改动历史(版本列表):每条 = commit_id + 时间 + 摘要 + 是否含改前快照(可恢复)。
+    仅 owner(云端多用户隔离)。配合 restore 实现「版本浏览 + 回滚」。"""
+    uid = int(user["id"])
+    with connect() as db:
+        if not script_owned(db, script_id, uid):
+            return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+        rows = db.execute(
+            """SELECT id, kind, message, created_at,
+                      coalesce((payload->>'undone')::boolean, false) AS undone,
+                      (payload->'before' IS NOT NULL) AS has_before
+               FROM script_commits
+               WHERE script_id=%s AND kind IN ('chapter_edit','chapter_revert','chapter_add')
+                 AND coalesce(payload->'ids'->>'chapter_index','') = %s
+               ORDER BY id DESC LIMIT 100""",
+            (script_id, str(chapter_index)),
+        ).fetchall()
+    return json_response({"ok": True, "chapter_index": int(chapter_index),
+                          "versions": [dict(r) for r in rows]})
+
+
+@router.post("/api/scripts/{script_id}/chapters/{chapter_index}/restore")
+async def api_chapter_restore(request: Request, script_id: int, chapter_index: int, user=Depends(require_user)):
+    """把某章恢复到指定 commit 的【改前快照】(版本回滚)。body: {commit_id}。仅 owner。
+    与撤销同款安全网,但可回到历史任意一次改动之前,不止最近一次。"""
+    uid = int(user["id"])
+    try:
+        body = await request.json()
+        commit_id = int(body.get("commit_id"))
+    except Exception:
+        return json_response({"ok": False, "error": "commit_id 必填且为整数"}, status_code=400)
+    with connect() as db:
+        if not script_owned(db, script_id, uid):
+            return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+        row = db.execute(
+            "SELECT payload FROM script_commits WHERE id=%s AND script_id=%s AND kind='chapter_edit'",
+            (commit_id, script_id),
+        ).fetchone()
+        if not row:
+            return json_response({"ok": False, "error": "找不到该版本"}, status_code=404)
+        before = ((row["payload"] or {}).get("before") or {})
+        if not before:
+            return json_response({"ok": False, "error": "该版本未存改前快照,无法恢复"}, status_code=409)
+    from platform_app.script_import import update_chapter
+    bc = before.get("content")
+    update_chapter(
+        uid, script_id, int(chapter_index),
+        title=(str(before["title"]) if before.get("title") is not None else None),
+        content=(str(bc) if bc is not None else None),
+        volume_title=(str(before["volume_title"]) if before.get("volume_title") is not None else None),
+    )
+    with connect() as db:
+        if not script_owned(db, script_id, uid):
+            return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+        _write_commit(db, script_id=script_id, user_id=uid, kind="chapter_revert",
+                      message=f"恢复章节 #{chapter_index} 到版本 #{commit_id} 之前",
+                      payload={"table": "script_chapters", "op": "revert",
+                               "ids": {"chapter_index": int(chapter_index)},
+                               "reverted_commit_id": commit_id})
+        db.commit()
+    return json_response({"ok": True, "chapter_index": int(chapter_index), "restored_from": commit_id})
+
+
 @router.get("/api/scripts/{script_id}/search")
 async def api_script_search(script_id: int, q: str = "", regex: bool = False,
                             chapter_min: int | None = None, chapter_max: int | None = None,

@@ -4054,6 +4054,16 @@
       "hint": "Type a keyword, Enter to search the whole manuscript",
       "none": "0 matches",
       "count": "{{total}} matches · {{n}} chapters"
+    },
+    "history": {
+      "btn": "History",
+      "title": "Ch.{{n}} · AI edit history",
+      "none": "No AI edits yet for this chapter",
+      "restore": "Restore to before",
+      "restored": "Restored to that version",
+      "restore_fail": "Restore failed",
+      "revert": "revert",
+      "undone": "undone"
     }
   },
   "tavern_page": {

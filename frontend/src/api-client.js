@@ -476,6 +476,9 @@
       undoEdit: (sid, table, entityId) => POST(`${API_PREFIX}/scripts/${sid}/undo-edit`, { table, entity_id: entityId }),
       // 全书检索(用户面板 Cmd/Ctrl+Shift+F):结构化命中(章号/标题/偏移/片段)。
       search: (sid, q, opts) => GET(`${API_PREFIX}/scripts/${sid}/search`, Object.assign({ q }, opts || {})),
+      // 章节版本历史 + 回滚到任意历史版本(改前快照)。
+      chapterHistory: (sid, ci) => GET(`${API_PREFIX}/scripts/${sid}/chapters/${ci}/history`),
+      chapterRestore: (sid, ci, commitId) => POST(`${API_PREFIX}/scripts/${sid}/chapters/${ci}/restore`, { commit_id: commitId }),
       mergeChapter: (sid, body) => POST(`${API_PREFIX}/scripts/${sid}/chapters/merge`, body),
       // 批量删除章节(一次删整批再重排,避免逐章删 index 漂移)。indexes:number[]。
       deleteChapters: (sid, indexes) => POST(`${API_PREFIX}/scripts/${sid}/chapters/delete`, { indexes }),
