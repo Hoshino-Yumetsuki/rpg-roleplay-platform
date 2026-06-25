@@ -109,7 +109,12 @@ def _resolve_audit_model(user_id: int, api_id: str, model: str) -> tuple[str, st
     return normalize_api_id(api_id) if api_id else "", model
 
 
-_AUDIT_CHUNK = 80  # 每批送审的卡数:80 张的 prompt+verdict 单次 LLM 调用 ≈ 30-60s,稳在 CF 524(~100s)之下
+# 每批送审的卡数。60 张:单次调用稳在 CF 524(~100s)之下;且给推理型模型(deepseek-v4-flash 等)
+# 留足 max_tokens —— 推理模型会先吃掉一大段 reasoning,token 不够时可见 content 直接为空(parse 失败、
+# 主角识别不出)。实测 80 卡 @1600tok → 空;@4000tok → 正常 JSON。故 chunk 调小 + max_tokens 抬高。
+_AUDIT_CHUNK = 60
+_AUDIT_MAX_TOKENS = 4000   # 推理模型留足输出预算(reasoning + verdict JSON)
+_AUDIT_TIMEOUT = 90        # 单批 client 超时,卡在 CF 524(~100s)之下 → 超时也是干净失败而非 524
 
 
 def _cid(v: Any) -> int | None:
@@ -170,12 +175,10 @@ def audit_character_cards(user_id: int, script_id: int, api_id: str = "", model:
 
     for idx, chunk in enumerate(chunks):
         n = len(chunk)
-        _timeout = min(90, max(45, n + 10))         # 80 卡 ≈ 90s 上限,稳在 CF 524 之下
-        _max_tokens = min(4000, max(1200, n * 20))
         try:
             text, _usage = call_agent_json(
                 api_id, model, _AUDIT_SYSTEM, _build_user_prompt(title, chunk), user_id,
-                max_tokens=_max_tokens, timeout_sec=_timeout, agent_kind="card_audit",
+                max_tokens=_AUDIT_MAX_TOKENS, timeout_sec=_AUDIT_TIMEOUT, agent_kind="card_audit",
                 metadata_extra={"script_id": script_id, "cards": n, "chunk": idx, "chunks": total},
             )
             verdict = _parse_json_obj(text)
