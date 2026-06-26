@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v8.2.0
 
       - name: 恢复/保存运行时缓存(main 作用域)
         uses: actions/cache@v6
