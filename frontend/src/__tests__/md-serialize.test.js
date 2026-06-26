@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toMd, fromMd, splitFrontMatter, SCHEMAS } from '../lib/md-serialize.js';
+import { toMd, fromMd, splitFrontMatter, SCHEMAS } from '../lib/md-serialize';
 
 // 取 row 的「可写子集」(write* + body),用于校验无损往返。
 function writableSubset(kind, row) {

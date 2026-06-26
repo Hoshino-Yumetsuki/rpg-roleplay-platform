@@ -15,7 +15,7 @@ import { useRef, useCallback } from 'react';
 import {
   startTavernRun, makeStopRun, abortRun, applyTavernState,
   toolCallInlineAnchor, toolResultInline, toolCallInline,
-} from '../lib/tavern-chat-run.js';
+} from '../lib/tavern-chat-run';
 
 export {
   applyTavernState, abortRun,

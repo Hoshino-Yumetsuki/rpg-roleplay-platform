@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   startTavernRun, applyTavernState, makeStopRun, abortRun, nowHHMM,
   toolCallInlineAnchor, toolResultInline, toolCallInline,
-} from '../lib/tavern-chat-run.js';
+} from '../lib/tavern-chat-run';
 
 /* 一个可驱动的假 SSE:捕获 handlers,暴露 .emit(event, data) 与 .stop()。 */
 function makeFakeChat() {

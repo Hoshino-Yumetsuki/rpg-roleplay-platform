@@ -15,8 +15,8 @@ import { Icon } from '../icons.jsx';
 import { MobileComposer } from '../Composer.jsx';
 import { MobilePanel, MOBILE_PANEL_TABS } from './panels.jsx';
 import AgentModelPicker from '../../components/AgentModelPicker.jsx';
-import { useStickToBottom } from '../../hooks/useStickToBottom.js';
-import { stripNarrativeOps } from '../../narrative-strip.js';
+import { useStickToBottom } from '../../hooks/useStickToBottom';
+import { stripNarrativeOps } from '../../features/console/NarrativeStrip';
 
 const SLASH_GROUPS = () => [
   { title: i18n.t('mobile.game.slash.group_query'), items: [

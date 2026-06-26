@@ -10,7 +10,7 @@ import CSAlert from '@cloudscape-design/components/alert';
 import CSStatusIndicator from '@cloudscape-design/components/status-indicator';
 import AgentModelPicker from './AgentModelPicker.jsx';
 import ImageSizePicker from './ImageSizePicker.jsx';
-import { useImageGeneration } from '../hooks/useImageGeneration.js';
+import { useImageGeneration } from '../hooks/useImageGeneration';
 
 /* GenerateImageModal — AI 生图弹窗，复用 CSModal + AgentModelPicker 范式。
 

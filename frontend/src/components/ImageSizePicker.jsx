@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { lsGet, lsSet } from '../lib/storage.js';
+import { lsGet, lsSet } from '../lib/storage';
 
 /* ImageSizePicker — 生图分辨率/比例选择器。
    · 预设几档常用比例(竖/方/横/长竖/宽屏),每档对应具体 WxH。

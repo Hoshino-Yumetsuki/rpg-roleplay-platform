@@ -14,12 +14,12 @@ import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n';
 import { Icon } from '../icons.jsx';
 import { MobileComposer } from '../Composer.jsx';
-import { useStickToBottom } from '../../hooks/useStickToBottom.js';
-import { stripNarrativeOps } from '../../narrative-strip.js';
+import { useStickToBottom } from '../../hooks/useStickToBottom';
+import { stripNarrativeOps } from '../../features/console/NarrativeStrip';
 import {
   useTavernChatRun, applyTavernState, abortRun,
   toolCallInline, toolResultInline,
-} from '../../hooks/useTavernChatRun.js';
+} from '../../hooks/useTavernChatRun';
 // 不复用电脑端 cards.jsx 的 UI 组件 —— 移动原生重写卡片读视图/persona 表单 + 纯数据 helper。
 // 注:此处 cardFormInit/cardFormPayload 字段集刻意比 pages/cards.jsx 窄(酒馆 persona 用
 // language_style/secret,无 full_name/importance/first_revealed_chapter/token_budget/

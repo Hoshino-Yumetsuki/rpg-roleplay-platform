@@ -10,7 +10,7 @@ import CSSelect from '@cloudscape-design/components/select';
 import CSSegmentedControl from '@cloudscape-design/components/segmented-control';
 import AgentModelPicker from './AgentModelPicker.jsx';
 import { EditApiModal, ProviderCard, PROVIDERS_CONFIG, normalizeApiId } from '../pages/settings.jsx';
-import { moduleByPrefix } from '../agent-modules.js';
+import { moduleByPrefix } from '../agent-modules';
 
 /* config_card 能力 → 前端配置映射(后端契约里的 capability 字段)。
    一处定义,ConfirmStrip 的内联卡片与本拦截弹窗共用,避免两份各写一套。

@@ -11,7 +11,7 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useStickToBottom } from '../hooks/useStickToBottom.js';
+import { useStickToBottom } from '../hooks/useStickToBottom';
 
 // 造一个可控的滚动容器:可设 scrollHeight/clientHeight/scrollTop,记录 scrollTo 调用。
 function makeEl({ scrollHeight = 1000, clientHeight = 400, scrollTop = 600 } = {}) {

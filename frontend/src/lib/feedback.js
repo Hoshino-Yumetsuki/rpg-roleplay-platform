@@ -4,7 +4,7 @@
  * 各抄一份:同意文案常量、AUP / QQ 群常量、运行环境快照 + POST /api/feedback 的提交内核、
  * 以及「处理决策 → 中文标签」映射。抽到此处单一来源,各端 UI 仍各自保留。
  */
-import { sha256hex } from './crypto-safe.js';
+import { sha256hex } from './crypto-safe';
 
 // ── 法务 / 渠道常量(各端逐字一致 → 共享) ──────────────────────────────
 export const AUP_LINK = 'https://play.stellatrix.icu/legal/aup#2J';

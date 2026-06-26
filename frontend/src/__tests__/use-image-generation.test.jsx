@@ -11,7 +11,7 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useImageGeneration } from '../hooks/useImageGeneration.js';
+import { useImageGeneration } from '../hooks/useImageGeneration';
 
 function setApi({ generate, get }) {
   window.api = { images: { generate, get } };

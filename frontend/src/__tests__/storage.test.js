@@ -7,7 +7,7 @@
  * 受控内存版到 globalThis.localStorage,精确测 storage.js 的逻辑而非 jsdom 行为。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { lsGet, lsSet, lsGetJSON, lsSetJSON, lsRemove } from '../lib/storage.js';
+import { lsGet, lsSet, lsGetJSON, lsSetJSON, lsRemove } from '../lib/storage';
 
 function makeMemoryStorage({ throwOn } = {}) {
   const map = new Map();

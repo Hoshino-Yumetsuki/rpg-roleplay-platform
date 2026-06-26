@@ -35,7 +35,7 @@ import {
 } from './GameApp';
 import { Composer, ConfirmStrip } from './GameComposer';
 import { RightPanel, PANEL_TABS } from './GamePanels';
-import ModelPicker from '../../components/ModelPicker';
+
 // AGE-02: splash gate
 import AdultSplash from '../../components/AdultSplash';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
@@ -2344,7 +2344,7 @@ function App() {
             走下拉,删全屏 modal。 */}
         {false &&
           (() => {
-            const _MP = ModelPicker;
+            const _MP = null; // ModelPicker removed
             const _currentModelId =
               (game && game.app && (game.app.model_real_name || game.app.model)) || '';
             const _handleModelChange = async (modelId, _provider) => {

@@ -9,9 +9,9 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput } from '@codemirror/language';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
-import { aiContinueExtension, cmdKKeymap } from '../lib/md-continue.js';
-import { chapterDiffExtension } from '../lib/md-diff.js';
-import { ghostCompleteExtension } from '../lib/md-ghost.js';
+import { aiContinueExtension, cmdKKeymap } from '../lib/md-continue';
+import { chapterDiffExtension } from '../lib/md-diff';
+import { ghostCompleteExtension } from '../lib/md-ghost';
 
 const { useRef, useEffect } = React;
 

@@ -4,8 +4,8 @@ import CSModal from '@cloudscape-design/components/modal';
 import AgentModelPicker from './AgentModelPicker.jsx';
 import MediaUploadZone from './MediaUploadZone.jsx';
 import ImageSizePicker from './ImageSizePicker.jsx';
-import { isCredentialsError } from '../lib/creds.js';
-import { useImageGeneration } from '../hooks/useImageGeneration.js';
+import { isCredentialsError } from '../lib/creds';
+import { useImageGeneration } from '../hooks/useImageGeneration';
 
 /* MediaStudio — 统一图片来源：① AI 生成 ② 上传(拖拽/粘贴/点击) ③ 从图库选。
    一个优雅的流替代散落的"AI生成 / 上传"按钮。拿到最终 URL 后 onApplied(url)。

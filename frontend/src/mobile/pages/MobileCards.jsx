@@ -10,8 +10,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../icons.jsx';
 import AvatarImg from '../../components/AvatarImg.jsx';
-// 卡表单读/写 helper 与桌面端字段集逐字一致 → 复用单一规范实现,避免 shape 漂移。
-import { cardFormInit, cardFormPayload } from '../../pages/cards.jsx';
+// 卡表单读/写 helper — 桌面端迁移至 features/cards/CardsPage,复用其规范实现。
+import { cardFormInit, cardFormPayload } from '../../features/cards/CardsPage';
+
 // 开关行统一到 mobile/Field.jsx(语义统一 #36);本地原 SetRow(toggle)与之 DOM/CSS 逐字节一致,
 // import 为同名 SetRow,调用点零变化。本文件的竖排 Field(内置 input,非通用控件)保留本地实现。
 import { ToggleRow as SetRow } from '../Field.jsx';

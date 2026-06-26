@@ -5,7 +5,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n';
 import { Icon } from './icons.jsx';
-import { launchSave } from './launch.js';
+import { launchSave } from './launch';
 import { usePlatformData, useReactiveUser } from '../features/platform/PlatformApp';
 
 const fmtWan = (w) => {

@@ -15,7 +15,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n';
 import { Icon } from '../icons.jsx';
-import { lsGet, lsSet, lsGetJSON, lsSetJSON, lsRemove } from '../../lib/storage.js';
+import { lsGet, lsSet, lsGetJSON, lsSetJSON, lsRemove } from '../../lib/storage';
 
 /* ================================================================
    常量 & 工具

@@ -13,7 +13,7 @@ import { EditorView } from '@codemirror/view';
 import {
   chapterDiffExtension, showChapterDiff, acceptChapterDiff, rejectChapterDiff,
   hasChapterDiff, lineDiff,
-} from '../lib/md-diff.js';
+} from '../lib/md-diff';
 
 function mkView(text) {
   const parent = document.createElement('div');

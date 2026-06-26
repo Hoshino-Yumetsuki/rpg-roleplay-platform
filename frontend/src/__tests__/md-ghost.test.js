@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { ghostCompleteExtension, ghostField, hasGhost, acceptGhost } from '../lib/md-ghost.js';
+import { ghostCompleteExtension, ghostField, hasGhost, acceptGhost } from '../lib/md-ghost';
 
 // 直接驱动 setGhost effect 用的内部 effect 不导出 → 用 acceptGhost/hasGhost + 触发器路径验证。
 // 为单测 set 路径,这里用触发器:开启 enabled + 假 fetch,模拟打字。

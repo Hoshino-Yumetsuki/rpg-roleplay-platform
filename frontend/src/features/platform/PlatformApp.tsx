@@ -36,7 +36,7 @@ import {
   AdminAchievementsPage,
 } from '../admin/AdminPage';
 import PolicyNoticeBanner from '../../components/PolicyNoticeBanner';
-import { FeedbackQuickModal } from '../../components/FeedbackQuickModal';
+import { FeedbackDrawer } from '../../components/FeedbackDrawer';
 import HelpDrawerRoot from '../../components/HelpDrawer';
 // Cloudscape shell(AWS 控制台架构 + 暖色主题)
 import CSTopNavigation from '@cloudscape-design/components/top-navigation';
@@ -6391,7 +6391,8 @@ function PlatformShellCS({ page, setPage, children, assistant, assistantOpen, on
   return (
     <>
       <PolicyNoticeBanner />
-      <FeedbackQuickModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      <FeedbackDrawer open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+
       <WelcomeModal
         open={welcomeOpen}
         firstTime={welcomeFirstTime}

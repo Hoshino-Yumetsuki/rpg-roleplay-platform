@@ -6,7 +6,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n';
 import { Icon } from '../icons.jsx';
-import { lsGet } from '../../lib/storage.js';
+import { lsGet } from '../../lib/storage';
 
 export const MOBILE_PANEL_TABS = [
   { id: 'status', label: i18n.t('mobile.game_panels.tab.status'), icon: 'status' },

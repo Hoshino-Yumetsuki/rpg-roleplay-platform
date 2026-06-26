@@ -28,7 +28,7 @@
  * /credentials_required|needs_credentials/i,与两宿主原逻辑等价)。
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { isCredentialsError } from '../lib/creds.js';
+import { isCredentialsError } from '../lib/creds';
 
 export function useImageGeneration({ onDone, onFail } = {}) {
   const [generating, setGenerating] = useState(false);

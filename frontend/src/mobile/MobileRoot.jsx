@@ -19,7 +19,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon } from './icons.jsx';
 import { PageHeader, Layer } from './chrome.jsx';
-import { launchSave } from './launch.js';
+import { launchSave } from './launch';
 import { MobileHome } from './MobileHome.jsx';
 import { Placeholder } from './MobilePlaceholder.jsx';
 import { MobileScripts } from './pages/MobileScripts.jsx';

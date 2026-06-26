@@ -6,12 +6,12 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n';
 import './md-editor.css';
-import { lsGet, lsSet, lsGetJSON } from '../lib/storage.js';
+import { lsGet, lsSet, lsGetJSON } from '../lib/storage';
 import CodeMirrorEditor from '../components/CodeMirrorEditor.jsx';
 import MdEditorAgent from '../components/MdEditorAgent.jsx';
-import { toMd, fromMd, splitFrontMatter } from '../lib/md-serialize.js';
-import { runContinue } from '../lib/md-continue.js';
-import { showChapterDiff, hasChapterDiff } from '../lib/md-diff.js';
+import { toMd, fromMd, splitFrontMatter } from '../lib/md-serialize';
+import { runContinue } from '../lib/md-continue';
+import { showChapterDiff, hasChapterDiff } from '../lib/md-diff';
 
 // OS 自适应:Mac=⌘ / Win·Linux=Ctrl。快捷键标签 + 全局键判断都用它。
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
