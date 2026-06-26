@@ -5,7 +5,7 @@ import json
 import re
 import time
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, Dict, Set
 
 import httpx
 
@@ -43,6 +43,17 @@ def _is_temperature_rejected(exc: Exception) -> bool:
     return "temperature" in str(exc).lower()
 
 
+def _is_tools_unsupported(exc: Exception) -> bool:
+    """仅「400 BadRequest」才视为 provider 不支持 tools 参数 → 降级 text marker。
+    429 限流 / 401 鉴权 / 5xx / 超时 等是瞬时/配置错误,**不可**据此把 (api,model) 永久标记为
+    不支持(类级 set 进程内共享,会让该 worker 此后所有该模型 GM 对话静默降级,且难复现)。"""
+    try:
+        from openai import BadRequestError
+    except ImportError:
+        return False
+    return isinstance(exc, BadRequestError)
+
+
 class _OpenAICompatBackend:
     """适配所有 OpenAI 兼容的 provider，只需要 base_url + env_key + model 名。"""
 
@@ -53,12 +64,15 @@ class _OpenAICompatBackend:
     supports_native_tools = True
 
     # 类级状态：记录已经验证过不支持 native tools 的 (api_id, model) 组合，
-    # 同一进程内之后直接走 text marker 不再重试
-    _unsupported_combos: set[tuple[str, str]] = set()
+    # 同一进程内之后直接走 text marker 不再重试。
+    # 已知限制：进程内缓存，多 worker 模式下各自独立学习（不跨进程共享），可接受——
+    # 最坏情况是同一 (api_id, model) 在多 worker 上各自发一次失败请求后才降级。
+    _unsupported_combos: Set[tuple[str, str]] = set()
 
     # 类级状态：记录拒绝自定义 temperature(只接受默认/=1)的 (api_id, model) 组合，
     # 同一进程内之后直接不发 temperature。见 _create / _is_temperature_rejected。
-    _fixed_temp_combos: set[tuple[str, str]] = set()
+    # 已知限制：进程内缓存，多 worker 模式下各自独立学习（不跨进程共享），可接受。
+    _fixed_temp_combos: Set[tuple[str, str]] = set()
 
     def _create(self, **kwargs):
         """self.client.chat.completions.create 的包装,带 temperature 自愈。
@@ -68,7 +82,7 @@ class _OpenAICompatBackend:
         temperature 用模型默认重试**并记忆**,本进程同 (api_id, model) 后续直接不发 →
         当轮即成功,不再失败。stream=True 时请求在 create() 即发出,400 也在此抛,可拦。
         """
-        combo = (self.api_id, self.model_name)
+        combo = (self.api_id, self.model_name, self.user_id)
         if combo in self._fixed_temp_combos:
             kwargs.pop("temperature", None)
         try:
@@ -110,23 +124,24 @@ class _OpenAICompatBackend:
         # 托管多用户后端永不使用用户 proxy(防 SSRF:代理合法地可指向 127.0.0.1,无法用「禁私网」
         # 校验拦截;故把使用面收窄到自托管单用户场景)。本地梯子用户选「HTTP 代理」即生效。
         _proxy = (result.get("proxy") or "").strip()
-        _client_kwargs: dict[str, Any] = {
-            "timeout": httpx.Timeout(_read_to, connect=10.0), "follow_redirects": False,
-        }
-        if _proxy and not byok_only:
-            _client_kwargs["proxy"] = _proxy
-            log.info(f"[GM] {display_kind} 出站走用户代理 {_proxy}")
+        # 出站代理仅本地模式生效(托管多用户后端永不用用户 proxy,见上注释)。
+        _use_proxy = _proxy if (_proxy and not byok_only) else None
+        if _use_proxy:
+            log.info(f"[GM] {display_kind} 出站走用户代理 {_use_proxy}")
         # 覆盖 openai SDK 默认 UA(`OpenAI/Python x.y.z`)→ 浏览器 UA。否则挂在 Cloudflare 后的
         # 中转站会按 UA 用 WAF 把它当 AI 爬虫拦掉(403「Your request was blocked」/ error 1010),
         # 导致这类中转站聊天/校验/拉取模型全部「不可访问」。详见 core.outbound_ua(已实测)。
         from core.outbound_ua import openai_default_headers
+        from core.outbound import safe_httpx_client
         kwargs: dict[str, Any] = {
             "api_key": key,
             "timeout": httpx.Timeout(_read_to, connect=10.0),
             "default_headers": openai_default_headers(),
-            # SEC(H-5): OpenAI SDK 默认 follow_redirects=True → base_url_override(admin/local 可设)
-            # 配合 301 可把携 api_key 的请求重定向到内网/元数据。自带不跟随重定向的 http_client。
-            "http_client": httpx.Client(**_client_kwargs),
+            # SEC(H-5 + 审计): base_url_override 是 user/admin 可控 → 必须走 SSRF 安全出站层。
+            # 裸 httpx.Client 只 follow_redirects=False,挡 30x 但挡不住 DNS rebinding(写时闸过后
+            # TTL 过期即可把域名指向 169.254.169.254 / 内网)。safe_httpx_client 在传输层 use-time
+            # 重解析 + 私网校验(服务器模式 fail-closed;本地/代理模式 no-op,不影响本机大模型/梯子)。
+            "http_client": safe_httpx_client(timeout=_read_to, proxy=_use_proxy),
         }
         if effective_base:
             kwargs["base_url"] = effective_base
@@ -314,7 +329,7 @@ class _OpenAICompatBackend:
         Provider 不支持 tools 参数时（HTTP 400 / response 异常）→ 标记
         (api_id, model) 为 unsupported，本进程后续直接走 text marker fallback。
         """
-        combo_key = (self.api_id, self.model_name)
+        combo_key = (self.api_id, self.model_name, self.user_id)
         if combo_key in self._unsupported_combos:
             # 已知该 provider/model 不支持 tools → 立即降级到 text marker
             yield from _openai_text_marker_loop(self, system, messages, mcp_tools, max_iterations, max_tokens, mcp_call)
@@ -459,13 +474,14 @@ class _OpenAICompatBackend:
                     except Exception:
                         continue
             except Exception as exc:
-                # tools 不支持？标记并降级（只在第一次尝试时降级，避免循环中途异常被当成"不支持"）
-                if first_attempt:
-                    log.warning(f"[gm] {self.api_id}/{self.model_name} native tools failed: {exc} → text marker fallback")
+                # 仅「首次尝试 + 确属 400 不支持 tools」才标记降级。429/401/5xx/超时等瞬时/鉴权错误
+                # 必须上抛(让 harness 正常重试/报错),否则会把该 api+model 永久误标降级。
+                if first_attempt and _is_tools_unsupported(exc):
+                    log.warning(f"[gm] {self.api_id}/{self.model_name} native tools rejected (400): {exc} → text marker fallback")
                     self._unsupported_combos.add(combo_key)
                     yield from _openai_text_marker_loop(self, system, messages, mcp_tools, max_iterations, max_tokens, mcp_call)
                     return
-                # 后续 iteration 异常：let it bubble
+                # 非 tools-不支持(瞬时/鉴权/5xx)或后续 iteration 异常：let it bubble
                 raise
             first_attempt = False
 

@@ -22,8 +22,6 @@ from __future__ import annotations
 
 import base64
 
-import httpx
-
 
 class ImageGenError(Exception):
     """Raised by any image-gen adapter on provider error, network failure,
@@ -33,17 +31,19 @@ class ImageGenError(Exception):
 
 
 def download_url(url: str, *, timeout: float = 60.0) -> bytes:
-    """Fetch image bytes from a URL.  Raises ImageGenError on failure."""
+    """Fetch image bytes from a URL.  Raises ImageGenError on failure.
+
+    SEC: 这个 URL 来自 provider 响应(data[].url / message.images),而 provider 的 base_url
+    是用户/admin 可控的中转站 —— 攻击者可让假 provider 返回指向 169.254.169.254 / 127.0.0.1 的
+    URL,把本函数变成二阶 SSRF(读云元数据/内网,且抓回的字节会落盘后经 /api/images/file 取出
+    = 非盲外带)。故统一走 core.outbound.safe_get_bytes:不跟随重定向到内网 + 每跳重解析校验 +
+    pin 已校验 IP(抗 DNS rebinding)+ 体积上限。data: URI 由各 adapter 自行 decode,不进这里。
+    """
+    from core.outbound import OutboundBlocked, safe_get_bytes
     try:
-        resp = httpx.get(url, follow_redirects=True, timeout=timeout)
-        resp.raise_for_status()
-        return resp.content
-    except httpx.HTTPStatusError as exc:
-        raise ImageGenError(
-            f"image download HTTP {exc.response.status_code}: {url}"
-        ) from exc
-    except httpx.TimeoutException as exc:
-        raise ImageGenError(f"image download timed out: {url}") from exc
+        return safe_get_bytes(url, timeout=timeout)
+    except OutboundBlocked as exc:
+        raise ImageGenError(f"image url blocked (SSRF guard): {exc}") from exc
     except Exception as exc:
         raise ImageGenError(f"image download error: {exc}") from exc
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run rpg-health-watchdog every 30s
+
+[Timer]
+# 开机 90s 后首跑(等 backend 起来),之后每 30s 一次。3 次连续失败 ≈ 90s 才重启。
+OnBootSec=90s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Unit=rpg-health-watchdog.service
+
+[Install]
+WantedBy=timers.target

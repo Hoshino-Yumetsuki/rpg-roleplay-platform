@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1a1817" />
+<title>游玩面手机原型 · v2 Claude-clean</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   游玩面 · 手机端 v2 —— Claude 式克制 (calm / airy / restrained)
+   去掉:首字下沉、通篇斜体、烛光噪点、华丽分隔线、彩色 pill 墙。
+   留下:安静暖黑、舒展留白、克制衬线叙事、极简 chrome。
+   严格复用生产 design tokens(frontend/src/tokens.css)。
+   ============================================================ */
+:root{
+  --bg:#1a1817; --bg-deep:#131211;
+  --panel:#211f1d; --panel-2:#282623; --panel-3:#2f2c28; --rail:#1d1b19;
+  --line:#36322d; --line-soft:#2a2724; --line-strong:#4a4540;
+  --text:#ebe7df; --text-quiet:#c8c2b7; --muted:#968f85; --muted-2:#6b655e; --muted-3:#4d4842;
+  --accent:#c96442; --accent-soft:rgba(201,100,66,.14); --accent-edge:rgba(201,100,66,.42);
+  --ok:#7eb88e; --warn:#d4b366; --danger:#c8675d; --info:#7aa6c2;
+  --font-sans:"Noto Sans SC",ui-sans-serif,-apple-system,"PingFang SC",sans-serif;
+  --font-serif:"Noto Serif SC","Songti SC","STSong",serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --topbar-h:52px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg); color:var(--text);
+  font:15px/1.6 var(--font-sans); letter-spacing:.01em;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  overscroll-behavior-y:none;
+}
+.phone{position:relative;height:100dvh;display:flex;flex-direction:column;overflow:hidden;max-width:480px;margin:0 auto}
+
+/* ── 顶栏:极简。菜单 · 安静的一行上下文 · 更多 ───────── */
+.topbar{
+  flex:0 0 auto;z-index:30;
+  height:calc(var(--topbar-h) + var(--safe-t));padding-top:var(--safe-t);
+  display:grid;grid-template-columns:44px 1fr 44px;align-items:center;
+  background:var(--bg);border-bottom:1px solid var(--line-soft);
+}
+.tb-btn{height:44px;display:grid;place-items:center;color:var(--muted)}
+.tb-btn:active{color:var(--text)}
+.tb-btn svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tb-mid{min-width:0;text-align:center}
+.tb-mid b{font-weight:600;font-size:14.5px;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+/* 状态不再是彩色 pill 墙,只剩一行安静的上下文,点开看全部 */
+.tb-ctx{display:inline-flex;align-items:center;gap:7px;margin-top:1px;
+  font-size:11.5px;color:var(--muted-2);letter-spacing:.02em}
+.tb-ctx .d{width:3px;height:3px;border-radius:999px;background:var(--muted-3)}
+
+/* ── 阅读面:大量留白,文字自己呼吸 ─────────────────── */
+.scroll{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 0 30px}
+.col{max-width:40em;margin:0 auto;padding:0 24px}
+
+/* 消息:沿用 web 真实词汇 —— mono 标签 + GM 衬线左竖线 / 玩家纯 sans 无气泡 */
+.msg{margin:22px 0}
+.msg:first-child{margin-top:8px}
+.tag{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.04em;color:var(--muted);
+  margin-bottom:8px;display:flex;align-items:center;gap:7px}
+.tag .nm{color:var(--muted)}
+.msg.gm .tag{color:var(--accent)}
+/* GM 叙事:衬线 + 左 2px 竖线 + padding-left 14(与 game-console.css 一致) */
+.gm-body{font-family:var(--font-serif);font-size:16.5px;line-height:1.78;color:var(--text);
+  letter-spacing:.02em;padding-left:14px;border-left:2px solid var(--line)}
+.gm-body q{quotes:"「" "」";font-style:normal}
+.gm-body q::before{content:open-quote}.gm-body q::after{content:close-quote}
+.gm-body p{margin:0 0 12px}.gm-body p:last-child{margin:0}
+/* 玩家行动:纯 sans,text-quiet,无气泡 */
+.pl-body{font-family:var(--font-sans);font-size:14.5px;line-height:1.65;color:var(--text-quiet);padding-left:14px}
+
+/* 观测确认条:web 的标志性元素 —— GM 提议写入状态,玩家确认 */
+.confirm{margin:20px 0;border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.confirm-h{padding:9px 13px;font-size:11.5px;color:var(--muted);border-bottom:1px solid var(--line-soft);
+  display:flex;align-items:center;gap:7px}
+.confirm-h .dot{width:6px;height:6px;border-radius:999px;background:var(--warn)}
+.crow{padding:11px 13px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line-soft)}
+.crow:last-child{border-bottom:0}
+.crow .wb{flex:0 0 auto;font-size:10px;padding:2px 7px;border-radius:999px;
+  background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-edge)}
+.crow .path{flex:1;min-width:0;font-family:var(--font-mono);font-size:12px;color:var(--text-quiet);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crow .ok{flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--muted)}
+.crow .ok svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* 机制旁注 */
+.note{margin:14px 0;font-size:12px;color:var(--muted-2);padding-left:14px;letter-spacing:.02em}
+.note b{color:var(--text-quiet);font-weight:500}
+
+/* 抉择:轻卡片,克制 */
+.choices{margin:18px 0 6px;display:flex;flex-direction:column;gap:8px}
+.choice{display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+  background:transparent;border:1px solid var(--line);border-radius:12px;
+  padding:13px 15px;color:var(--text-quiet);font-size:14.5px;line-height:1.5;
+  transition:background .14s ease,border-color .14s ease}
+.choice:active{background:var(--panel);border-color:var(--line-strong)}
+.choice .idx{flex:0 0 auto;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;
+  font-family:var(--font-mono);font-size:11.5px;color:var(--muted);background:var(--panel-2)}
+
+.typing{display:flex;gap:5px;padding:10px 24px 16px}
+.typing i{width:6px;height:6px;border-radius:999px;background:var(--muted-2);animation:bln 1.3s infinite}
+.typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}
+@keyframes bln{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+
+/* ── 输入坞:干净、宽松、克制(Claude 式) ──────────── */
+.composer{flex:0 0 auto;z-index:25;padding:8px 14px calc(8px + var(--safe-b));
+  background:var(--bg);border-top:1px solid var(--line-soft)}
+.composer .row{display:flex;align-items:flex-end;gap:8px;
+  background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:5px 5px 5px 6px}
+.iconround{flex:0 0 auto;width:36px;height:36px;border-radius:999px;display:grid;place-items:center;color:var(--muted)}
+.iconround:active{background:var(--panel-2);color:var(--text)}
+.iconround svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.composer textarea{flex:1;border:0;background:transparent;color:var(--text);resize:none;
+  font:15px/1.5 var(--font-sans);max-height:120px;padding:8px 2px;outline:0}
+.composer textarea::placeholder{color:var(--muted-2)}
+.send{flex:0 0 auto;width:36px;height:36px;border-radius:999px;display:grid;place-items:center;
+  background:var(--accent);color:#fff8f3;transition:transform .12s ease,opacity .12s ease}
+.send:disabled{opacity:.35;background:var(--panel-3);color:var(--muted-2)}
+.send:active{transform:scale(.92)}
+.send svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── 底部抽屉:人物卷宗 ─────────────────────────────── */
+.scrim{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.45);
+  opacity:0;visibility:hidden;transition:opacity .26s ease,visibility .26s}
+.scrim.on{opacity:1;visibility:visible}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:50;max-width:480px;margin:0 auto;height:86dvh;
+  background:var(--panel);border-radius:18px 18px 0 0;border:1px solid var(--line);border-bottom:0;
+  transform:translateY(100%);transition:transform .34s cubic-bezier(.22,1,.36,1);
+  display:flex;flex-direction:column;overflow:hidden}
+.sheet.on{transform:translateY(0)}
+.grab{flex:0 0 auto;padding:11px 0 8px;display:grid;place-items:center;touch-action:none}
+.grab i{width:36px;height:4px;border-radius:999px;background:var(--line-strong)}
+.dossier{flex:0 0 auto;padding:2px 22px 16px;display:flex;gap:13px;align-items:center}
+.crest{flex:0 0 auto;width:48px;height:48px;border-radius:13px;display:grid;place-items:center;
+  font-family:var(--font-serif);font-size:21px;font-weight:600;color:var(--text-quiet);
+  background:var(--panel-3);border:1px solid var(--line)}
+.dossier .nm{font-family:var(--font-serif);font-weight:600;font-size:17px}
+.dossier .sb{font-size:12px;color:var(--muted);margin-top:3px}
+/* 7+ 面板 → 可横滑 tab 条(不挤,不丢) */
+.tabs{flex:0 0 auto;display:flex;gap:4px;padding:0 14px;border-bottom:1px solid var(--line-soft);
+  overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{flex:0 0 auto;height:42px;padding:0 6px;color:var(--muted);font-size:13px;position:relative;white-space:nowrap}
+.tabs button.on{color:var(--text)}
+.tabs button.on::after{content:"";position:absolute;left:6px;right:6px;bottom:-1px;height:2px;background:var(--accent);border-radius:2px}
+.sheetbody{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 20px 28px}
+.tabpane{display:none}.tabpane.on{display:block}
+.vital{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line-soft)}
+.vital .lab{flex:0 0 72px;color:var(--muted);font-size:13px}
+.vital .bar{flex:1;height:5px;border-radius:999px;background:var(--bg-deep);overflow:hidden}
+.vital .bar i{display:block;height:100%;border-radius:999px;background:var(--accent)}
+.vital .bar i.ok{background:var(--ok)}.vital .bar i.info{background:var(--info)}
+.vital .val{flex:0 0 auto;font-family:var(--font-mono);font-size:12px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.item{background:var(--panel-2);border-radius:11px;padding:13px}
+.item .t{font-size:13.5px;color:var(--text)}
+.item .d{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.45}
+.item .q{float:right;font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+.rel{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line-soft)}
+.rel .av{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-family:var(--font-serif);
+  font-weight:600;color:var(--muted);background:var(--panel-3)}
+.rel .info{flex:1;min-width:0}
+.rel .nm{font-size:13.5px;color:var(--text)}.rel .role{font-size:11px;color:var(--muted-2);margin-top:1px}
+.rel .aff{margin-top:6px;height:4px;border-radius:999px;background:var(--bg-deep);overflow:hidden}
+.rel .aff i{display:block;height:100%;background:var(--accent);border-radius:999px}
+.tl{position:relative;padding-left:18px}
+.tl::before{content:"";position:absolute;left:4px;top:5px;bottom:5px;width:1px;background:var(--line)}
+.tl .ev{position:relative;padding:0 0 17px}
+.tl .ev::before{content:"";position:absolute;left:-18px;top:4px;width:9px;height:9px;border-radius:999px;background:var(--bg);border:1.5px solid var(--muted-3)}
+.tl .ev.now::before{border-color:var(--accent)}
+.tl .ev .w{font-size:10.5px;color:var(--muted-2);font-family:var(--font-mono)}
+.tl .ev .x{font-size:13px;color:var(--text-quiet);margin-top:3px;line-height:1.5}
+
+/* ── 左抽屉:存档 / 分支 ─────────────────────────────── */
+.drawer{position:fixed;top:0;bottom:0;left:0;z-index:50;width:min(300px,84vw);
+  background:var(--rail);border-right:1px solid var(--line);
+  padding:calc(var(--safe-t) + 16px) 0 calc(var(--safe-b) + 16px);
+  transform:translateX(-100%);transition:transform .3s cubic-bezier(.22,1,.36,1);
+  display:flex;flex-direction:column;overflow:hidden}
+.drawer.on{transform:translateX(0)}
+.dw-h{padding:2px 18px 16px}
+.dw-h b{font-family:var(--font-serif);font-size:15.5px}
+.dw-h span{display:block;font-size:11.5px;color:var(--muted-2);margin-top:3px}
+.dw-sec{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);padding:14px 18px 6px}
+.save{display:flex;gap:12px;align-items:center;padding:10px 14px;margin:0 8px;border-radius:11px}
+.save.cur{background:var(--panel)}
+.save .cv{flex:0 0 auto;width:34px;height:42px;border-radius:6px;background:var(--panel-3);
+  display:grid;place-items:center;font-family:var(--font-serif);font-size:14px;color:var(--muted)}
+.save .nm{font-size:13.5px;color:var(--text)}.save .mt{font-size:11px;color:var(--muted-2);margin-top:2px}
+.branch{display:flex;align-items:center;gap:10px;padding:8px 18px;color:var(--muted);font-size:12.5px}
+.branch .bd{width:6px;height:6px;border-radius:999px;background:var(--muted-3);flex:0 0 auto}
+.branch.cur{color:var(--text-quiet)}.branch.cur .bd{background:var(--accent)}
+/* 记忆模式分段 */
+.seg{display:flex;margin:6px 14px 4px;padding:2px;background:var(--bg-deep);border-radius:9px}
+.seg button{flex:1;height:30px;border-radius:7px;color:var(--muted);font-size:11.5px}
+.seg button.on{background:var(--panel-2);color:var(--text)}
+/* 抽屉底部功能区 */
+.dw-act{display:flex;align-items:center;gap:12px;padding:11px 18px;color:var(--text-quiet);font-size:13px}
+.dw-act:active{background:var(--panel)}
+.dw-act svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;color:var(--muted)}
+
+/* ── 输入坞 + → 动作面板(ActionSheet) ──────────────── */
+.asheet{position:fixed;left:0;right:0;bottom:0;z-index:50;max-width:480px;margin:0 auto;
+  background:var(--panel);border-radius:18px 18px 0 0;border:1px solid var(--line);border-bottom:0;
+  padding:8px 0 calc(10px + var(--safe-b));
+  transform:translateY(110%);transition:transform .3s cubic-bezier(.22,1,.36,1)}
+.asheet.on{transform:translateY(0)}
+.asheet .grab{padding:9px 0 4px}
+.asheet h4{margin:4px 22px 8px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);font-weight:600}
+.arow{display:flex;align-items:center;gap:14px;padding:13px 22px;color:var(--text);font-size:14.5px}
+.arow:active{background:var(--panel-2)}
+.arow .ic{flex:0 0 auto;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--panel-3);color:var(--text-quiet)}
+.arow .ic svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.arow .sub{margin-left:auto;font-size:12px;color:var(--muted-2)}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <header class="topbar">
+    <button class="tb-btn" id="menuBtn" aria-label="存档与分支">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <div class="tb-mid">
+      <b>雨夜的回廊</b>
+      <span class="tb-ctx" id="ctxLine">回廊东厢<span class="d"></span>子时三刻<span class="d"></span>蕾穆丽娜·戒备</span>
+    </div>
+    <button class="tb-btn" id="dossierBtn" aria-label="人物卷宗">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 20c1.4-3.3 3.9-5 6.5-5s5.1 1.7 6.5 5"/></svg>
+    </button>
+  </header>
+
+  <main class="scroll" id="scroll">
+    <div class="col">
+
+      <div class="msg gm">
+        <div class="tag">GM<span class="nm">· 金兆谭</span></div>
+        <div class="gm-body">
+          <p>雨水顺着回廊的飞檐落下来，把廊外的灯火揉得发软。你踏进东厢时，木地板发出一声极轻的呻吟——足够让那个背对着你的身影，肩头几不可察地一僵。</p>
+          <p>蕾穆丽娜没有回头。她的声音落在雨声里，凉得像檐角的铁马：<q>这个时辰还往我这儿来，不怕被人看见，污了你那身干净名声？</q></p>
+        </div>
+      </div>
+
+      <div class="note">获得 · <b>褪色的信笺</b></div>
+
+      <div class="msg pl">
+        <div class="tag">你</div>
+        <div class="pl-body">我把信笺放在她手边的小几上，没有解释，只是看着她。</div>
+      </div>
+
+      <div class="msg gm">
+        <div class="tag">GM<span class="nm">· 金兆谭</span></div>
+        <div class="gm-body"><p>她终于转过身。烛光从侧面描出她的轮廓，那双总是含着锋芒的眼睛，在看清信笺落款的一瞬，裂开了一道极细的缝隙——像结冰的湖面下，有什么东西正悄悄苏醒。她的指尖悬在信纸上方，迟迟没有落下。</p></div>
+      </div>
+
+      <div class="confirm">
+        <div class="confirm-h"><span class="dot"></span>观测确认 · 本轮将写入</div>
+        <div class="crow"><span class="wb">写入</span><span class="path">relationships.蕾穆丽娜.tone → 动摇</span><button class="ok"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-11"/></svg></button></div>
+        <div class="crow"><span class="wb">写入</span><span class="path">world.timeline.pending → 信笺已转交</span><button class="ok"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-11"/></svg></button></div>
+      </div>
+
+      <div class="choices" id="choices">
+        <button class="choice"><span class="idx">1</span><span>「这封信，本不该由我转交。」</span></button>
+        <button class="choice"><span class="idx">2</span><span>沉默地为她斟一盏还温着的茶</span></button>
+        <button class="choice"><span class="idx">3</span><span>转身离开，把这一夜留给她</span></button>
+      </div>
+
+    </div>
+  </main>
+
+  <div class="composer">
+    <div class="row">
+      <button class="iconround" id="plusBtn" aria-label="动作"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <textarea id="ta" rows="1" placeholder="推进剧情、行动，或输入 / 命令…"></textarea>
+      <button class="send" id="send" disabled aria-label="发送"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+    </div>
+  </div>
+
+</div>
+
+<div class="scrim" id="scrim"></div>
+
+<section class="sheet" id="sheet" aria-label="人物卷宗">
+  <div class="grab" id="grab"><i></i></div>
+  <div class="dossier">
+    <div class="crest">蕾</div>
+    <div><div class="nm">蕾穆丽娜</div><div class="sb">回廊主人 · 你尚未读懂的人</div></div>
+  </div>
+  <div class="tabs" id="tabs">
+    <button class="on" data-t="state">状态</button>
+    <button data-t="items">物品</button>
+    <button data-t="rel">关系</button>
+    <button data-t="memory">记忆</button>
+    <button data-t="world">世界书</button>
+    <button data-t="tl">时间线</button>
+    <button data-t="context">上下文</button>
+  </div>
+  <div class="sheetbody">
+    <div class="tabpane on" data-p="state">
+      <div class="vital"><span class="lab">体力</span><div class="bar"><i class="ok" style="width:84%"></i></div><span class="val">84</span></div>
+      <div class="vital"><span class="lab">心神</span><div class="bar"><i style="width:58%"></i></div><span class="val">58</span></div>
+      <div class="vital"><span class="lab">声望</span><div class="bar"><i class="info" style="width:71%"></i></div><span class="val">71</span></div>
+      <div class="vital"><span class="lab">蕾·好感</span><div class="bar"><i style="width:22%"></i></div><span class="val">22 · 戒备</span></div>
+    </div>
+    <div class="tabpane" data-p="items">
+      <div class="grid">
+        <div class="item"><span class="q">×1</span><div class="t">褪色的信笺</div><div class="d">落款被雨水晕开。</div></div>
+        <div class="item"><span class="q">×1</span><div class="t">还温着的茶</div><div class="d">一盏未凉的雨前龙井。</div></div>
+        <div class="item"><span class="q">×23</span><div class="t">碎银</div><div class="d">够在城里住上半月。</div></div>
+        <div class="item"><span class="q">×1</span><div class="t">铜护身符</div><div class="d">母亲留下，磨得发亮。</div></div>
+      </div>
+    </div>
+    <div class="tabpane" data-p="rel">
+      <div class="rel"><div class="av">蕾</div><div class="info"><div class="nm">蕾穆丽娜</div><div class="role">回廊主人</div><div class="aff"><i style="width:22%"></i></div></div></div>
+      <div class="rel"><div class="av">霁</div><div class="info"><div class="nm">沈霁川</div><div class="role">同窗 · 旧友</div><div class="aff"><i style="width:68%"></i></div></div></div>
+      <div class="rel"><div class="av">岚</div><div class="info"><div class="nm">青岚</div><div class="role">回廊侍女</div><div class="aff"><i style="width:45%"></i></div></div></div>
+    </div>
+    <div class="tabpane" data-p="memory">
+      <div class="note" style="text-align:left;margin:2px 0 14px">固定记忆桶 · 时序桶 · 角色桶</div>
+      <div class="item" style="margin-bottom:10px"><div class="t">你与蕾穆丽娜的初遇并不愉快</div><div class="d">固定记忆 · 第一夜</div></div>
+      <div class="item" style="margin-bottom:10px"><div class="t">沈霁川所托之事，似有隐情</div><div class="d">时序记忆 · 第二夜</div></div>
+      <div class="item"><div class="t">蕾穆丽娜在等一封信</div><div class="d">角色记忆 · 蕾穆丽娜</div></div>
+    </div>
+    <div class="tabpane" data-p="world">
+      <div class="rel"><div class="av">廊</div><div class="info"><div class="nm">回廊</div><div class="role">地点 · 城南旧宅改建</div></div></div>
+      <div class="rel"><div class="av">信</div><div class="info"><div class="nm">褪色的信笺</div><div class="role">物件 · 落款成谜</div></div></div>
+      <div class="rel"><div class="av">门</div><div class="info"><div class="nm">宵禁</div><div class="role">设定 · 戌时落锁</div></div></div>
+    </div>
+    <div class="tabpane" data-p="tl">
+      <div class="tl">
+        <div class="ev now"><div class="w">第三夜 · 子时</div><div class="x">在东厢转交那封落款被晕开的信笺。</div></div>
+        <div class="ev"><div class="w">第三夜 · 戌时</div><div class="x">雨起，城门提前落锁。</div></div>
+        <div class="ev"><div class="w">第二夜</div><div class="x">沈霁川托你带话，神色反常。</div></div>
+        <div class="ev"><div class="w">第一夜</div><div class="x">初入回廊，与蕾穆丽娜不欢而散。</div></div>
+      </div>
+    </div>
+    <div class="tabpane" data-p="context">
+      <div class="vital"><span class="lab">本轮 token</span><div class="bar"><i class="info" style="width:46%"></i></div><span class="val">37k/80k</span></div>
+      <div class="note" style="text-align:left;margin:14px 0 6px">本轮召回 6 段历史 + 2 段原文</div>
+      <div class="item" style="margin-bottom:10px"><div class="t">召回 · 第二夜 沈霁川对话</div><div class="d">相似度 0.82</div></div>
+      <div class="item"><div class="t">召回 · 蕾穆丽娜人物卡</div><div class="d">相似度 0.79</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 输入坞 + → 动作面板:把"做"的动作全收这里 -->
+<section class="asheet" id="asheet" aria-label="动作">
+  <div class="grab"><i></i></div>
+  <h4>行动</h4>
+  <div class="arow" id=" a1"><span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.3"/><circle cx="15" cy="15" r="1.3"/><circle cx="15" cy="9" r="1.3"/><circle cx="9" cy="15" r="1.3"/></svg></span>掷骰检定<span class="sub">d20 · 属性/技能</span></div>
+  <div class="arow"><span class="ic"><svg viewBox="0 0 24 24"><path d="M5 12l3-7 4 5 4-3 3 9"/><path d="M3 19h18"/></svg></span>使用技能</div>
+  <div class="arow"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 7l8-4 8 4-8 4z"/><path d="M4 7v6l8 4 8-4V7"/></svg></span>使用物品<span class="sub">背包 4 件</span></div>
+  <div class="arow"><span class="ic"><svg viewBox="0 0 24 24"><path d="M16 4L8 20"/><path d="M5 8l-3 4 3 4M19 8l3 4-3 4"/></svg></span>斜杠指令<span class="sub">/compact /retry …</span></div>
+  <h4>系统</h4>
+  <div class="arow"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></span>切换模型<span class="sub">Claude · Sonnet</span></div>
+  <div class="arow"><span class="ic"><svg viewBox="0 0 24 24"><path d="M21 11.5l-9 9a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg></span>附件 / 图片</div>
+</section>
+
+<aside class="drawer" id="drawer" aria-label="存档与分支">
+  <div class="dw-h"><b>我蕾穆丽娜不爱你</b><span>晓卡 的存档</span></div>
+  <div class="dw-body" style="flex:1;overflow-y:auto">
+    <div class="dw-sec">存档</div>
+    <div class="save cur"><div class="cv">叁</div><div><div class="nm">雨夜的回廊</div><div class="mt">第三夜 · 刚刚</div></div></div>
+    <div class="save"><div class="cv">贰</div><div><div class="nm">城门之前</div><div class="mt">第二夜 · 昨天</div></div></div>
+    <div class="save"><div class="cv">壹</div><div><div class="nm">初入回廊</div><div class="mt">第一夜 · 3 天前</div></div></div>
+    <div class="dw-sec">本档分支</div>
+    <div class="branch cur"><span class="bd"></span>主线 · 转交信笺</div>
+    <div class="branch"><span class="bd"></span>岔口 · 烧掉信笺</div>
+    <div class="branch"><span class="bd"></span>岔口 · 假装不识</div>
+    <div class="dw-act" style="color:var(--muted)"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="18" r="2"/><circle cx="6" cy="18" r="2"/><path d="M6 7v8M8 6h6a4 4 0 0 1 4 4v6"/></svg>查看完整分支图</div>
+
+    <div class="dw-sec">记忆模式</div>
+    <div class="seg" id="memSeg">
+      <button class="on">召回 6 段</button>
+      <button>召回 14 段</button>
+      <button>不召回</button>
+    </div>
+
+    <div class="dw-sec">本档</div>
+    <div class="dw-act"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>搜索本档</div>
+    <div class="dw-act"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>历史回顾</div>
+    <div class="dw-act"><svg viewBox="0 0 24 24"><path d="M5 5h11l3 3v11H5z"/><path d="M8 5v5h7"/></svg>手动保存</div>
+    <div class="dw-act"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新游戏</div>
+
+    <div class="dw-sec">其他</div>
+    <div class="dw-act"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5-2-1.5a7 7 0 0 0 .1-1z"/></svg>游戏内设置</div>
+    <div class="dw-act"><svg viewBox="0 0 24 24"><path d="M5 5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 3v-3H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>提交反馈</div>
+    <div class="dw-act"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg>返回平台主页</div>
+  </div>
+</aside>
+
+<script>
+(function(){
+  var scrim=document.getElementById('scrim'),sheet=document.getElementById('sheet'),
+      drawer=document.getElementById('drawer'),asheet=document.getElementById('asheet'),scroll=document.getElementById('scroll');
+  function openSheet(){sheet.classList.add('on');scrim.classList.add('on');}
+  function openDrawer(){drawer.classList.add('on');scrim.classList.add('on');}
+  function openAction(){asheet.classList.add('on');scrim.classList.add('on');}
+  function closeAll(){sheet.classList.remove('on');drawer.classList.remove('on');asheet.classList.remove('on');scrim.classList.remove('on');sheet.style.transform='';}
+  document.getElementById('dossierBtn').onclick=openSheet;
+  document.getElementById('menuBtn').onclick=openDrawer;
+  document.getElementById('ctxLine').onclick=openSheet;
+  document.getElementById('plusBtn').onclick=openAction;
+  scrim.onclick=closeAll;
+  var memSeg=document.getElementById('memSeg');
+  memSeg.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;
+    [].forEach.call(memSeg.children,function(x){x.classList.remove('on')});b.classList.add('on');});
+  var tabs=document.getElementById('tabs');
+  tabs.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;
+    [].forEach.call(tabs.children,function(x){x.classList.remove('on')});b.classList.add('on');
+    var k=b.dataset.t;[].forEach.call(document.querySelectorAll('.tabpane'),function(p){p.classList.toggle('on',p.dataset.p===k)});});
+  var grab=document.getElementById('grab'),sy=0,dy=0,drag=false;
+  grab.addEventListener('touchstart',function(e){drag=true;sy=e.touches[0].clientY;dy=0;sheet.style.transition='none';},{passive:true});
+  grab.addEventListener('touchmove',function(e){if(!drag)return;dy=Math.max(0,e.touches[0].clientY-sy);sheet.style.transform='translateY('+dy+'px)';},{passive:true});
+  grab.addEventListener('touchend',function(){if(!drag)return;drag=false;sheet.style.transition='';if(dy>110){closeAll();}else{sheet.style.transform='';}});
+  var ta=document.getElementById('ta'),send=document.getElementById('send');
+  function grow(){ta.style.height='auto';ta.style.height=Math.min(120,ta.scrollHeight)+'px';send.disabled=!ta.value.trim();}
+  ta.addEventListener('input',grow);
+  function gmReply(){var t=document.createElement('div');t.className='typing';t.innerHTML='<i></i><i></i><i></i>';
+    scroll.querySelector('.col').appendChild(t);scroll.scrollTop=scroll.scrollHeight;
+    setTimeout(function(){t.remove();var p=document.createElement('div');p.className='msg gm';
+      p.innerHTML='<div class="tag">GM<span class="nm">· 金兆谭</span></div><div class="gm-body"><p>她的睫毛颤了颤，终究还是把那盏茶端了起来，指节抵着温热的瓷壁，像借它焐热某处早已冻僵的地方。<q>……多事。</q>这一次，话里的铁马声轻了许多。</p></div>';
+      scroll.querySelector('.col').appendChild(p);scroll.scrollTop=scroll.scrollHeight;},1100);}
+  function pushMe(text){var d=document.createElement('div');d.className='msg pl';
+    d.innerHTML='<div class="tag">你</div><div class="pl-body">'+text.replace(/</g,'&lt;')+'</div>';
+    scroll.querySelector('.col').appendChild(d);scroll.scrollTop=scroll.scrollHeight;gmReply();}
+  function doSend(){var v=ta.value.trim();if(!v)return;pushMe(v);ta.value='';grow();}
+  send.onclick=doSend;
+  ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();doSend();}});
+  document.getElementById('choices').addEventListener('click',function(e){var c=e.target.closest('.choice');if(!c)return;
+    var label=c.querySelector('span:nth-child(2)').textContent;var box=document.getElementById('choices');
+    box.style.opacity=.3;box.style.pointerEvents='none';setTimeout(function(){box.remove();},200);pushMe(label);});
+})();
+</script>
+</body>
+</html>

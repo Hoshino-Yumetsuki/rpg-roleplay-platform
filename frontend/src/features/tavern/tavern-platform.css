@@ -122,6 +122,7 @@
   padding: 0 16px;
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--panel) 60%, transparent);
+  overflow: hidden;
 }
 .tvp-chat-title {
   display: inline-flex;
@@ -145,6 +146,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   position: relative;
   /* #2 工具调用展开/折叠时历史上移修复:关闭浏览器滚动锚定 —— 否则展开 ToolCallBlock 使其下方
      内容变高时,浏览器锚到下方元素并增大 scrollTop,把上方历史顶上去。关掉后 scrollTop 不变 →
@@ -161,9 +163,10 @@
 }
 /* 酒馆输入框:默认 1 行,随输入增高,最多 ~5 行后内部滚动(覆盖 writing 模式的 88px 起始高度)。
    发送清空后由 Composer 的 reset effect 把高度收回 1 行。 */
-.tvp-foot .gc-composer.writing .gc-textarea {
+.tvp-root .tvp-foot .gc-composer.writing .gc-textarea {
   min-height: 36px;   /* 1 行(serif 15.5px/1.78 + padding) */
   max-height: 150px;  /* ~5 行,超出滚动(JS 把 height 设到 scrollHeight,这里 max-height 封顶) */
+  padding: 8px 16px;  /* 上下对称,文字垂直居中 */
 }
 
 /* ── cards 视图 ───────────────────────────────────────────────── */
@@ -268,6 +271,17 @@
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .tvp-hero-drop-sub { font-size: 12px; }
+
+/* 引导页:人格 skill 导入(GitHub 链接) */
+.tvp-hero-skill { width: 100%; margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.tvp-hero-skill-row { display: flex; gap: 8px; align-items: center; }
+.tvp-hero-skill-input {
+  flex: 1; min-width: 0; height: 38px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2, var(--panel)); color: var(--text); font-size: 13.5px;
+}
+.tvp-hero-skill-input:focus { outline: none; border-color: var(--accent); }
+.tvp-hero-skill-hint { font-size: 11.5px; text-align: center; }
 
 /* ── F1:后台工具流(可折叠、静音后台风)──────────────────────────── */
 .tvp-root .tvp-tools {
@@ -399,4 +413,91 @@
 /* ── 适配:窄屏把子侧栏压窄 ───────────────────────────────────── */
 @media (max-width: 880px) {
   .tvp-side { width: 200px; }
+}
+
+/* ── 手机模式:侧边栏收起/展开 ──────────────────────────────────── */
+.tvp-side-toggle {
+  display: none;
+}
+.tvp-side-scrim {
+  display: none;
+}
+.tvp-drawer-scrim {
+  display: none;
+}
+@media (max-width: 760px) {
+  /* 侧边栏默认收起,以 overlay 方式浮出 */
+  .tvp-side {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 40;
+    width: min(280px, 80vw);
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, .35);
+  }
+  .tvp-side.open {
+    transform: translateX(0);
+  }
+  /* 汉堡按钮:仅手机可见 */
+  .tvp-side-toggle {
+    display: inline-flex;
+  }
+  /* 遮罩层 */
+  .tvp-side-scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 35;
+    background: rgba(0, 0, 0, .45);
+  }
+  /* 右侧抽屉遮罩 */
+  .tvp-drawer-scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 25;
+    background: rgba(0, 0, 0, .45);
+  }
+}
+
+/* ── #80 新对话空态引导(不挡输入框;前端 skill 设计 + 动画)─────────────── */
+.tvp-onboard {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  margin-top: 18px;
+  animation: tvp-onboard-in .5s cubic-bezier(.2,.7,.2,1) both;
+}
+.tvp-onboard-hint {
+  max-width: 340px; text-align: center; font-size: 13px; line-height: 1.6;
+  color: color-mix(in srgb, var(--accent) 26%, currentColor);
+}
+.tvp-onboard-cta {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 18px; border-radius: 999px;
+  border: 1px solid var(--accent-edge, var(--accent));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent); font-size: 13.5px; font-weight: 600; cursor: pointer;
+  transition: transform .14s ease, background .14s ease, box-shadow .14s ease;
+  animation: tvp-onboard-pulse 2.8s ease-in-out infinite;
+}
+.tvp-onboard-cta:hover {
+  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: 0 6px 20px -6px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.tvp-onboard-cta:active { transform: translateY(0); }
+.tvp-onboard-arrow { transition: transform .14s ease; }
+.tvp-onboard-cta:hover .tvp-onboard-arrow { transform: translateX(3px); }
+@keyframes tvp-onboard-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes tvp-onboard-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
+  50%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 8%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tvp-onboard, .tvp-onboard-cta { animation: none; }
 }

@@ -48,7 +48,57 @@ _MAX_EMBED_BATCH_RETRIES = 5
 PER_CHUNK_CHAR_LIMIT = 1200
 # 进程内 cache,避免 ChatPipeline 每次 _embed_query 都重新 import vertex SDK
 _VERTEX_CLIENT_CACHE: dict[str, Any] = {}
-_EMBED_QUEUE_RUNNING: dict[int, bool] = {}  # script_id → 是否在跑
+_EMBED_QUEUE_RUNNING: dict[int, bool] = {}  # script_id → 是否在跑(进程内降级标志,多 worker 各自独立)
+
+# Redis key 前缀,用于跨进程去重;TTL 略大于预期最长 embed 时长,兼做宕机自动解锁。
+_EMBED_REDIS_PREFIX = "rpg:embed_running:"
+_EMBED_REDIS_TTL = 3600  # 1 小时,足够大,宕机后 Redis 自动释放锁
+
+
+def _embed_redis_acquire(script_id: int) -> bool:
+    """跨进程去重:用 Redis SETNX+EXPIRE 申请运行权。
+
+    返回 True 表示本进程/worker 拿到运行权;False 表示已有其它 worker 在跑该 script。
+    Redis 不可用时 → 优雅降级,返回 True(进程内标志兜底,单 worker 语义不变)。
+    """
+    try:
+        from redis_bus import get_sync_client
+        r = get_sync_client()
+        if r is None:
+            return True  # Redis 未配或不可达,降级到进程内标志
+        key = f"{_EMBED_REDIS_PREFIX}{script_id}"
+        acquired = r.set(key, "1", nx=True, ex=_EMBED_REDIS_TTL)
+        return bool(acquired)
+    except Exception as exc:
+        log.warning("[embedding] redis acquire failed (graceful degradation): %s", exc)
+        return True  # 降级:允许本进程继续,进程内标志兜底
+
+
+def _embed_redis_release(script_id: int) -> None:
+    """释放 Redis 运行权锁(finally 保证调用)。Redis 不可达时静默忽略。"""
+    try:
+        from redis_bus import get_sync_client
+        r = get_sync_client()
+        if r is None:
+            return
+        r.delete(f"{_EMBED_REDIS_PREFIX}{script_id}")
+    except Exception as exc:
+        log.warning("[embedding] redis release failed (TTL will auto-expire): %s", exc)
+
+
+def _embed_is_running(script_id: int) -> bool:
+    """检查某 script 是否有任意 worker 在跑 embedding(跨进程感知)。
+
+    优先查 Redis;Redis 不可达时退回本进程内标志。
+    """
+    try:
+        from redis_bus import get_sync_client
+        r = get_sync_client()
+        if r is not None:
+            return bool(r.exists(f"{_EMBED_REDIS_PREFIX}{script_id}"))
+    except Exception:
+        pass
+    return _EMBED_QUEUE_RUNNING.get(script_id, False)
 # 最近一次 _embed_via_openai 失败的友好描述(405/401/404 等),供前端引导用户去 RAG 设置用。
 _last_openai_embed_error: str = ""
 
@@ -56,7 +106,9 @@ _last_openai_embed_error: str = ""
 EMBED_MODEL = DEFAULT_EMBED_MODEL
 
 
-_PLATFORM_FALLBACK_ROLES = ("admin", "vip_user")
+# 平台兜底资格角色(享受平台共享 embedder / Vertex SA 兜底)。
+# 单一来源:与「纯 admin 管理权」(role == 'admin',见 api._deps.is_admin)是不同职责,资格集合不同,绝不跨用。
+_PLATFORM_FALLBACK_ROLES = {"admin", "vip_user"}
 _VERTEX_API_IDS = {"vertex", "google", "vertex_ai"}
 _OPENAI_API_IDS = {"openai", "openai_compat"}
 _GEMINI_API_IDS = {"gemini", "google_gemini"}
@@ -94,19 +146,36 @@ def _normalize_platform_embed_config(
     return api_id, model, api_key, base_url
 
 
-def _is_admin(user_id: int | None) -> bool:
-    """检查 user_id 是否为 admin 或 vip_user — 享受平台 embedder 兜底。
+def has_platform_fallback_role(user_or_id) -> bool:
+    """是否拥有「平台兜底资格」(role ∈ _PLATFORM_FALLBACK_ROLES = {admin, vip_user})。
+
+    单一谓词,消除散落的硬编码角色集。接受两种入参以省去多余 DB 往返:
+      - user dict(已加载,含 'role')→ 直接读 role,不查库。
+      - user_id(int / 可转 int)    → 查 users.role。
     其他用户(默认 role='user' / '')不享受,防白嫖付费 Gemini key。
+
+    注意:这是「资格」(admin + vip_user),与「纯 admin 管理权」(role == 'admin',
+    见 api._deps.is_admin)是不同职责,资格集合不同,绝不跨用。
     """
-    if not user_id:
+    if isinstance(user_or_id, dict):
+        return (user_or_id.get("role") or "").lower() in _PLATFORM_FALLBACK_ROLES
+    if not user_or_id:
         return False
     try:
         from platform_app.db import connect
         with connect() as db:
-            row = db.execute("select role from users where id = %s", (int(user_id),)).fetchone()
+            row = db.execute("select role from users where id = %s", (int(user_or_id),)).fetchone()
         return bool(row and (row.get("role") or "").lower() in _PLATFORM_FALLBACK_ROLES)
     except Exception:
         return False
+
+
+def _is_admin(user_id: int | None) -> bool:
+    """检查 user_id 是否享受平台 embedder 兜底(admin 或 vip_user)。
+
+    内部 = has_platform_fallback_role(单一来源);函数名保留向后兼容本模块多处调用。
+    """
+    return has_platform_fallback_role(user_id)
 
 
 def _resolve_embed_config(user_id: int | None) -> tuple[str, str, str, str]:
@@ -160,8 +229,9 @@ def _get_vertex_client(user_id: int | None = None):
     为用户兜底成本($150 一次性 + $1/月 vs LLM $135-27000/月)。Vertex
     text-embedding-004 有免费配额,平台 SA 兜底实际不花钱。
 
-    传 allow_platform_fallback=True → 即使生产鉴权模式,user 没 BYOK SA 也允许
-    走 rpg/vertex_sa.json 平台共享 SA(跟 LLM 的严格 BYOK 区分对待)。
+    平台共享 SA 兜底**仅 admin/vip 及系统任务(user_id=None)**可用 —— 普通用户必须 BYOK
+    自己的 Vertex SA(或换 OpenAI 兼容 embedding key),否则不给平台兜底。否则会变成全员
+    白嫖平台的 embedding 成本(本来只想给 VIP)。用户自己的 BYOK SA 不受影响,任何用户都优先用自己的。
     """
     cache_key = f"client:{user_id}"
     if cache_key in _VERTEX_CLIENT_CACHE:
@@ -171,10 +241,14 @@ def _get_vertex_client(user_id: int | None = None):
 
         from core.vertex_sa import load_sa_credentials
 
-        credentials, project_id = load_sa_credentials(user_id, allow_platform_fallback=True)
+        # 平台共享 SA 兜底仅 admin/vip(_is_admin 含 vip_user)+ 系统任务(无 user);
+        # 普通用户只能用自己的 BYOK SA,拿不到平台兜底。
+        allow_fb = (user_id is None) or _is_admin(user_id)
+        credentials, project_id = load_sa_credentials(user_id, allow_platform_fallback=allow_fb)
         if credentials is None or project_id is None:
             log.warning("[embedding] no Vertex SA available (user_id=%s)", user_id)
-            _VERTEX_CLIENT_CACHE[cache_key] = None
+            # 不缓存 None:SA 暂时不可用(文件未配/key 刷新中)时,下次请求应重试,
+            # 永久缓存 None 会让本进程整个生命周期都无法恢复。
             return None
         # Vertex AI text-embedding 走 location='us-central1' 比 global 稳定
         client = genai.Client(
@@ -187,7 +261,9 @@ def _get_vertex_client(user_id: int | None = None):
         return client
     except Exception as e:
         log.warning("[embedding] vertex client init failed: %s", e)
-        _VERTEX_CLIENT_CACHE[cache_key] = None
+        # [round-4-P1] 同上:不缓存 None。原代码在此 except 把瞬时构造失败(网络超时/
+        # 临时鉴权抖动)永久缓存成 None → 之后该 user_id 在本 worker 生命周期内永远拿不到
+        # client、embedding 静默禁用直到重启(workers=2 时两进程可各自中毒,无自愈)。
         return None
 
 
@@ -197,6 +273,16 @@ def _get_vertex_client(user_id: int | None = None):
 
 def _embed_via_vertex(model: str, texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT", user_id: int | None = None) -> list[list[float]] | None:
     """调 Vertex genai SDK。model 为空时回退 DEFAULT_EMBED_MODEL。user_id 用于 BYOK SA 优先链。"""
+    # 关键修复:genai SDK 的 embed_content 实测对【任何】不同文本返回**完全相同**的向量
+    # (768/768 维全等,与 contents 无关)→ 语义检索彻底失效(任何查询等距命中,永恒记忆 / 原著
+    # RAG 都形同虚设)。而原生 REST embedContent(_embed_via_gemini)正常。允许平台兜底的场景
+    # (admin/vip / 系统任务 user_id=None)且有平台 gemini key 时,优先改走原生 REST;
+    # 否则退回 genai SDK(用户自己的 BYOK Vertex SA,无平台 key 可用,与原行为一致)。
+    _plat_key = os.environ.get("EMBED_API_KEY", "")
+    if _plat_key and ((user_id is None) or _is_admin(user_id)):
+        _native = _embed_via_gemini(model, _plat_key, texts, task_type=task_type)
+        if _native:
+            return _native
     client = _get_vertex_client(user_id=user_id)
     if client is None:
         return None
@@ -205,10 +291,7 @@ def _embed_via_vertex(model: str, texts: list[str], task_type: str = "RETRIEVAL_
         resp = client.models.embed_content(
             model=model or DEFAULT_EMBED_MODEL,
             contents=texts,
-            config=types.EmbedContentConfig(
-                task_type=task_type,
-                output_dimensionality=EMBED_DIM,
-            ),
+            config=types.EmbedContentConfig(task_type=task_type, output_dimensionality=EMBED_DIM),
         )
         return [list(e.values) for e in resp.embeddings]
     except Exception as e:
@@ -224,8 +307,8 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
     dimensions 重试一次。
     """
     import json as _json
-    import urllib.error
-    import urllib.request
+    from core.outbound_ua import outbound_user_agent
+    from core.outbound import safe_urlopen
     global _last_openai_embed_error
     effective_url = (base_url.rstrip("/") if base_url else "https://api.openai.com/v1") + "/embeddings"
 
@@ -243,30 +326,48 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
             out.extend(sub)
         return out
 
-    # SEC(H-4): 默认 opener 跟随 ≤10 次重定向 → 即便 base_url 存入时过了 _validate_base_url,
-    # 攻击者端点也能 301 跳到 169.254.169.254 / 内网,且携 Authorization。禁止跟随重定向。
-    class _NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *a, **k):
-            return None
-    _opener = urllib.request.build_opener(_NoRedirect())
-
+    # SEC(H-4): base_url 攻击者端点可用 301 把携 Authorization 的请求跳到 169.254.169.254 / 内网,
+    # 且 DNS rebinding 可绕过写时 _validate_base_url。统一走 core.outbound.safe_urlopen
+    # (不跟随重定向 + use-time 重解析并 pin 到已校验 IP)。
     def _post(with_dim: bool) -> list[list[float]]:
         body = {"model": model, "input": texts, "encoding_format": "float"}
         if with_dim and EMBED_DIM:
             body["dimensions"] = EMBED_DIM
         req = urllib.request.Request(
             effective_url, data=_json.dumps(body).encode(),
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+                # 中转站多挂 Cloudflare,WAF 按默认 urllib UA 拦(实测 403 error 1010)→ 用浏览器 UA 穿透。
+                # 聊天/生图/拉模型早已统一走 core.outbound_ua,此前唯独漏了 embedding 路径 → 向量索引生成不了。
+                "User-Agent": outbound_user_agent(),
+            },
             method="POST",
         )
-        with _opener.open(req, timeout=60) as resp:
+        with safe_urlopen(req, timeout=60) as resp:
             data = _json.loads(resp.read())
         items = sorted(data["data"], key=lambda x: x["index"])
         return [item["embedding"] for item in items]
 
+    def _guard_dim(vecs: list[list[float]] | None) -> list[list[float]] | None:
+        # 维度卫士:有的模型(如 BAAI/bge-m3 固定 1024)不支持降到 EMBED_DIM(768),会静默返回
+        # 异维向量 → 既存不进 vector(768) 列(索引侧 with_vec=0),又在召回侧维度不符报错被吞 →
+        # 用户「RAG 完全失效」却查不出原因。这里维度不符即「响亮失败」+ 写人话错误供前端引导换模型。
+        global _last_openai_embed_error
+        if vecs and EMBED_DIM and len(vecs[0]) != EMBED_DIM:
+            _last_openai_embed_error = (
+                f"向量嵌入模型「{model}」输出 {len(vecs[0])} 维,但系统统一用 {EMBED_DIM} 维"
+                f"(该模型不支持降到 {EMBED_DIM})。请到「设置 → RAG / 向量模型」改用支持 {EMBED_DIM} 维的模型"
+                f"(如 Qwen/Qwen3-Embedding-* 带降维、OpenAI text-embedding-3-*、Gemini text-embedding-004),并重新拆书。"
+            )
+            log.warning("[embedding] dim mismatch: model=%s got=%d want=%d → 拒绝异维向量", model, len(vecs[0]), EMBED_DIM)
+            return None
+        return vecs
+
     try:
-        result = _post(with_dim=bool(EMBED_DIM))
-        _last_openai_embed_error = ""  # BUGFIX(导入报错弹窗刷新仍在): 成功即清 sticky 错误,否则"向量嵌入配置可能有问题"横幅永久残留
+        result = _guard_dim(_post(with_dim=bool(EMBED_DIM)))
+        if result is not None:
+            _last_openai_embed_error = ""  # 仅真正成功才清 sticky 错误(维度不符已写错误,别清掉)
         return result
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
@@ -274,8 +375,9 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
         # 带 dimensions 被 400 拒(模型不支持降维)→ 去掉 dimensions 重试一次
         if code == 400 and EMBED_DIM:
             try:
-                result = _post(with_dim=False)
-                _last_openai_embed_error = ""  # 同上:重试成功也清错误
+                result = _guard_dim(_post(with_dim=False))  # 去 dimensions 重试后,模型可能吐回原生维度 → 仍须卡维
+                if result is not None:
+                    _last_openai_embed_error = ""  # 仅真正成功才清错误(维度不符已写错误,别清掉)
                 return result
             except urllib.error.HTTPError as e2:
                 body = e2.read().decode(errors="replace")
@@ -298,11 +400,29 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
                 f" 原始响应：{body[:120]}"
             )
         elif code == 404:
-            friendly = (
-                f"向量嵌入接口地址错误（HTTP 404 Not Found）。"
-                f" 请检查 base_url 是否正确，路径是否以 /v1 结尾（如 https://api.example.com/v1）。"
-                f" 原始响应：{body[:120]}"
-            )
+            # 区分「模型不存在/无权访问」(模型名问题)与「路径不对」(base_url 问题)——
+            # 豆包/火山方舟回的是 Model.NotFound(地址 /api/v3 本就对),旧文案一律说「路径要以 /v1 结尾」
+            # 会误导用户把 /v3 改成 /v1 反而搞坏(用户反馈)。
+            _bl = body.lower()
+            _model_404 = any(m in _bl for m in (
+                "does not exist", "do not have access", "model.notfound",
+                "model_not_found", "no such model", "model not found", "modelnotfound",
+            ))
+            if _model_404:
+                friendly = (
+                    f"向量嵌入模型「{model}」不存在或你的账号无权访问(HTTP 404)。"
+                    f"这是模型名/权限问题,不是地址问题——请勿改 base_url;到「设置 → RAG / 向量模型」"
+                    f"换成该提供商真实开通的嵌入模型(火山方舟 doubao-embedding-* / OpenAI text-embedding-3-* / "
+                    f"Gemini text-embedding-004),或到提供商控制台为该模型开通权限。"
+                    f" 原始响应：{body[:160]}"
+                )
+            else:
+                friendly = (
+                    f"向量嵌入接口地址(base_url)错误(HTTP 404 Not Found)。"
+                    f"请确认路径与提供商匹配:OpenAI/中转站通常以 /v1 结尾、火山方舟(豆包)以 /api/v3 结尾、"
+                    f"Gemini 兼容以 /v1beta/openai 结尾。"
+                    f" 原始响应：{body[:120]}"
+                )
         else:
             friendly = f"向量嵌入请求失败（HTTP {code}）：{body[:200]}"
         log.warning("[embedding] openai embed failed: %s %s | friendly: %s", code, body[:200], friendly)
@@ -315,10 +435,19 @@ def _embed_via_openai(model: str, api_key: str, texts: list[str], base_url: str 
 
 
 def _embed_via_gemini(model: str, api_key: str, texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]] | None:
-    """Gemini native embedContent API, avoiding OpenAI-compatible batchEmbed quota."""
-    import json as _json
-    import urllib.error
+    """Gemini native embedContent API, avoiding OpenAI-compatible batchEmbed quota.
+
+    注意:此处对多文本逐条串行调用 embedContent(v1beta)。
+    Gemini 也提供 batchEmbedContents 批量端点,可一次请求处理多条文本,
+    但该端点与 outputDimensionality 参数的兼容性在不同模型版本下不稳定,
+    且 API 配额限制与 embedContent 共享同一个池——串行代码逻辑更简单可靠。
+    如 texts 条数大、性能成为瓶颈,可考虑改用 batchEmbedContents 合并请求。
+    """
     import urllib.request
+    import urllib.error
+    import json as _json
+    from core.outbound_ua import outbound_user_agent
+    from core.outbound import safe_urlopen
 
     if not api_key:
         log.warning("[embedding] gemini api_id but no api_key")
@@ -337,10 +466,10 @@ def _embed_via_gemini(model: str, api_key: str, texts: list[str], task_type: str
             req = urllib.request.Request(
                 url,
                 data=payload,
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", "User-Agent": outbound_user_agent()},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with safe_urlopen(req, timeout=60) as resp:
                 data = _json.loads(resp.read())
             values = data.get("embedding", {}).get("values") or []
             if len(values) != EMBED_DIM:
@@ -485,7 +614,7 @@ def embedding_preflight(user_id: int | None) -> dict[str, Any]:
             "model": model,
             "credential_api_id": credential_api_id,
         }
-        if api_id in _OPENAI_API_IDS and _last_openai_embed_error:
+        if (api_id in _OPENAI_API_IDS or api_key) and _last_openai_embed_error:
             base["last_error_hint"] = _last_openai_embed_error
             base["settings_hash"] = "settings-models"
         return base
@@ -532,8 +661,19 @@ def embed_query(
     if force_api_id and force_model:
         # 严格锁定建库时的 provider（召回侧强制路径,不走 admin fallback,
         # 因为换 provider 会让向量维度不匹配,反而召回不出来)
-        _, _, api_key, base_url = _resolve_embed_config(user_id)
+        # BUG-A fix: 必须按 force_api_id 取 key/base_url,而非用户当前选中的 provider。
+        # 用户切换 embed provider 后,_resolve_embed_config(user_id) 会返回新 provider 的
+        # key → 发到旧 provider 端点 → 401/404 → 静默降级 ILIKE。
         api_id, model = force_api_id, force_model
+        try:
+            from platform_app.user_credentials import resolve_api_key
+            from model_registry import default_api_for
+            _cred = resolve_api_key(user_id, force_api_id, env_fallback="")
+            api_key = _cred.get("key", "")
+            base_url = _cred.get("base_url_override", "") or (default_api_for(force_api_id) or {}).get("base_url", "") or ""
+        except Exception:
+            # 极端情况(catalog 不可用):回退到当前用户 config 的 key/base_url 尽力而为
+            _, _, api_key, base_url = _resolve_embed_config(user_id)
         vecs = _embed_provider_dispatch(api_id, model, api_key, [text], base_url=base_url, task_type="RETRIEVAL_QUERY", user_id=user_id)
     else:
         # 常规路径:走 admin fallback(user 自配失败时 admin 自动切平台)
@@ -542,8 +682,8 @@ def embed_query(
         log.warning("[embedding] embed_query returned no vectors")
         return None
     vec = vecs[0]
-    # pgvector 接受 "[v1,v2,...]" 字符串
-    return "[" + ",".join(f"{v:.6f}" for v in vec) + "]"
+    # pgvector 接受 "[v1,v2,...]" 字符串。单一真源 _vec_literal(模块级,call-time 解析)。
+    return _vec_literal(vec)
 
 
 def _vec_literal(v: list[float]) -> str:
@@ -581,11 +721,24 @@ def embed_status(script_id: int) -> dict[str, Any]:
             "select count(*) as c from worldbook_entries where script_id = %s and embedding_vec is not null",
             (script_id,),
         ).fetchone()["c"]
+        # 知识库人物(canon)用 kb_canon_entities.embedding(vector 列,**不是** embedding_vec)。
+        # 此前漏算 canon → 前端「知识库人物」卡 es['canon']=undefined → 永远 0 条·状态未知,
+        # 而重做估算/任务却按同样的列正常计数(2924/已完成 N) → 卡片与重做对不上(群反馈)。
+        # 与 import_pipeline 估算口径完全一致(count where embedding is not null)。
+        canon_total = db.execute(
+            "select count(*) as c from kb_canon_entities where script_id = %s",
+            (script_id,),
+        ).fetchone()["c"]
+        canon_done = db.execute(
+            "select count(*) as c from kb_canon_entities where script_id = %s and embedding is not null",
+            (script_id,),
+        ).fetchone()["c"]
     return {
-        "running": _EMBED_QUEUE_RUNNING.get(script_id, False),
+        "running": _embed_is_running(script_id),
         "chunks": {"done": chunks_done, "total": chunks_total},
         "cards": {"done": cards_done, "total": cards_total},
         "worldbook": {"done": wb_done, "total": wb_total},
+        "canon": {"done": canon_done, "total": canon_total},
         "model": EMBED_MODEL,
         "dim": EMBED_DIM,
     }
@@ -605,6 +758,7 @@ def _embed_chunks_loop(script_id: int, user_id: int) -> None:
         log.warning("[embedding] loop crashed for script %s: %s", script_id, exc, exc_info=True)
     finally:
         _EMBED_QUEUE_RUNNING[script_id] = False
+        _embed_redis_release(script_id)  # 释放跨进程锁(Redis 不可达时静默忽略)
         log.info("[embedding] done script_id=%s (flag cleared)", script_id)
 
 
@@ -759,12 +913,17 @@ def embed_script(user_id: int, script_id: int) -> dict[str, Any]:
         ).fetchone()
     if not row:
         raise ValueError("无权访问该剧本")
-    if _EMBED_QUEUE_RUNNING.get(script_id):
+    if _embed_is_running(script_id):
         return {"ok": True, "already_running": True, "status": embed_status(script_id)}
     # 检查 embedding provider 是否可用：生产鉴权模式必须有用户 BYOK/API key。
     preflight = embedding_preflight(user_id)
     if not preflight.get("ok"):
         return preflight
+    # 申请运行权(跨进程 SETNX,降级到进程内标志)。
+    # 二次检查 + acquire 之间存在极小窗口,最坏情况两 worker 同时进入跑一次重复 embed;
+    # embed 本身幂等(skip already-embedded rows),重复可接受。
+    if not _embed_redis_acquire(script_id):
+        return {"ok": True, "already_running": True, "status": embed_status(script_id)}
     _EMBED_QUEUE_RUNNING[script_id] = True
     threading.Thread(target=_embed_chunks_loop, args=(script_id, user_id), daemon=True).start()
     return {"ok": True, "status": embed_status(script_id)}

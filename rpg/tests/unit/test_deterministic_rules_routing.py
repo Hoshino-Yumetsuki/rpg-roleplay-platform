@@ -96,6 +96,25 @@ class ExpireStaleGmQuestionsUnit(unittest.TestCase):
         g.data["turn"] = 3
         self.assertEqual(g.expire_stale_gm_questions(), 1)
 
+    def test_agent_choice_and_gm_generated_expire(self):
+        """反馈#61:GM 主询问 ask_player_choice 用 source='agent:choice'、锚点用
+        'gm_generated' —— 旧 system_sources 不含 'agent' → 上轮未答询问不过期,与本轮
+        新询问并存(玩家自行输入走向后「第一轮+第二轮询问」并存)。修复后这两类也应过期。"""
+        g = self._fresh_state()
+        g.data["turn"] = 2
+        perms = g.data["permissions"]
+        perms["pending_questions"] = [
+            {"id": "a", "question": "第一轮 GM 询问?", "options": ["x"],
+             "source": "agent:choice", "turn": 1},
+            {"id": "b", "question": "本轮新询问?", "options": ["y"],
+             "source": "agent:choice", "turn": 2},
+            {"id": "d", "question": "锚点询问", "options": [],
+             "source": "gm_generated", "turn": 1},
+        ]
+        expired = g.expire_stale_gm_questions(current_turn=2)
+        self.assertEqual(expired, 2, "上轮 agent:choice + gm_generated 必须过期")
+        self.assertEqual(sorted(q["id"] for q in perms["pending_questions"]), ["b"])
+
     def test_player_authored_question_not_expired(self):
         """玩家自己挂的 pending question (source 不是系统类) 不动 — 那是玩家笔记。"""
         g = self._fresh_state()

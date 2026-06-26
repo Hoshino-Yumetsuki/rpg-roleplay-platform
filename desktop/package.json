@@ -1,0 +1,108 @@
+{
+  "name": "rpg-roleplay-desktop",
+  "productName": "RPG Roleplay",
+  "version": "1.26.1",
+  "description": "RPG Roleplay 本地一键部署桌面服务端(出品 Stellatrix Labs)—— 在线模式连云端,本地模式起捆绑的 PostgreSQL + Python 后端",
+  "private": true,
+  "main": "src/main.js",
+  "author": "Stellatrix",
+  "license": "SEE LICENSE IN ../LICENSE",
+  "scripts": {
+    "start": "electron .",
+    "bundle:backend": "bash scripts/bundle-backend.sh",
+    "bundle:backend:win": "powershell -ExecutionPolicy Bypass -File scripts/bundle-backend.ps1",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:dir": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "@electron/notarize": "^2.5.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9",
+    "qrcode": "^1.5.4"
+  },
+  "build": {
+    "appId": "icu.stellatrix.desktop",
+    "productName": "RPG Roleplay",
+    "copyright": "Copyright © 2026 Stellatrix Labs",
+    "artifactName": "RPGRoleplay-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "resources-staged",
+        "to": ".",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "extendInfo": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "dmg": {
+      "writeUpdateInfo": true
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": true,
+      "include": "build/installer.nsh"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "felixchaos",
+        "repo": "rpg-roleplay-platform",
+        "releaseType": "release"
+      }
+    ],
+    "afterSign": "build/notarize.js"
+  }
+}

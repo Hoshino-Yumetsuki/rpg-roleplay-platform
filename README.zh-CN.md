@@ -35,7 +35,7 @@ RPG Roleplay 把一本长篇小说扔进一个自托管的 LLM 驱动的 RPG 运
 | **Python 核心游戏循环**(state, op, scene, 骰子, 5E 核心, 遭遇, 物品栏, 检索, agents) | ✅ 稳定 |
 | **LLM 路由**(Anthropic 原生 / OpenAI Responses / Vertex Gemini / OpenAI 兼容) | ✅ 稳定 — 流式 + 工具调用 + 多模态 |
 | **Postgres + pgvector** 存储, v39+ 版本化迁移, 启动时自动加咨询锁顺序执行 | ✅ 稳定 |
-| **Vite + React 18**, JSDoc 类型注解, 多页面入口 | ✅ 稳定 |
+| **Vite + React 19**, JSDoc 类型注解, 多页面入口 | ✅ 稳定 |
 | **可分支存档** — commit / ref / checkout 像 Git 一样工作 + 硬删 30 天宽限队列 | ✅ 稳定 |
 | **剧本导入** — TXT / ZIP 上传, 7 种章节切分, 自动抽角色卡 + 世界书 + 时间线 + 向量索引 | ✅ 稳定 |
 | **SillyTavern V2/V3 导入** — 角色卡(PNG tEXt / JSON) + 聊天记录(JSONL → 新存档) | ✅ 稳定 |
@@ -64,7 +64,18 @@ RPG Roleplay 把一本长篇小说扔进一个自托管的 LLM 驱动的 RPG 运
 
 ## 快速开始
 
-### 最快路径 — 一条命令
+### 最简单 — 桌面应用(免配置,一键)
+
+不想碰命令行?下载桌面应用 —— 它**自带 PostgreSQL + Python**,一键在本机起整套服务(完全离线、数据不出本机、NSFW 自主)。也内置在线模式,直接连云端账号。
+
+**[→ 下载 macOS / Windows(Releases)](https://github.com/felixchaos/rpg-roleplay-platform/releases)**
+
+- macOS(Apple 芯片)`.dmg` · Windows `.exe` —— 已签名/公证
+- 内置控制台:起停服务、日志、局域网共享(手机扫码访问)、备份恢复、应用内更新
+- 自动创建本地账户;若要在局域网开放,可设用户名/密码
+- 更新渠道:优先 GitHub Releases,GitHub 慢时自动回退镜像
+
+### 从源码自部署 — 一条命令
 
 Postgres 已装好并运行后：
 
@@ -180,7 +191,7 @@ FastAPI 后端，~30+ 个路由模块 / agents / state mixin，~1k pytest 用例
 
 ## 技术栈
 
-`Python 3.12+` · `FastAPI` · `uvicorn` · `psycopg` · `pgvector` · `pgbouncer` · `Redis` · `React 18` · `Vite` · `Cloudscape Design System`
+`Python 3.12+` · `FastAPI` · `uvicorn` · `psycopg` · `pgvector` · `pgbouncer` · `Redis` · `React 19` · `Vite` · `Cloudscape Design System`
 
 ## 为什么不是 SillyTavern / Risu / KoboldCpp?
 

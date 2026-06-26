@@ -116,6 +116,58 @@ def _t_delete_script(user_id: int, args: dict) -> str:
         return f"失败: {type(exc).__name__}: {exc}"
 
 
+# 友好别名 → import_pipeline 的规范 module key(REBUILD_MODULES)
+_REBUILD_MODULE_ALIASES = {
+    "facts": "chapter-facts", "chapter_facts": "chapter-facts", "fact": "chapter-facts",
+    "timeline": "anchors", "anchor": "anchors",
+    "embedding": "embeddings", "embed": "embeddings", "vector": "embeddings", "vectors": "embeddings",
+    "characters": "cards", "character": "cards", "card": "cards", "人设卡": "cards", "角色卡": "cards",
+    "wb": "worldbook", "world_book": "worldbook", "世界书": "worldbook",
+    "chunk": "chunks",
+    "规范实体": "canon", "时间线": "anchors",
+}
+_REBUILD_MODULE_NAMES = (
+    "chunks", "chapter-facts", "canon", "cards", "worldbook", "anchors", "embeddings",
+)
+
+
+def _t_rebuild_script_module(user_id: int, args: dict) -> str:
+    """对已导入剧本重建单个知识模块(切块/章节事实/规范实体/角色卡/世界书/时间线/向量),
+    并【闭环等真实结果】回灌。剧本编辑器(console_assistant)里「只重做某一个模块」用它。"""
+    script_id = args.get("script_id")
+    if not isinstance(script_id, (int, float, str)) or not str(script_id).lstrip("-").isdigit():
+        return "失败: script_id 必须整数"
+    raw_module = (args.get("module") or "").strip()
+    module = _REBUILD_MODULE_ALIASES.get(raw_module.lower(), raw_module.lower())
+    if module not in _REBUILD_MODULE_NAMES:
+        return (f"失败: 未知模块 '{raw_module}'。可选: "
+                f"{', '.join(_REBUILD_MODULE_NAMES)} "
+                "(别名: facts/timeline/embed/cards/worldbook 等)")
+    source = (args.get("source") or args.get("mode") or "").strip() or None
+    try:
+        from platform_app import import_pipeline as _ip
+        body: dict = {}
+        if source:
+            body["source"] = source
+        sched = _ip.schedule_module_rebuild(user_id, int(script_id), module, body=body)
+        job_id = sched.get("job_id")
+        if not job_id:
+            return f"失败: 调度未返回 job_id ({sched})"
+        if sched.get("reused"):
+            # 已有同模块任务在跑:不重复触发,直接等它
+            pass
+        label = dict(zip(_REBUILD_MODULE_NAMES,
+                         ("切块", "章节事实", "规范实体", "角色卡", "世界书", "时间线", "向量重嵌"))).get(module, module)
+        # 上限 100s:压在前端 SSE 120s idle 窗口内(工具阻塞期间无 SSE 事件,超 120s 前端会 idle_timeout)。
+        # 轻量/确定性重建多在此内完成→GM 拿真结果;LLM 丰富等长任务超时返「仍在后台」,交由后台任务浮窗收尾。
+        res = _ip.wait_for_import_job(user_id, job_id, timeout_s=100.0, poll_s=2.5)
+        return _ip.summarize_job_result(res, f"剧本 {int(script_id)} 的「{label}」重建")
+    except ValueError as exc:
+        return f"失败: {exc}"
+    except Exception as exc:
+        return f"失败: {type(exc).__name__}: {exc}"
+
+
 def _t_probe_models(user_id: int, args: dict) -> str:
     api_id = (args.get("api_id") or "").strip() or None
     try:
@@ -156,6 +208,22 @@ def register_imports_tools() -> None:
           "properties": {"script_id": {"type": "integer"}, "mode": {"type": "string", "default": "regex"}},
           "required": ["script_id"]},
          _t_resplit_script, _USER_DEST, True),
+        ("rebuild_script_module",
+         "对已导入剧本【重建单个知识模块】并等真实结果回灌。"
+         "module 可选: chunks(切块)/chapter-facts(章节事实)/canon(规范实体)/cards(角色卡)/"
+         "worldbook(世界书)/anchors(时间线)/embeddings(向量),也认 facts/timeline/embed 等别名。"
+         "source='llm' 时 canon/worldbook/cards 走 LLM 丰富(需 BYOK 凭证),默认走零 LLM 的确定性重建。"
+         "剧本编辑器里『只重做某一个模块』用它;会覆盖该模块已派生数据(destructive)。",
+         {"type": "object",
+          "properties": {
+              "script_id": {"type": "integer"},
+              "module": {"type": "string",
+                         "enum": list(_REBUILD_MODULE_NAMES)},
+              "source": {"type": "string",
+                         "description": "可选: 'llm' 走 LLM 丰富(canon/worldbook/cards),默认确定性零 LLM"},
+          },
+          "required": ["script_id", "module"]},
+         _t_rebuild_script_module, _USER_DEST, True),
         ("delete_script", "永久删除剧本及其所有派生数据",
          {"type": "object",
           "properties": {"script_id": {"type": "integer"}, "force": {"type": "boolean", "default": False}},

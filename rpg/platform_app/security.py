@@ -16,7 +16,11 @@ except ImportError:
 
 
 def normalize_username(username: str) -> str:
-    return "".join(ch for ch in (username or "").strip().lower() if ch.isalnum() or ch in "_-.")[:48]
+    # 平台允许「邮箱即用户名」(实测 119 用户里 114 个 username 就是邮箱)。旧实现只留
+    # alnum+_-.,会把 `@` 抹掉 → 登录时 `a@qq.com` 变 `aqq.com`,与库里带 @ 的用户名不匹配
+    # → 真实用户被判「用户不存在」登不进(2026-06-14 查 login_fail:75/84 失败都是这个,
+    # 每个去掉 @ 的失败名都对得上一个真实账号)。保留 `@`,并把长度上限放宽到邮箱长度。
+    return "".join(ch for ch in (username or "").strip().lower() if ch.isalnum() or ch in "_-.@")[:255]
 
 
 # ── Legacy PBKDF2 (内部) ──────────────────────────────────────────────────────
@@ -146,7 +150,7 @@ def public_user(user: dict | None, db=None) -> dict | None:
     """
     if not user:
         return None
-    out = {k: user[k] for k in ("id", "public_id", "username", "display_name", "bio", "role", "created_at", "updated_at", "row_version", "welcome_dismissed_at") if k in user}
+    out = {k: user[k] for k in ("id", "public_id", "username", "display_name", "bio", "role", "created_at", "updated_at", "row_version", "welcome_dismissed_at", "avatar_url") if k in user}
     if out.get("public_id") is not None:
         out["uid"] = str(out["public_id"])
     out["has_password"] = bool(user.get("password_hash"))

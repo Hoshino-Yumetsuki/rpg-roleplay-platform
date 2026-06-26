@@ -35,6 +35,8 @@ import json
 import re
 
 from core.llm_backend import (
+    DEFAULT_FALLBACK_API as _DEFAULT_FALLBACK_API,
+    DEFAULT_FALLBACK_MODEL as _DEFAULT_FALLBACK_MODEL,
     resolve_preferred_api as _resolve_preferred_api_base,
 )
 from core.llm_backend import (
@@ -153,8 +155,8 @@ def extract_state_ops(
     if not narrative_text or not narrative_text.strip():
         return []
 
-    api_id = api_id_override or _resolve_preferred_extractor_api(user_id) or "vertex_ai"
-    model = model_override or _resolve_preferred_extractor_model(user_id) or "gemini-3.5-flash"
+    api_id = api_id_override or _resolve_preferred_extractor_api(user_id) or _DEFAULT_FALLBACK_API
+    model = model_override or _resolve_preferred_extractor_model(user_id) or _DEFAULT_FALLBACK_MODEL
 
     try:
         text, backend_ref = _call_extractor_backend(
@@ -339,6 +341,8 @@ def _call_openai_compat_json_mode(
     if not cred.get("key"):
         raise RuntimeError(f"无 {api_id} 凭证可用于 extractor")
     import urllib.request
+    import urllib.error
+    from core.outbound import safe_urlopen  # SSRF: 不跟随重定向 + use-time 重解析 pin IP
     base_url = cred.get("base_url_override") or _api_base_url(api_id)
     if not base_url:
         raise RuntimeError(f"未知 base_url for {api_id}")
@@ -363,9 +367,11 @@ def _call_openai_compat_json_mode(
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+        with safe_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
-        text = payload["choices"][0]["message"]["content"]
+        if not payload.get("choices"):
+            raise RuntimeError(f"provider 响应结构异常: {str(payload)[:200]}")
+        text = (payload.get("choices") or [{}])[0].get("message", {}).get("content") or ""
         # 响应是 {"ops": [...]} 格式 → 提取 ops 数组
         try:
             obj = json.loads(text)
@@ -374,8 +380,11 @@ def _call_openai_compat_json_mode(
         except Exception:
             pass
         return text
-    except Exception:
-        # 不支持 response_format 的旧 endpoint：降级到无 json_object 请求
+    except urllib.error.HTTPError as exc:
+        # 只对 400(endpoint 不支持 response_format)降级重试;429/401/5xx/SSRF 等直接上抛,
+        # 否则瞬时错误会重复发请求(重复计费)且把真实错因(鉴权/限流/SSRF)吞成「降级后报错」。
+        if exc.code != 400:
+            raise
         body_dict.pop("response_format", None)
         body = json.dumps(body_dict).encode("utf-8")
         req = urllib.request.Request(
@@ -383,16 +392,14 @@ def _call_openai_compat_json_mode(
             data=body, method="POST",
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {cred['key']}"},
         )
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+        with safe_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
-        return payload["choices"][0]["message"]["content"]
+        if not payload.get("choices"):
+            raise RuntimeError(f"provider 响应结构异常: {str(payload)[:200]}")
+        return (payload.get("choices") or [{}])[0].get("message", {}).get("content") or ""
 
 
 def _api_base_url(api_id: str) -> str:
-    """从 catalog 拿 base_url 做 OpenAI-compat 兜底。"""
-    try:
-        from model_registry import find_api, load_model_catalog
-        api = find_api(load_model_catalog(), api_id)
-        return api.get("base_url", "") if api else ""
-    except Exception:
-        return ""
+    """从 live catalog 拿 base_url 做 OpenAI-compat 兜底。薄委托 → model_registry.base_url_for(单一真源)。"""
+    from model_registry import base_url_for
+    return base_url_for(api_id)

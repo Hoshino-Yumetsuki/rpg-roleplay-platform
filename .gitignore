@@ -91,6 +91,8 @@ frontend/screenshots/
 output/
 .playwright-cli/
 .claude/
+.deepseek/
+.codewhale/
 .vscode/
 .idea/
 *.swp
@@ -139,3 +141,5 @@ rpg/config/*.private.json
 .test-fixtures/
 
 .ruff_cache
+# 运行时生成的用户 AI 图(不入库,误 add 防护)
+rpg/platform_data/ai_images/

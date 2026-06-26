@@ -192,15 +192,14 @@ def _require_user_credential() -> bool:
 
 
 def _has_user_credential(user_id: int | None, api_id: str) -> bool:
-    """user_api_credentials 表里是否有此 user 的此 provider 凭证。"""
-    if not user_id:
-        return False
-    try:
-        from platform_app.user_credentials import get_credential
-        cred = get_credential(int(user_id), api_id)
-        return bool(cred and cred.get("key"))
-    except Exception:
-        return False
+    """该 user 是否实际可用此 provider(有自己配的凭证)。
+
+    薄委托 → core.llm_backend.user_can_use_provider(单一真源)。统一后比原裸
+    get_credential 多了 vertex_ai BYOK SA 分支(vertex 凭证存 "AgentPlatform" 行下,
+    裸查 "vertex_ai" 行会漏判),供 list_remote_models 入口门控正确放行 BYOK-SA 用户。
+    """
+    from core.llm_backend import user_can_use_provider
+    return user_can_use_provider(user_id, api_id)
 
 
 def list_remote_models(
@@ -237,6 +236,8 @@ def list_remote_models(
     if not api:
         return {"ok": False, "error": f"api_id 不存在: {api_id}", "models": []}
 
+    # 不收编到 model_registry.api_kind:此处 api 可能是 api_override(自建中转站,不在
+    # 全局 catalog),其 kind 来自调用方合成的 override dict;api_kind 走 catalog 查会丢掉它。
     kind = api.get("kind") or api_id
     try:
         if kind == "vertex_ai":
@@ -261,6 +262,19 @@ def list_remote_models(
 
     _LIST_CACHE[cache_key] = (time.monotonic(), models)
     return {"ok": True, "models": models, "cached": False}
+
+
+def invalidate_user_api(user_id: int | None, api_id: str) -> None:
+    """凭据变更(换/删 key)后清掉该 user+api 的远程模型缓存。
+
+    _LIST_CACHE 是进程级 60s TTL,key=`{user_id}::{api_id}`。换 key 后若不清,
+    /api/models/remote 这类 force_refresh=False 的入口会在 60s 内继续返回**旧 key**
+    探测出的模型列表 → 表现为「换 key 后模型列表不刷新」(issue #22)。幂等、容错。
+    """
+    try:
+        _LIST_CACHE.pop(f"{user_id or 0}::{api_id}", None)
+    except Exception:
+        pass
 
 
 def _list_vertex_models(api: dict[str, Any], user_id: int | None = None) -> list[dict[str, Any]]:
@@ -292,31 +306,52 @@ def _list_vertex_models(api: dict[str, Any], user_id: int | None = None) -> list
 
 
 def _resolve_provider_key(api: dict[str, Any], user_id: int | None) -> str:
-    """统一取 key：优先 user_api_credentials，本地匿名才回退 env。"""
+    """统一取 key：优先 user_api_credentials，本地匿名才回退 env。
+
+    委托 → platform_app.user_credentials.resolve_api_key(单一真源,自带 require_auth
+    门控:强鉴权下不回退 env)。env 回退取该 provider 的 credential_env。取不到 → 抛错,
+    保留原 raise 契约(调用方 _list_* 据此返结构化错误)。
+
+    env 回退门控用本模块的 _require_user_credential()(= require_auth() OR
+    deployment_mode∉{local,desktop,self_hosted}),比 resolve_api_key 内部仅 require_auth()
+    更严:在『RPG_REQUIRE_AUTH=0 显式 + RPG_DEPLOYMENT_MODE∈{server/prod/cloud/未知}』这个
+    角落 regime 也禁 env 回退,保留旧『生产禁 env』字面契约(上一轮 blocker ③)。做法=只在
+    _require_user_credential() 为假时才把 env_fallback 传给 resolve_api_key;为真时传空串,
+    resolve_api_key 拿不到 env key → 下方 raise。
+    """
+    return _resolve_provider_creds(api, user_id)["key"]
+
+
+def _resolve_provider_creds(api: dict[str, Any], user_id: int | None) -> dict[str, str]:
+    """统一取 key + base_url_override（单一真源 resolve_api_key），保留 raise 契约。
+
+    返回 {"key": "...", "base_url_override": "..."}。base_url_override 是 user/admin 在
+    「连接方式」里配置的 per-credential 端点覆盖（如自建中转站 / 本地 llama.cpp），与 GM
+    运行路径（openai_compat backend: effective_base = override or base_url）取的是同一个值。
+    """
     api_id = api.get("id") or api.get("kind") or ""
-    if user_id:
-        try:
-            from platform_app.user_credentials import get_credential
-            cred = get_credential(int(user_id), api_id)
-            if cred and cred.get("key"):
-                return cred["key"]
-        except Exception:
-            pass
-    # 服务器模式下不允许回退到 env
-    if _require_user_credential():
-        raise RuntimeError(f"未在「个人主页 → API 凭证」配置 {api_id} 的 key")
-    env_name = api.get("credential_env") or ""
-    if env_name:
-        env_key = os.environ.get(env_name)
-        if env_key:
-            return env_key
-    raise RuntimeError(f"找不到 {api_id} 的 API key（用户凭证未配置且环境变量未设）")
+    from platform_app.user_credentials import resolve_api_key
+    env_fallback = "" if _require_user_credential() else (api.get("credential_env") or "")
+    result = resolve_api_key(user_id, api_id, env_fallback=env_fallback)
+    key = result.get("key")
+    if not key:
+        if _require_user_credential():
+            raise RuntimeError(f"未在「个人主页 → API 凭证」配置 {api_id} 的 key")
+        raise RuntimeError(f"找不到 {api_id} 的 API key（用户凭证未配置且环境变量未设）")
+    return {"key": key, "base_url_override": (result.get("base_url_override") or "").strip()}
 
 
 def _list_anthropic_models(api: dict[str, Any], user_id: int | None = None) -> list[dict[str, Any]]:
     from anthropic import Anthropic
-    key = _resolve_provider_key(api, user_id)
-    client = Anthropic(api_key=key)
+    from core.outbound import safe_httpx_client
+    creds = _resolve_provider_creds(api, user_id)
+    client_kwargs: dict[str, Any] = {
+        "api_key": creds["key"],
+        "http_client": safe_httpx_client(),
+    }
+    if creds.get("base_url_override"):
+        client_kwargs["base_url"] = creds["base_url_override"]
+    client = Anthropic(**client_kwargs)
     models = []
     for m in client.models.list():
         models.append({
@@ -334,12 +369,25 @@ def _list_openai_compat_models(api: dict[str, Any], user_id: int | None = None) 
         from openai import OpenAI
     except ImportError as exc:
         raise RuntimeError("openai SDK 未安装") from exc
-    key = _resolve_provider_key(api, user_id)
-    base_url = api.get("base_url") or None
+    creds = _resolve_provider_creds(api, user_id)
+    key = creds["key"]
+    # 与 GM 运行路径(openai_compat backend: effective_base = override or base_url)一致:
+    # per-credential base_url_override 优先于 catalog base_url。否则用户把自建中转站 / 本地
+    # llama.cpp 地址只填在「连接方式」凭据覆盖里时,拉模型清单会打 catalog 官方端点 → 选择器
+    # 空/错(运行能跑、却看不到/选不到自己的模型)。运行/探测两路径就此对齐。
+    base_url = creds["base_url_override"] or api.get("base_url") or None
     # 覆盖 openai SDK 默认 UA → 浏览器 UA,否则 Cloudflare 后的中转站会按 UA 拦掉(WAF 当 AI 爬虫),
     # 表现为「拉取模型/校验连接不可访问」。详见 core.outbound_ua。
     from core.outbound_ua import openai_default_headers
-    kwargs: dict[str, Any] = {"api_key": key, "default_headers": openai_default_headers()}
+    # SEC(H-5): base_url 用户/admin 可控(中转站)。OpenAI SDK 默认 follow_redirects=True →
+    # 攻击者端点能用 301/302 把携 Authorization 的 /v1/models 请求跳到 169.254.169.254 / 内网。
+    # 用 core.outbound.safe_httpx_client(不跟随重定向 + 传输层私网校验),与 GM 后端一致。
+    from core.outbound import safe_httpx_client
+    kwargs: dict[str, Any] = {
+        "api_key": key,
+        "default_headers": openai_default_headers(),
+        "http_client": safe_httpx_client(timeout=30.0),
+    }
     if base_url:
         kwargs["base_url"] = base_url
     client = OpenAI(**kwargs)
@@ -451,12 +499,22 @@ def _probe_error_message(status_detail: str) -> str:
 
 
 def probe_availability(api_id: str, model_real_name: str | None = None, timeout_sec: int = 15, user_id: int | None = None) -> dict[str, Any]:
+    """发一条最小请求验证 (api_id, model) 是否真的能调用。
+
+    Returns:
+        {
+          "ok": True/False,
+          "latency_ms": int,
+          "response_text": str (first 80 chars),
+          "model_used": "...",
+          "error": "..." (if failed),
+        }
+    """
     # 服务器模式强制：必须有 user-scoped 凭证才能真实发请求（避免烧服务端凭证）
     if _require_user_credential():
         # vertex_ai BYOK 存在 "AgentPlatform" 这个 api_id 下，需要特殊处理
-        from model_registry import find_api
-        from model_registry import load_model_catalog as _lmc
-        _kind = (find_api(_lmc(), api_id) or {}).get("kind", api_id)
+        from model_registry import api_kind
+        _kind = api_kind(api_id)
         if _kind == "vertex_ai":
             from core.vertex_sa import has_user_sa
             if not has_user_sa(user_id):
@@ -473,17 +531,6 @@ def probe_availability(api_id: str, model_real_name: str | None = None, timeout_
                 "latency_ms": 0,
                 "error": "需要在「个人主页 → API 凭证」中配置该 provider 的 key 才能发探测请求",
             }
-    """发一条最小请求验证 (api_id, model) 是否真的能调用。
-
-    Returns:
-        {
-          "ok": True/False,
-          "latency_ms": int,
-          "response_text": str (first 80 chars),
-          "model_used": "...",
-          "error": "..." (if failed),
-        }
-    """
     from model_registry import find_api, load_model_catalog
 
     catalog = load_model_catalog()
@@ -552,12 +599,12 @@ def probe_availability(api_id: str, model_real_name: str | None = None, timeout_
 # ══════════════════════════════════════════════════════════════════════
 def full_report(api_id: str, probe_model: bool = False, user_id: int | None = None) -> dict[str, Any]:
     """一次性返回：模型列表 + diff + 定价 + 可选可用性"""
-    from model_registry import find_api, load_model_catalog
+    from model_registry import api_kind, find_api, load_model_catalog
     catalog = load_model_catalog()
     api = find_api(catalog, api_id)
     if not api:
         return {"ok": False, "error": f"api_id 不存在: {api_id}"}
-    kind = api.get("kind") or api_id
+    kind = api_kind(api_id)  # catalog 查 kind(api 已确保来自 catalog 且非空,等价 api.get("kind") or api_id)
 
     report = {
         "ok": True,
@@ -696,6 +743,25 @@ def _infer_embedding_capability(model_real_name: str) -> bool:
     """按名字判断是否 embedding 模型(用户本地部署 / OpenAI-compat catalog 外的)。"""
     name = (model_real_name or "").lower()
     return any(pat in name for pat in _EMBEDDING_NAME_PATTERNS)
+
+
+def is_embedding_model(model_dict_or_name: dict[str, Any] | str | None) -> bool:
+    """统一判定一个模型是否 embedding 模型。
+
+    单一来源,封装两条等价判据:
+      · 模型 dict 的 capabilities 里含 "embedding"(catalog 显式声明)
+      · OR 名字 heuristic(_infer_embedding_capability,catalog 外/未标 cap)
+
+    传 dict 时两条都查;传 str(real_name)时只走名字 heuristic。
+    供 model_registry 等处替换裸 `'embedding' in caps` 判断。
+    """
+    if isinstance(model_dict_or_name, dict):
+        caps = model_dict_or_name.get("capabilities") or []
+        if "embedding" in caps:
+            return True
+        name = model_dict_or_name.get("real_name") or model_dict_or_name.get("id") or ""
+        return _infer_embedding_capability(str(name))
+    return _infer_embedding_capability(str(model_dict_or_name or ""))
 
 
 def get_capabilities(api_id: str, model_real_name: str, catalog_override: list[str] | None = None) -> list[str]:

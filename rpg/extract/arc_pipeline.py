@@ -137,16 +137,11 @@ def run_arc_extraction(
 
     from platform_app.db import connect
 
+    from extract.progress import emit_progress
+
     def _emit(stage, info):
-        if progress_cb:
-            try:
-                progress_cb(stage, info)
-            except Exception as _exc:
-                import logging as _logging
-                _logging.getLogger(__name__).warning(
-                    "[arc_pipeline._emit] progress_cb stage=%s failed: %s",
-                    stage, _exc, exc_info=True,
-                )
+        # 取消信号(InterruptedError)经 emit_progress 上抛,不再被吞 → 取消可生效。
+        emit_progress(progress_cb, stage, info, source=__name__)
 
     # 1) 读章节(短连接)
     with connect() as db:
@@ -222,20 +217,27 @@ def run_arc_extraction(
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = [pool.submit(_one, i, arc) for i, arc in enumerate(arcs)]
-        for f in as_completed(futures):
-            try:
-                idx, ex = f.result()
-                if ex is not None:
-                    extracts_dict[idx] = ex
-            except Exception as _exc:
-                import logging as _logging
-                _logging.getLogger(__name__).warning(
-                    "[arc_pipeline] _one future raised: %s", _exc, exc_info=True,
-                )
-            with lock:
-                done[0] += 1
-                if progress_cb:
-                    _emit("arc_extract", {"done": done[0], "total": len(arcs)})
+        try:
+            for f in as_completed(futures):
+                try:
+                    idx, ex = f.result()
+                    if ex is not None:
+                        extracts_dict[idx] = ex
+                except Exception as _exc:
+                    import logging as _logging
+                    _logging.getLogger(__name__).warning(
+                        "[arc_pipeline] _one future raised: %s", _exc, exc_info=True,
+                    )
+                with lock:
+                    done[0] += 1
+                    if progress_cb:
+                        _emit("arc_extract", {"done": done[0], "total": len(arcs)})
+        except (InterruptedError, KeyboardInterrupt):
+            # 用户取消(_emit 上抛):取消还没开跑的 future,别再白烧 LLM。
+            # 已在跑的(≤concurrency 个)无法中断,__exit__ 的 shutdown 只等这些,有界。
+            for fut in futures:
+                fut.cancel()
+            raise
 
     extracts = [extracts_dict[i] for i in range(len(arcs)) if i in extracts_dict]
     succeeded = len(extracts)

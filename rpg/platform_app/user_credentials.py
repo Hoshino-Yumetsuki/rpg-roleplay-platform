@@ -55,9 +55,11 @@ def _ip_is_internal(ip_str: str) -> bool:
     mapped = getattr(ip, "ipv4_mapped", None)
     if mapped is not None:
         ip = mapped
+    _CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
     return bool(
         ip.is_private or ip.is_loopback or ip.is_link_local
         or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+        or (isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT_NETWORK)
     )
 
 
@@ -79,7 +81,15 @@ def _validate_base_url(url: str) -> None:
     if p.scheme not in {"https", "http"}:
         raise ValueError("base_url 必须是 http/https")
     from core.config import require_auth as _require_auth
-    if p.scheme == "http" and _require_auth():
+    # 本地/自部署单用户模式:用户自己的机器 + 自己的 key,SSRF「自我保护」无意义。而这里的
+    # 解析级 IP 拦截会**误杀两类合法本地用法**:① 指向本机大模型(Ollama/LM Studio 127.0.0.1)
+    # ② 开着梯子(Clash fake-ip 把公网 API 域名解析成 198.18.x.x 这类保留段)。真请求其实经代理/
+    # 本机能通,却被预校验当内网拒了(用户反馈:开代理→「api 使用了保留地址」连接失败)。
+    # SSRF 真防线在请求时的 safe_* 出站层 + 托管模式 byok_only 守卫;解析级拦截只是服务器自保,
+    # 故仅在服务器模式(require_auth)生效;本地模式只校验 scheme。
+    if not _require_auth():
+        return
+    if p.scheme == "http":
         raise ValueError("服务器模式下 base_url 必须是 https")
     host = (p.hostname or "").lower()
     if not host:
@@ -97,6 +107,20 @@ def _validate_base_url(url: str) -> None:
         ip_str = info[4][0]
         if _ip_is_internal(ip_str):
             raise ValueError(f"base_url 解析到私有/本地/保留地址，已拒绝：{host} → {ip_str}")
+
+
+def _normalize_openai_base_url(url: str) -> str:
+    """规整 OpenAI 兼容 base_url:剥掉用户常误填的完整端点尾巴 `/chat/completions`。
+
+    中转站文档普遍把「接口地址」写成完整 `https://host/v1/chat/completions`,用户整段填进
+    base_url → SDK 再拼 `/chat/completions`、`/models` → `.../chat/completions/chat/completions`
+    与 `.../chat/completions/models` 双双 404 →「不可访问 / 0 模型」。这里只剥这一个公认尾巴
+    (大小写无关),不动 `/v1`、`/v1beta/openai` 等合法 base 路径。写时+读时都过一遍,自愈历史误填。
+    """
+    s = (url or "").strip().rstrip("/")
+    if s.lower().endswith("/chat/completions"):
+        s = s[: -len("/chat/completions")].rstrip("/")
+    return s
 
 
 def set_credential(user_id: int, api_id: str, plaintext_key: str, base_url_override: str = "", enabled: bool = True, *, allow_base_url: bool = False, proxy: str = "") -> dict[str, Any]:
@@ -124,10 +148,34 @@ def set_credential(user_id: int, api_id: str, plaintext_key: str, base_url_overr
     if not allow_base_url:
         base_url_override = ""
     elif base_url_override:
+        base_url_override = _normalize_openai_base_url(base_url_override)
         _validate_base_url(base_url_override)
     proxy = (proxy or "").strip()
-    if proxy and not re.match(r"^(https?|socks5h?)://[^\s/]+", proxy, re.IGNORECASE):
-        raise ValueError("代理地址格式不对 · 形如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080")
+    if proxy:
+        if not re.match(r"^(https?|socks5h?)://[^\s/]+", proxy, re.IGNORECASE):
+            raise ValueError("代理地址格式不对 · 形如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080")
+        # SEC: 托管多用户模式下,proxy 指向内网/本机 = SSRF 隐患(代理合法地可填 127.0.0.1,无法
+        # 靠 _validate_base_url 拦)。这里在**写时**就拒掉内网代理,与消费侧 byok_only 守卫
+        # (openai_compat.py:仅 require_auth=False 才用 proxy)构成双闸,杜绝「存量内网 proxy 随
+        # 某次重构变实弹」。本地单用户模式(require_auth=False)才允许 127.0.0.1 这类本地梯子。
+        try:
+            from core.config import require_auth as _require_auth
+            _hosted = bool(_require_auth())
+        except Exception:
+            _hosted = True
+        if _hosted:
+            import socket as _socket
+            from urllib.parse import urlparse as _urlparse
+            _phost = (_urlparse(proxy).hostname or "").lower()
+            if (not _phost or _phost in {"localhost", "ip6-localhost", "ip6-loopback"}
+                    or _phost.endswith(".localhost")):
+                raise ValueError("服务器模式下代理不允许指向本地地址")
+            try:
+                _infos = _socket.getaddrinfo(_phost, None, proto=_socket.IPPROTO_TCP)
+            except OSError as _exc:
+                raise ValueError(f"代理主机无法解析:{_phost}") from _exc
+            if any(_ip_is_internal(_i[4][0]) for _i in _infos):
+                raise ValueError(f"服务器模式下代理不允许指向私有/本地/保留地址:{_phost}")
     meta = {"proxy": proxy} if proxy else {}
     encrypted = encrypt_api_key(plaintext_key, user_id, api_id)
     with connect() as db:
@@ -152,9 +200,12 @@ def set_credential(user_id: int, api_id: str, plaintext_key: str, base_url_overr
     # 失败只 log，绝不影响存 key 主流程。
     try:
         import logging as _logging
-        from model_probe import list_remote_models
+        from model_probe import invalidate_user_api, list_remote_models
         from platform_app.user_models import replace_synced_models
-        sync_result = list_remote_models(api_id, user_id=user_id)
+        # 先清旧 key 的远程模型缓存,再强制重拉:绝不能命中改 key 前「校验连接/拉取模型」
+        # 写满的旧 key 60s 缓存,否则会把旧 key 的模型写进 overlay(issue #22 根因之一)。
+        invalidate_user_api(user_id, api_id)
+        sync_result = list_remote_models(api_id, user_id=user_id, force_refresh=True)
         if sync_result.get("ok") and sync_result.get("models"):
             replace_synced_models(user_id, api_id, sync_result["models"])
         else:
@@ -186,10 +237,13 @@ def delete_credential(user_id: int, api_id: str) -> dict[str, Any]:
     # 模型清单仍残留在游戏控制台模型列表里，删了 key 也不消失(OSS issue #22)。best-effort，
     # 清 overlay 失败不影响删 key 主流程。覆盖所有别名，防 normalize 后落到不同 api_id。
     try:
+        from model_probe import invalidate_user_api
         from platform_app.user_models import replace_synced_models
         for _alias in {canonical, *_credential_aliases(canonical)}:
             if _alias:
                 replace_synced_models(user_id, _alias, [])
+                # 同步清远程模型缓存:否则删 key 后 60s 内「拉取远程模型」仍返已删 key 的清单。
+                invalidate_user_api(user_id, _alias)
     except Exception:
         pass
     return {"ok": True, "deleted": True, "api_id": canonical}
@@ -261,7 +315,7 @@ def get_credential(user_id: int, api_id: str) -> dict[str, Any] | None:
         return {
             "api_id": canonical,
             "key": plaintext,
-            "base_url_override": row.get("base_url_override") or "",
+            "base_url_override": _normalize_openai_base_url(row.get("base_url_override") or ""),
             "proxy": (_meta or {}).get("proxy") or "",
         }
     return None
@@ -297,4 +351,11 @@ def resolve_api_key(user_id: int | None, api_id: str, env_fallback: str = "") ->
         env_key = os.environ.get(env_fallback)
         if env_key:
             return {"key": env_key, "source": "env", "base_url_override": ""}
+    # 自部署「全局 key」约定:环境变量 RPG_KEY_<API_ID>(大写,非字母数字→_)。
+    # 仅本地/自部署模式(上方 require_auth gate 已挡掉服务器模式)。让用户在控制台「配置」里
+    # 填一次全局密钥即对所有调用生效(无需逐用户 BYOK)。用户库内凭据优先级仍高于此回退。
+    conv = "RPG_KEY_" + "".join(ch if ch.isalnum() else "_" for ch in normalize_api_id(api_id)).upper()
+    conv_key = os.environ.get(conv)
+    if conv_key:
+        return {"key": conv_key, "source": "env", "base_url_override": ""}
     return {"key": "", "source": "none", "base_url_override": ""}

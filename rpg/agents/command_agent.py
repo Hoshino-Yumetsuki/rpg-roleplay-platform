@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from core.json_parse import parse_llm_json
 from core.llm_backend import (
     detect_default_api as _detect_default_api,
 )
@@ -138,18 +139,8 @@ def parse_set_command(
     # BYOK 守卫:解析出的 provider 用户实际不可用(典型:落到默认 vertex_ai 但用户没传 SA,
     # 或 stale set_parser 偏好指向没配 key 的 provider)→ 回退到用户配过 key 的第一个模型。
     # 否则 command_agent 抛「未找到 Vertex SA」→ /set 等命令解析整段失败(实测生产日志高频)。
-    if user_id and user_default and api_id and api_id != user_default[0]:
-        try:
-            from platform_app.user_credentials import get_credential
-            if api_id == "vertex_ai":
-                from core.vertex_sa import has_user_sa
-                _usable = has_user_sa(user_id)
-            else:
-                _usable = bool(get_credential(user_id, api_id))
-        except Exception:
-            _usable = True
-        if not _usable:
-            api_id, model = user_default[0], user_default[1]
+    from core.llm_backend import guard_byok_usable as _guard_byok_usable
+    api_id, model = _guard_byok_usable(user_id, api_id, model)
 
     user_prompt = _build_user_prompt(set_text, state_data)
 
@@ -256,16 +247,17 @@ def _call_openai_compat_tools(
     api_id: str, model: str, user_prompt: str, user_id: int | None, timeout_sec: int
 ) -> list[dict]:
     """OpenAI 兼容 JSON mode。"""
-    from agents.extractor import _api_base_url
+    from model_registry import base_url_for
     from platform_app.user_credentials import resolve_api_key
     cred = resolve_api_key(user_id, api_id)
     key = cred.get("key")
     if not key:
         raise RuntimeError(f"无 {api_id} 凭证 for command_agent")
-    base_url = cred.get("base_url_override") or _api_base_url(api_id)
+    base_url = cred.get("base_url_override") or base_url_for(api_id)
     if not base_url:
         raise RuntimeError(f"未知 base_url for {api_id}")
     import urllib.request
+    from core.outbound import safe_urlopen  # SSRF: 不跟随重定向 + use-time 重解析 pin IP
     system_prompt = (
         _SYSTEM_PROMPT
         + "\n\n## 可用工具表\n"
@@ -287,40 +279,31 @@ def _call_openai_compat_tools(
         data=body,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+    with safe_urlopen(req, timeout=timeout_sec) as resp:
         raw = resp.read().decode("utf-8")
     parsed = json.loads(raw)
-    content = parsed["choices"][0]["message"]["content"]
+    if not parsed.get("choices"):
+        raise RuntimeError(f"provider 响应结构异常: {str(parsed)[:200]}")
+    content = (parsed.get("choices") or [{}])[0].get("message", {}).get("content") or ""
     return _parse_tool_call_json_array(content)
 
 
 def _parse_tool_call_json_array(text: str) -> list[dict]:
-    """解析模型输出的 JSON,容错地抽出 tool calls 列表。"""
+    """解析模型输出的 JSON,容错地抽出 tool calls 列表。
+
+    解析委托 core.json_parse.parse_llm_json(want=list);**原契约不变**:
+    拿不到 list 返回 [](注:模型偶尔给 {"calls": [...]} 这类 dict 包裹,
+    want=list 会过滤掉它,故先尝试 list,失败再尝试不限类型让 _coerce_calls
+    从 dict 形状里抠 calls/tool_calls/单对象)。
+    """
     if not text:
         return []
-    text = text.strip()
-    # 1) 整段是 JSON
-    try:
-        parsed = json.loads(text)
-        return _coerce_calls(parsed)
-    except Exception:
-        pass
-    # 2) ```json fence
-    import re
-    fence = re.search(r"```(?:json)?\s*\n?\s*([\[\{][\s\S]*?[\]\}])\s*\n?```", text, re.M)
-    if fence:
-        try:
-            return _coerce_calls(json.loads(fence.group(1)))
-        except Exception:
-            return []
-    # 3) 抓第一个 [ ... ] 或 { "calls": [...] }
-    match = re.search(r"\[[\s\S]*\]", text)
-    if match:
-        try:
-            return _coerce_calls(json.loads(match.group(0)))
-        except Exception:
-            return []
-    return []
+    parsed = parse_llm_json(text, want=list)
+    if parsed is None:
+        parsed = parse_llm_json(text)  # 容忍 {"calls": [...]} / 单对象 dict
+    if parsed is None:
+        return []
+    return _coerce_calls(parsed)
 
 
 def _coerce_calls(parsed: Any) -> list[dict]:
@@ -360,7 +343,8 @@ def _coerce_calls(parsed: Any) -> list[dict]:
 def _default_model_for_api(api_id: str) -> str:
     if api_id == "anthropic":
         return "claude-haiku-4-5-20251001"
-    return "gemini-3.5-flash"
+    from core.llm_backend import DEFAULT_FALLBACK_MODEL
+    return DEFAULT_FALLBACK_MODEL
 
 
 def _resolve_preferred_model(user_id: int | None) -> str | None:

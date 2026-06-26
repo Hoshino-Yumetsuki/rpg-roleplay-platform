@@ -35,7 +35,7 @@ RPG Roleplay drops a long-form novel into a self-hosted, LLM-driven RPG runtime:
 | **Python core game loop** (state, ops, scenes, dice, D&D 5E core, encounters, inventory, retrieval, agents) | ✅ Stable |
 | **LLM routing** (Anthropic native, OpenAI Responses, Vertex Gemini, OpenAI-compatible) | ✅ Stable, streaming + tool-use + multimodal |
 | **Postgres + pgvector storage**, v39+ versioned migrations, auto-apply on boot under advisory lock | ✅ Stable |
-| **Vite + React 18**, JSDoc type annotations, multi-page entries | ✅ Stable |
+| **Vite + React 19**, JSDoc type annotations, multi-page entries | ✅ Stable |
 | **Branchable saves** — commit / ref / checkout work like Git, hard-delete with 30-day grace queue | ✅ Stable |
 | **Script ingestion** — TXT / ZIP upload, 7 chapter splitters, auto-extract character cards + worldbook + timeline, vector index | ✅ Stable |
 | **SillyTavern V2/V3 import** — character cards (PNG tEXt / JSON) + chat history (JSONL → new save) | ✅ Stable |
@@ -64,7 +64,18 @@ Worldbook overlays, character-book ingestion, a deterministic opening (`first_me
 
 ## Quick start
 
-### Fastest path — one command
+### Easiest — desktop app (no setup, one click)
+
+Don't want to touch a terminal? Download the desktop app — it bundles its own PostgreSQL + Python and runs the whole stack locally with one click (fully offline, your data never leaves the machine; NSFW is on you). It also has an online mode that just connects to the cloud account.
+
+**[→ Download for macOS / Windows (Releases)](https://github.com/felixchaos/rpg-roleplay-platform/releases)**
+
+- macOS (Apple Silicon) `.dmg` · Windows `.exe` — signed/notarized
+- Built-in console: start/stop the service, logs, LAN sharing (scan a QR from your phone), backup & restore, in-app updates
+- Auto-creates a local account; set a username/password if you expose it on your LAN
+- Update channel: pulls from GitHub Releases, falls back to a mirror if GitHub is slow
+
+### Self-host from source — one command
 
 With Postgres installed and running:
 
@@ -180,7 +191,7 @@ Adding a provider = one entry in `rpg/config/model_catalog.json` + (if a new wir
 
 ## Stack
 
-`Python 3.12+` · `FastAPI` · `uvicorn` · `psycopg` · `pgvector` · `pgbouncer` · `Redis` · `React 18` · `Vite` · `Cloudscape Design System`
+`Python 3.12+` · `FastAPI` · `uvicorn` · `psycopg` · `pgvector` · `pgbouncer` · `Redis` · `React 19` · `Vite` · `Cloudscape Design System`
 
 ## Why not SillyTavern / Risu / KoboldCpp?
 

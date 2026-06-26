@@ -4,6 +4,7 @@ import threading
 
 from platform_app.db.connection import connect
 from platform_app.db.migrations import (
+    MIGRATION_LOCK_TIMEOUT_MS,
     _apply_versioned_migrations,
     _assert_schema_up_to_date,
     _migration_advisory_lock,
@@ -62,6 +63,8 @@ def reset_db_init_flag() -> None:
 def _do_init_db() -> None:
     """实际的 DDL 跑批，不要直接调，走 init_db()"""
     with connect() as db:
+        # 审计#5:DDL 别用默认 lock_timeout=0(无限等)。SET LOCAL 只作用本事务,commit 自动复位。
+        db.execute(f"set local lock_timeout = {MIGRATION_LOCK_TIMEOUT_MS}")
         db.execute("create extension if not exists pgcrypto")
         db.execute("create extension if not exists pg_trgm")
         db.execute(

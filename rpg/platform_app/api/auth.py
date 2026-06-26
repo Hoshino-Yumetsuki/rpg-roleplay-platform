@@ -2,8 +2,17 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+
+# [Fix-3] 进程内 per-IP 回退计数器(Redis 不可用时兜底)
+# 结构与 auth.py 中登录限流的 _FAIL_BUCKETS_IP/_FAIL_LOCK 同构
+_VERIFY_IP_BUCKETS: dict[str, list[float]] = {}  # ip → [请求时间戳...]
+_VERIFY_IP_LOCK = threading.Lock()
+_VERIFY_IP_LIMIT = 60        # 与 Redis 路径阈值一致
+_VERIFY_IP_WINDOW_SEC = 600  # 600s
 
 from .. import auth as _auth
 from .. import workspace
@@ -16,7 +25,7 @@ from ._deps import (
     current_user,
     json_response,
     platform_for,
-    require_user,
+    require_admin,
 )
 
 router = APIRouter()
@@ -40,6 +49,17 @@ async def api_register(request: Request):
             status_code=429,
             headers={"Retry-After": str(rl.retry_after_sec)},
         )
+    # Cloudflare Turnstile 人机验证：仅当配置了 RPG_TURNSTILE_SECRET 时强制（fail-safe）。
+    # verify 含网络 I/O（阻塞 urllib），移出 event loop 防注册风暴卡 worker。
+    from .. import turnstile as _turnstile
+    if _turnstile.enabled():
+        _ok = await asyncio.to_thread(_turnstile.verify, body.get("turnstile_token", ""), ip=ip)
+        if not _ok:
+            _auth._record_login_fail(ip, normalized_username)
+            return json_response(
+                {"ok": False, "error": "人机验证失败，请刷新页面后重试", "error_key": "auth.captcha_failed"},
+                status_code=400,
+            )
     # 合规校验：服务条款 + 年龄确认
     terms_accepted = bool(body.get("terms_accepted"))
     age_confirmed = bool(body.get("age_confirmed"))
@@ -94,13 +114,23 @@ async def api_verify_email(request: Request):
     if not email or not code:
         return json_response({"ok": False, "error": "email 和 code 不能为空"}, status_code=400)
     # SEC(L-5): per-IP 软上限,与 email 维度失败计数器叠加做纵深防御(防多 IP 轮询放大暴破)。
-    try:
-        import redis_bus as _rb
-        _c = _rb.rate_incr(f"verifyip:{_client_ip(request)}", 600)
-        if _c and _c > 60:
+    _ip_key = _client_ip(request)
+    # [round-4-P1] rate_incr 内部吞掉所有异常并返回 None(从不抛 ConnectionError/Timeout),
+    #   故原 except(ConnectionError…) 永不触发 → Redis 宕机时限流完全失效。改为按返回值判断:
+    #   None=Redis 不可用 → 走进程内滑动窗口兜底;有值 → 用 Redis 计数。
+    import redis_bus as _rb
+    _c = _rb.rate_incr(f"verifyip:{_ip_key}", 600)
+    if _c is None:
+        _now = time.monotonic()
+        with _VERIFY_IP_LOCK:
+            _bucket = _VERIFY_IP_BUCKETS.setdefault(_ip_key, [])
+            _bucket.append(_now)
+            _bucket[:] = [t for t in _bucket if _now - t < _VERIFY_IP_WINDOW_SEC]
+            _cnt = len(_bucket)
+        if _cnt > _VERIFY_IP_LIMIT:
             return json_response({"ok": False, "error": "尝试过于频繁,请稍后再试"}, status_code=429)
-    except Exception:
-        pass
+    elif _c > 60:
+        return json_response({"ok": False, "error": "尝试过于频繁,请稍后再试"}, status_code=429)
     try:
         user, token = _auth.confirm_email_verification(email, code)
         workspace.ensure_default(user["id"])
@@ -120,7 +150,8 @@ async def api_resend_code(request: Request):
     if not email:
         return json_response({"ok": False, "error": "email 不能为空"}, status_code=400)
     try:
-        _auth.resend_verification_code(email, ip=ip)
+        # 内部含同步 httpx.post(Resend API),移出 event loop 防阻塞 worker。
+        await asyncio.to_thread(_auth.resend_verification_code, email, ip=ip)
         return json_response({"ok": True, "message": "验证码已重发，请查收邮件"})
     except ValueError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=429)
@@ -159,7 +190,8 @@ async def api_login_code_request(request: Request):
     ip = _client_ip(request)
     ua = request.headers.get("user-agent", "")
     try:
-        result = _auth.request_login_code(body.get("email", ""), ip=ip, ua=ua)
+        # 内部含同步 httpx.post(Resend API),移出 event loop 防阻塞 worker。
+        result = await asyncio.to_thread(_auth.request_login_code, body.get("email", ""), ip=ip, ua=ua)
         return json_response(result)
     except _auth.RateLimited as rl:
         return json_response(
@@ -177,8 +209,10 @@ async def api_login_code_verify(request: Request):
     body = await request.json()
     ip = _client_ip(request)
     try:
-        user, token = _auth.confirm_login_code(body.get("email", ""), body.get("code", ""), ip=ip)
-        workspace.ensure_default(user["id"])
+        user, token = await asyncio.to_thread(
+            _auth.confirm_login_code, body.get("email", ""), body.get("code", ""), ip=ip
+        )
+        await asyncio.to_thread(workspace.ensure_default, user["id"])
         response = json_response({"ok": True, "user": public_user(user), "platform": platform_for(user)})
         _set_session_cookie(response, request, token)
         return response
@@ -192,6 +226,35 @@ async def api_login_code_verify(request: Request):
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
+@router.post("/api/auth/apple")
+async def api_apple_signin(request: Request):
+    """Sign in with Apple(原生 iOS/iPadOS):校验 Apple 签名身份令牌 → 查/建账号 → 发 session cookie。
+    body: {identity_token, raw_nonce?, name?}（email 从令牌取;name 仅 Apple 首次授权时有值)。"""
+    body = await request.json()
+    identity_token = (body.get("identity_token") or "").strip()
+    raw_nonce = (body.get("raw_nonce") or "").strip()
+    name = (body.get("name") or "").strip()
+    if not identity_token:
+        return json_response({"ok": False, "error": "缺 identity_token"}, status_code=400)
+    ip = _client_ip(request)
+    try:
+        _auth._check_rate_limit(ip, "apple")
+    except _auth.RateLimited:
+        return json_response({"ok": False, "error": "尝试过于频繁,请稍后再试"}, status_code=429)
+    try:
+        claims = await asyncio.to_thread(_auth.verify_apple_identity_token, identity_token, raw_nonce)
+        user, token = await asyncio.to_thread(
+            _auth.login_or_create_apple_user, claims["sub"], claims.get("email", ""), name
+        )
+        await asyncio.to_thread(workspace.ensure_default, user["id"])
+        response = json_response({"ok": True, "user": public_user(user), "platform": platform_for(user)})
+        _set_session_cookie(response, request, token)
+        return response
+    except ValueError as exc:
+        _auth._record_login_fail(ip, "apple")
+        return json_response({"ok": False, "error": str(exc)}, status_code=401)
+
+
 # 保留 request：logout 需要读 cookies 并设置 delete_cookie
 @router.post("/api/auth/logout")
 async def api_logout(request: Request):
@@ -200,6 +263,29 @@ async def api_logout(request: Request):
     # 必须用跟 set 一致的 samesite/secure,否则跨域场景下浏览器会把 delete 当
     # "另一个 cookie" 残留,导致 SameSite=None 的 session cookie 还在(或反之)。
     _delete_session_cookie(response, request)
+    return response
+
+
+@router.get("/api/auth/desktop-login")
+async def api_desktop_login(request: Request, token: str = "", next: str = "/Platform.html"):
+    """桌面「免登录魔法链接」入口:控制台铸的一次性 token → 兑换 session cookie → 重定向进 app。
+    仅本地/桌面模式可用。next 仅允许站内相对路径(防开放重定向)。"""
+    from fastapi.responses import RedirectResponse
+
+    from core.config import deployment_mode as _dm
+    if (_dm() or "").strip().lower() not in {"local", "desktop", "self_hosted", "self-hosted"}:
+        raise HTTPException(status_code=404, detail="仅本地部署可用")
+    # 防开放重定向:next 必须是站内相对路径(单个 /,不允许 // 或 \\ 或带协议)。
+    # 反斜杠要挡:浏览器会把 /\evil.com 当成协议相对 URL → 跳站外。
+    dest = next if (next.startswith("/") and not next.startswith("//") and "\\" not in next and ":" not in next) else "/Platform.html"
+    try:
+        user, session_token = _auth.consume_desktop_login_token((token or "").strip())
+        workspace.ensure_default(user["id"])
+    except ValueError:
+        # 失败 → 跳登录页,不泄露原因细节
+        return RedirectResponse(url="/Login.html?magic=expired", status_code=302)
+    response = RedirectResponse(url=dest, status_code=302)
+    _set_session_cookie(response, request, session_token)
     return response
 
 
@@ -232,18 +318,26 @@ async def api_magic_consume(request: Request):
     if not token or not email:
         return json_response({"ok": False, "error": "缺 magic_token 或 email"}, status_code=400)
     ip = _client_ip(request)
+    # [round-4-P2] 与 login()/confirm_login_code() 对齐:先做 per-IP/per-email 限流预检,
+    #   锁定中直接 429,避免每个被锁请求仍打 DB(consume_magic_token 的 allowlist SELECT)。
     try:
-        # Step 1: 校验 magic_token + email 匹配 + 30 天有效期
-        _auth.consume_magic_token(token, email)
-        # Step 2: 直接登录(查/建 user + issue session) — 跳过 OTP
-        result = _auth.login_via_magic_token(email, ip=ip)
+        _auth._check_rate_limit(ip, email)
+    except _auth.RateLimited as _rl:
+        return json_response({"ok": False, "error": "尝试过于频繁,请稍后再试"}, status_code=429)
+    try:
+        # Step 1: 校验 magic_token + email 匹配 + 30 天有效期（快速失败预筛，真正消费在 Step 2）
+        await asyncio.to_thread(_auth.consume_magic_token, token, email)
+        # Step 2: 直接登录(查/建 user + 原子消费 allowlist + issue session) — 跳过 OTP
+        result = await asyncio.to_thread(_auth.login_via_magic_token, email, ip=ip, magic_token=token)
         # Step 3: 保证 workspace 已建好
-        workspace.ensure_default(result["user_id"])
+        await asyncio.to_thread(workspace.ensure_default, result["user_id"])
         token = result.pop("session_token", "")  # SEC(M-6): 仅经 HTTPOnly cookie 下发,不写响应体
         response = json_response({"ok": True, **result})
         _set_session_cookie(response, request, token)
         return response
     except ValueError as exc:
+        # [Fix-1] magic token 校验失败计入失败计数,让 per-IP/per-email 锁定生效
+        _auth._record_login_fail(ip, email)
         return json_response({"ok": False, "error": str(exc)}, status_code=403)
 
 
@@ -258,9 +352,10 @@ async def api_passwordless_verify(request: Request):
     code = (body.get("code") or "").strip()
     ip = _client_ip(request)
     try:
-        result = _auth.verify_passwordless_and_login(email, code, ip=ip)
+        # 含同步 DB + 可能含 httpx.post(Resend),移出 event loop 防阻塞 worker。
+        result = await asyncio.to_thread(_auth.verify_passwordless_and_login, email, code, ip=ip)
         # ensure workspace exists for new/existing user
-        workspace.ensure_default(result["user_id"])
+        await asyncio.to_thread(workspace.ensure_default, result["user_id"])
         token = result.pop("session_token", "")  # SEC(M-6): 仅经 HTTPOnly cookie 下发,不写响应体
         response = json_response({"ok": True, **result})
         _set_session_cookie(response, request, token)
@@ -269,10 +364,8 @@ async def api_passwordless_verify(request: Request):
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
-def _require_admin(user=Depends(require_user)):
-    if not user or user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
-    return user
+# admin 角色门控收敛到 _deps.require_admin(唯一来源);保留本名供 Depends(_require_admin) 旧引用。
+_require_admin = require_admin
 
 
 @router.post("/api/admin/login/unlock")
@@ -295,8 +388,9 @@ async def api_forgot_password(request: Request):
     body = await request.json()
     email = (body.get("email") or "").strip()
     ip = _client_ip(request)
+    # 内部含同步 httpx.post(Resend API),移出 event loop 防阻塞 worker。
     # 即使 email 格式错误也静默返回 ok，防止枚举
-    result = _auth.request_password_reset(email, ip=ip)
+    result = await asyncio.to_thread(_auth.request_password_reset, email, ip=ip)
     return json_response(result)
 
 
@@ -310,7 +404,8 @@ async def api_reset_password(request: Request):
     if not token or not new_password:
         raise HTTPException(400, detail={"error_key": "auth.invalid_payload", "message": "参数不完整"})
     try:
-        result = _auth.confirm_password_reset(token, new_password, ip=ip)
+        # Argon2id 哈希 ~150-300ms CPU 阻塞,移出 event loop 防冻结 worker。
+        result = await asyncio.to_thread(_auth.confirm_password_reset, token, new_password, ip=ip)
         return json_response(result)
     except ValueError as exc:
         msg = str(exc)
@@ -346,6 +441,11 @@ async def api_auth_schema():
         "max_password_length": 1024,
         "invite_only": False,
     }
+    # Cloudflare Turnstile site key（仅当配置时透出 → 前端据此渲染人机验证挂件）。
+    from .. import turnstile as _turnstile
+    _ts_sitekey = _turnstile.sitekey()
+    if _ts_sitekey:
+        notes["turnstile_sitekey"] = _ts_sitekey
     # P2-3: 仅本地/非鉴权模式（effective_auth_required=False）才透出 first_user_is_admin
     # server 模式下隐藏该字段，防止泄露首注册可抢 admin 的信息（CWE-200）
     if not effective_auth_required():

@@ -268,8 +268,12 @@ def export_script_pack(
 
 # ── Import ────────────────────────────────────────────────────────────────────
 
-def import_script_pack(zip_bytes: bytes, user_id: int) -> dict[str, Any]:
-    """导入剧本 pack zip。返回 {ok, script_id, warnings}。"""
+def import_script_pack(zip_bytes: bytes, user_id: int, progress_cb=None) -> dict[str, Any]:
+    """导入剧本 pack zip。返回 {ok, script_id, warnings}。
+
+    progress_cb(done, total):可选。大文件导入时按「章节 + 事实」粒度回报进度
+    (反馈 #64:大 zip 在「导入剧本」阶段逐章插入耗时数分钟但不报进度,前端进度条卡 0/1
+    像卡死)。fire-and-forget——回调异常绝不影响导入本身。"""
     # 1. 校验大小
     if len(zip_bytes) > MAX_ZIP_BYTES:
         raise ValueError(f"zip too large (max {MAX_ZIP_BYTES // 1024 // 1024}MB)")
@@ -365,6 +369,8 @@ def import_script_pack(zip_bytes: bytes, user_id: int) -> dict[str, Any]:
 
         # 5b. 写入 chapters，建 old_id → new_id 映射
         old_chapter_id_to_new: dict[int, int] = {}
+        _prog_total = (len(chapters) + len(facts)) or 1  # #64:进度分母(章节 + 事实,两大耗时循环)
+        _prog_done = 0
         for ch in chapters:
             new_ch = db.execute(
                 """
@@ -387,6 +393,12 @@ def import_script_pack(zip_bytes: bytes, user_id: int) -> dict[str, Any]:
             ).fetchone()
             if ch.get("id") is not None:
                 old_chapter_id_to_new[int(ch["id"])] = int(new_ch["id"])
+            _prog_done += 1
+            if progress_cb and _prog_done % 50 == 0:
+                try:
+                    progress_cb(_prog_done, _prog_total)
+                except Exception:
+                    pass
 
         # 5b'. 先 ensure book — chapter_facts/cards/worldbook 的 INSERT 都靠 books.script_id 子查询
         # (原来只在 5d 之后才建 book → chapter_facts SELECT FROM books 拿不到行 → 0 写入)
@@ -449,6 +461,17 @@ def import_script_pack(zip_bytes: bytes, user_id: int) -> dict[str, Any]:
                 )
             except Exception as exc:
                 warnings.append(f"chapter_fact chapter={fact.get('chapter')} skipped: {exc}")
+            _prog_done += 1
+            if progress_cb and _prog_done % 50 == 0:
+                try:
+                    progress_cb(_prog_done, _prog_total)
+                except Exception:
+                    pass
+        if progress_cb:
+            try:
+                progress_cb(_prog_total, _prog_total)  # 收尾置满,余下小表写入很快
+            except Exception:
+                pass
 
         # 5d. character_cards — 需要 book_id
         #     若 pack 含 chunks/docs/cards/worldbook, 提前确保 book 行存在

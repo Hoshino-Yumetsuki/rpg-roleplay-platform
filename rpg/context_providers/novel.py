@@ -94,6 +94,13 @@ class NovelRetrievalProvider(ContextProvider):
         if not services.retrieve_fn:
             return ContextContribution.skipped(self.id, "no retrieve_fn injected")
 
+        # Q Phase 3 司命 RAG 闸:特性开 + 司命判定本轮无需检索原著 → 跳过(省 RAG 大头 token)。
+        # 每用户特性,默认开;拿不准时 need_retrieval=True 故不会误伤需要检索的回合。
+        from core.feature_flags import feature_enabled
+        if (feature_enabled("rag_gate", getattr(services, "user_id", None))
+                and demand is not None and not getattr(demand, "need_retrieval", True)):
+            return ContextContribution.skipped(self.id, "司命 need_retrieval=false(RAG 闸跳过)")
+
         query = (demand.retrieval_query if demand else "") or ""
         try:
             text = services.retrieve_fn(
@@ -216,6 +223,88 @@ def _extract_anchor_npc_names(state, save_id: int | None) -> list[str]:
         return []
 
 
+def _read_progress_and_mode(state, save_id: int | None) -> tuple[int | None, str]:
+    """进度感知角色卡:读玩家当前进度章节 + 元知识模式(防剧透依据,确定性)。
+
+    权威源 = game_sessions.worldline(retrieval.py 每回合 materialize 进度到这里,
+    与 KB 工具 _save_ctx 同一真源)。在线游玩走 DB;读不到(无 save_id / 测试)
+    回退 state.data['worldline']。
+
+    spoiler-safe 兜底:绝不返回 progress=None+mode!=omniscient(那会放行全书=剧透);
+    读不到具体值时默认严格(progress=1, mode='none'),保守不剧透。
+    """
+    progress: int | None = None
+    mode = "none"
+    data = getattr(state, "data", state) or {}
+    wl = data.get("worldline") if isinstance(data, dict) else None
+    wl = wl if isinstance(wl, dict) else {}
+    raw = wl.get("progress_chapter")
+    if isinstance(raw, (int, float)) and raw >= 1:
+        progress = int(raw)
+    if wl.get("foreknowledge_mode"):
+        mode = str(wl.get("foreknowledge_mode"))
+    # DB 权威源覆盖(state 内镜像可能滞后);读不到不报错。
+    if save_id:
+        try:
+            from platform_app.db import connect
+            with connect() as db:
+                row = db.execute(
+                    "select worldline from game_sessions where save_id=%s", (int(save_id),)
+                ).fetchone()
+            db_wl = (row or {}).get("worldline") if row else None
+            if isinstance(db_wl, dict):
+                draw = db_wl.get("progress_chapter")
+                if isinstance(draw, (int, float)) and draw >= 1:
+                    progress = int(draw)
+                if db_wl.get("foreknowledge_mode"):
+                    mode = str(db_wl.get("foreknowledge_mode"))
+        except Exception:
+            pass
+    mode = (mode or "none").lower()
+    if mode not in ("none", "partial", "omniscient"):
+        mode = "none"
+    # omniscient = 全知不 gate(progress 留原值即可);非 omniscient 必须有具体 progress,
+    # 否则会放行全书 → 强制兜到第 1 章(最严格,绝不剧透)。
+    if mode != "omniscient" and progress is None:
+        progress = 1
+    return progress, mode
+
+
+def _project_chars_in_place(chars: dict, script_id: int | None,
+                            progress_chapter: int | None, foreknowledge_mode: str) -> dict:
+    """对已加载的 chars dict 逐角色应用进度投影(Phase 2)。
+
+    omniscient → 原样返回(全知=现状,无需投影)。否则开一条只读连接,逐卡投影,
+    投影成功就叠加易剧透字段、失败/无数据回退原卡。整体出错 → 原 chars 原样返回(不破)。
+    """
+    mode = (foreknowledge_mode or "none").lower()
+    if mode == "omniscient" or not script_id or not chars:
+        return chars
+    try:
+        from context_engine.projection import apply_projection_to_card, project_character_state
+        from platform_app.db import connect
+    except Exception:
+        return chars
+    try:
+        out: dict = {}
+        with connect() as db:
+            for name, card in chars.items():
+                if not isinstance(card, dict):
+                    out[name] = card
+                    continue
+                try:
+                    projected = project_character_state(
+                        db, int(script_id), name, progress_chapter, mode,
+                        aliases=card.get("aliases") or [],
+                    )
+                    out[name] = apply_projection_to_card(card, projected)
+                except Exception:
+                    out[name] = card  # 单卡投影失败 → 回退原卡
+        return out
+    except Exception:
+        return chars  # 连接/整体失败 → 原 chars 原样(绝不破回合)
+
+
 def _format_card_local(name: str, card: dict) -> str:
     """轻量包装 — 走 context_engine 的 _format_card,这里只是给本模块统一名字防 import cycle。"""
     try:
@@ -250,8 +339,20 @@ class NovelCharactersProvider(ContextProvider):
                 warnings=[f"import context_engine failed: {exc}"],
             )
         data = getattr(state, "data", state) or {}
+        # 进度感知角色卡(Phase 1B reveal 闸 + Phase 2 投影):读玩家当前进度 + 元知识模式。
+        progress_chapter, foreknowledge_mode = _read_progress_and_mode(state, services.save_id)
         try:
-            chars = _load_characters(script_id=services.script_id, book_id=services.book_id)
+            chars = _load_characters(
+                script_id=services.script_id, book_id=services.book_id,
+                progress_chapter=progress_chapter, foreknowledge_mode=foreknowledge_mode,
+                save_id=services.save_id,  # P4(S3):前沿门控(flag off 时不生效)
+            )
+            # Phase 2 方案 C 运行时投影:把单态卡的易剧透字段(identity/current_status/
+            # background/关系)替换/补充为「玩家当前进度下的态」(敌→友逐章演进)。
+            # 投影只读 chapter_facts;合不出/出错 → 回退原单态卡(绝不给空卡、不破回合)。
+            chars = _project_chars_in_place(
+                chars, services.script_id, progress_chapter, foreknowledge_mode,
+            )
             history = state.history_messages()
             scan_text = "\n".join([
                 (demand.player_intent if demand else "") or "",
@@ -351,9 +452,16 @@ class NovelWorldbookProvider(ContextProvider):
                 data.get("player", {}).get("current_location", ""),
                 data.get("world", {}).get("time", ""),
             ])
+            # P4(S4):仅在前沿/影子启用时才读进度+元知识(否则 flag off 每回合多一次无效 DB 往返)。
+            # flag off → mode=omniscient,与旧「世界书不门控」语义一致(_load_worldbook_db use_v2=False)。
+            from kb.reveal import _frontier_on, _frontier_shadow
+            _mode = "omniscient"
+            if services.save_id is not None and (_frontier_on(services.save_id) or _frontier_shadow()):
+                _progress, _mode = _read_progress_and_mode(state, services.save_id)
             entries = _active_worldbook(scan_text, world, state,
                                         script_id=services.script_id,
-                                        book_id=services.book_id)
+                                        book_id=services.book_id,
+                                        save_id=services.save_id, mode=_mode)
         except Exception as exc:
             return ContextContribution(
                 provider_id=self.id, applied=False,

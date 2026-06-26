@@ -461,6 +461,7 @@ from routes.models import router as models_router
 from routes.rules import router as rules_router
 from routes.sidebar import router as sidebar_router
 from routes.skills import router as skills_router
+from routes.persona_skills import router as persona_skills_router
 from routes.tavern import router as tavern_router
 from routes.timeline import router as timeline_router
 from routes.worldline import router as worldline_router
@@ -469,6 +470,7 @@ app.include_router(game_router)
 app.include_router(models_router)
 app.include_router(mcp_router)
 app.include_router(skills_router)
+app.include_router(persona_skills_router)
 app.include_router(worldline_router)
 app.include_router(rules_router)
 app.include_router(timeline_router)
@@ -495,14 +497,30 @@ class _SPAStaticFiles(_StaticFiles):
 
     async def get_response(self, path, scope):
         try:
-            return await super().get_response(path, scope)
+            resp = await super().get_response(path, scope)
         except _StarletteHTTPException as exc:
             if exc.status_code == 404:
                 last = path.rsplit("/", 1)[-1]
                 is_root = path in ("", ".", "/")
                 if not path.startswith("api/") and (is_root or "." not in last):
-                    return await super().get_response("index.html", scope)
-            raise
+                    resp = await super().get_response("index.html", scope)
+                else:
+                    raise
+            else:
+                raise
+        # 缓存策略(根治「部署后看不到更新」):SPA 壳(*.html / history-fallback)必须 no-cache,
+        # 否则浏览器/中间层会一直用旧 HTML → 引用 npm build 已删除的旧 chunk hash → 用户永远停在
+        # 旧版本(本会话多次「看不到更新」的根因)。内容哈希命名的 /assets/* 不可变,可永久缓存。
+        try:
+            ct = str(resp.headers.get("content-type", ""))
+            req_path = str(scope.get("path", ""))
+            if "text/html" in ct:
+                resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+            elif req_path.startswith("/assets/"):
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        except Exception:
+            pass
+        return resp
 
 
 _FRONTEND_ROOT = _Path(__file__).resolve().parent.parent / "frontend"
@@ -711,6 +729,88 @@ def _selfheal_player_from_save_snapshot(state: GameState, api_user: dict[str, An
         pass
 
 
+def _kb_state_enabled(api_user: dict | None = None) -> bool:
+    """Q KB-backed 存储集成总开关(每用户特性,默认开)。on 时存档状态从 KB 行 load/persist
+    (DB-resident 单一来源,blob 仍并行写作兜底),off 时走原 blob。"""
+    from core.feature_flags import feature_enabled
+    uid = None
+    try:
+        uid = int(api_user["id"]) if api_user and api_user.get("id") is not None else None
+    except (TypeError, ValueError, KeyError):
+        uid = None
+    return feature_enabled("kb_state", uid)
+
+
+def _save_kb_native(save_id: int | None) -> bool:
+    """该存档是否 kb-native(创建时即 seed 进 KB、打了 kb_native 标记 →「封死新存档入口」)。
+    kb_native 档【始终】走 KB 新实现,不受每用户 kb_state 开关影响;旧档无标记 → 仍按开关 + 懒迁移。
+    任何失败/无列 → False(降级回开关判定,绝不破回合)。"""
+    if not save_id:
+        return False
+    try:
+        from platform_app.db import connect
+        with connect() as db:
+            r = db.execute("select kb_native from game_saves where id = %s", (int(save_id),)).fetchone()
+        return bool(r and r.get("kb_native"))
+    except Exception:
+        return False
+
+
+def _kb_backed_state(state: "GameState", save_id: int, commit_id: int) -> "GameState":
+    """从 KB 表 materialize 出 GameState(而非读 blob)。首次加载该 save 且 KB 未 seed →
+    先把当前 blob 迁进 KB(T0 seed 实体 + import_state)再 materialize(migrate-on-first-load)。"""
+    from kb import save_kb
+    from platform_app.db import connect
+    with connect() as db:
+        seeded = db.execute(
+            "select count(*) as n from kb_worldline_vars where save_id = %s", (save_id,)
+        ).fetchone()
+        if not int((seeded or {}).get("n") or 0):
+            sid = db.execute("select script_id from game_saves where id = %s", (save_id,)).fetchone()
+            script_id = (sid or {}).get("script_id")
+            if script_id:
+                save_kb.seed_full_t0(db, save_id, int(script_id), commit_id=commit_id)
+            save_kb.import_state(db, save_id, commit_id, state.data)
+            if hasattr(db, "commit"):
+                db.commit()
+        mat = save_kb.materialize(db, save_id, commit_id)
+    data = {k: v for k, v in mat.items() if not k.startswith("_")}
+    # 酒馆等【不写 messages 表】的存档(对话历史在 state.history blob):materialize 从 messages
+    # 重建 history 会得空 → 若直接用空 history,GM 每回合丢上下文、对话不累积、KB 也无从建立。
+    # 用已加载 blob(传入的 state)的 history 兜底。scripted 存档写 messages,materialize 有 history,
+    # 不触发此兜底,行为不变。blob 每回合都被 record_runtime_turn 持久化,故 history 始终最新。
+    _blob_hist = (getattr(state, "data", {}) or {}).get("history") or []
+    if not data.get("history") and _blob_hist:
+        data["history"] = _blob_hist
+    # materialize 丢弃 memory 下的纯展示瞬态(save_kb._DROP_MEM:last_context / last_retrieval /
+    # last_context_agent / last_structured_updates)—— 它们不是存档状态、不入 KB,但 UI 要用:
+    # 「上下文用量明细」读 memory.last_context;多 worker 下用量请求落到冷缓存 worker → 重 materialize
+    # → 明细全 0(用户报的事故)。blob 每回合持久化、含最新值 → 从 blob 兜回(不影响 scripted)。
+    _blob_mem = (getattr(state, "data", {}) or {}).get("memory") or {}
+    _mem = data.get("memory")
+    if not isinstance(_mem, dict):
+        _mem = {}
+    for _tk in ("last_context", "last_retrieval", "last_context_agent", "last_structured_updates"):
+        if _mem.get(_tk) is None and _blob_mem.get(_tk) is not None:
+            _mem[_tk] = _blob_mem[_tk]
+    if _mem:
+        data["memory"] = _mem
+    # 同理 worldline 下的瞬态(save_kb._DROP_WL:last_projection / last_validation / pending_projection)
+    # —— pending_projection 是【待确认的时间跳跃】,属功能性:多 worker 冷重载丢了会让待确认跳跃失效。
+    # 只兜这 3 个瞬态键,不动 materialize 已重建的权威 worldline 字段(设置/进度/user_variables)。
+    _blob_wl = (getattr(state, "data", {}) or {}).get("worldline") or {}
+    _wl = data.get("worldline")
+    if not isinstance(_wl, dict):
+        _wl = {}
+    for _tk in ("last_projection", "last_validation", "pending_projection"):
+        if _wl.get(_tk) is None and _blob_wl.get(_tk) is not None:
+            _wl[_tk] = _blob_wl[_tk]
+    if _wl:
+        data["worldline"] = _wl
+    data["_active_save_id"] = save_id  # materialize 丢瞬态指针,这里补回
+    return GameState(data)
+
+
 def _ensure_loaded(api_user: dict[str, Any] | None = None, *, ensure_gm: bool = True) -> GameState:
     """加载当前用户的游戏状态。多用户安全：按 user_id 隔离。
 
@@ -742,8 +842,20 @@ def _ensure_loaded(api_user: dict[str, Any] | None = None, *, ensure_gm: bool = 
                 _cached_commit = int(_lru_get(_state_commit_id_by_user, uid) or 0)
                 save_drift = _rt_save and _cached_save and _rt_save != _cached_save
                 commit_drift = _rt_commit and _cached_commit and _rt_commit != _cached_commit
-                if save_drift or commit_drift:
+                # 模型漂移(跨 worker):/api/models/select 改 DB session_model 但**不 bump commit**,
+                # save/commit drift 抓不到 → 本 worker 缓存的 state+GM 仍是旧模型,用户「切了不生效、
+                # 永远跑某个固定模型」。这里拿 DB 真值 session_model(随 read_runtime 一并取,无额外查询)
+                # 与本 worker 缓存 state 的 session_model 比对,变了就同时失效 state + GM,下方按新模型重建。
+                _rt_sm = _rt.get("session_model") or {}
+                _cur_sm = (getattr(cached, "data", {}) or {}).get("session_model") or {}
+                model_drift = bool(_rt_sm.get("model_id")) and (
+                    (_rt_sm.get("model_id"), _rt_sm.get("api_id"))
+                    != (_cur_sm.get("model_id"), _cur_sm.get("api_id"))
+                )
+                if save_drift or commit_drift or model_drift:
                     cached = None
+                if model_drift:
+                    _gm_by_user.pop(uid, None)
             except Exception:
                 pass
         if cached is None:
@@ -764,6 +876,13 @@ def _ensure_loaded(api_user: dict[str, Any] | None = None, *, ensure_gm: bool = 
                     _lru_set(_state_commit_id_by_user, uid, _new_commit_id)
                 else:
                     _state_commit_id_by_user.pop(uid, None)
+                # Q KB-backed 存储集成(flag):state 从 KB 表 materialize(而非 blob)。
+                # 失败一律退回已加载的 blob state,绝不破回合。
+                if (_kb_state_enabled(api_user) or _save_kb_native(_new_save_id)) and _new_save_id and _new_commit_id:
+                    try:
+                        state = _kb_backed_state(state, _new_save_id, _new_commit_id)
+                    except Exception as _kbe:
+                        log.warning(f"[kb_state] materialize load 跳过,退回 blob: {_kbe}")
             except Exception:
                 state = GameState.new() if api_user else GameState.load_or_new()
                 _state_save_id_by_user.pop(uid, None)
@@ -821,18 +940,11 @@ def _ensure_loaded(api_user: dict[str, Any] | None = None, *, ensure_gm: bool = 
             if api_user and (api_user.get("user_id") or api_user.get("id")):
                 try:
                     _uid_g = int(api_user.get("user_id") or api_user.get("id"))
-                    from core.llm_backend import first_user_model as _fum
-                    _ud = _fum(_uid_g)
-                    if _ud and _gm_api_id and _gm_api_id != _ud[0]:
-                        from platform_app.user_credentials import get_credential as _gc
-                        if _gm_api_id == "vertex_ai":
-                            from core.vertex_sa import has_user_sa as _hsa
-                            _ok = _hsa(_uid_g)
-                        else:
-                            _ok = bool(_gc(_uid_g, _gm_api_id))
-                        if not _ok:
-                            _gm_api_id, _gm_model_id = _ud
-                            log.info(f"[ensure_loaded] BYOK 守卫:{uid} 模型回退到 {_gm_api_id}/{_gm_model_id}(原解析不可用)")
+                    from core.llm_backend import guard_byok_usable as _guard_byok
+                    _new_api, _new_model = _guard_byok(_uid_g, _gm_api_id, _gm_model_id)
+                    if (_new_api, _new_model) != (_gm_api_id, _gm_model_id):
+                        _gm_api_id, _gm_model_id = _new_api, _new_model
+                        log.info(f"[ensure_loaded] BYOK 守卫:{uid} 模型回退到 {_gm_api_id}/{_gm_model_id}(原解析不可用)")
                 except Exception as _ge:
                     log.warning(f"[ensure_loaded] BYOK 守卫异常(忽略): {_ge}")
             _lru_set(_gm_by_user, uid, GameMaster(
@@ -996,6 +1108,25 @@ def _resolve_user_default_model_view(api_user: dict[str, Any] | None, model_cata
     return None
 
 
+def _resolve_effective_model_view(api_user: dict[str, Any] | None, model_catalog: dict[str, Any]) -> dict[str, Any] | None:
+    """**当前真正生效的模型**视图(单一真相,与 _get_gm 实际所用优先级一致):
+      活动存档的 per-save session_model(游戏内手动切换)> 用户 gm 默认偏好 > None(调用方回退全局 selected)。
+
+    /api/models GET 与 _payload(/api/state)共用此函数 —— 否则二者口径不一(/api/state 反映
+    session_model、/api/models 只看 gm 偏好),游戏内切模型后 picker 重新拉 /api/models 仍读到旧默认 →
+    高亮/选中回退到「列表第一个」(线上反馈:选任何模型都跳回 llama 3.1)。"""
+    try:
+        uid = _user_key(api_user)
+        state = _state_by_user.get(uid)
+        if state is not None:
+            _sess_view = _session_model_app_view(model_catalog, state.get_session_model())
+            if _sess_view:
+                return _sess_view
+    except Exception:
+        pass
+    return _resolve_user_default_model_view(api_user, model_catalog)
+
+
 def _payload(api_user: dict[str, Any] | None = None, *, include_catalog: bool = True) -> dict[str, Any]:
     """游戏状态快照。
 
@@ -1013,20 +1144,45 @@ def _payload(api_user: dict[str, Any] | None = None, *, include_catalog: bool = 
     _uid = int(api_user["id"]) if api_user and api_user.get("id") else None
     model_catalog = load_catalog_for_user(_uid)
     # 默认模型 = 用户 gm 偏好链(与 _get_gm 一致),回退全局 selected_model。
-    model = _resolve_user_default_model_view(api_user, model_catalog) or selected_model(model_catalog)
-    # 修复(游戏内切模型显示回退默认):若当前存档设了 per-save session_model(游戏内 ModelPicker
-    # 手动切换),app.* 必须反映它。否则 /api/state 永远回报全局默认 → 前端 Composer 的当前模型
-    # 标签 + picker 高亮(selectedKey = app.api_id::app.model_real_name)永远显示默认,用户以为
-    # 切换没保存。GM 实际已按优先级用 session_model(_ensure_loaded),此前仅展示层一直错。
-    try:
-        _sess = state.get_session_model()  # (model_id/real_name, api_id) 或 None
-    except Exception:
-        _sess = None
-    _sess_view = _session_model_app_view(model_catalog, _sess)
-    if _sess_view:
-        model = _sess_view
+    # 当前生效模型 = per-save session_model > 用户 gm 偏好 > 全局 selected(单一真相,见
+    # _resolve_effective_model_view;与 /api/models GET 同口径,游戏内切模型后 picker 不再回退默认)。
+    model = _resolve_effective_model_view(api_user, model_catalog) or selected_model(model_catalog)
     is_admin = bool(api_user and api_user.get("role") == "admin")
     payload = state.status_payload()
+    # 酒馆:每次 /api/state 都用统一卡库 character_cards 最新值刷新 tavern.character/persona,
+    # 这样在卡库编辑设定 / 换人设图后【无需重开聊天】即生效(activate-only 刷新不够,见用户反馈)。
+    _tav = payload.get("tavern")
+    if isinstance(_tav, dict) and _uid:
+        _sid = state.data.get("_active_save_id")
+        if _sid:
+            try:
+                from platform_app.branches.activation import _refresh_tavern_cards_from_library
+                from platform_app.db import connect as _connect
+                with _connect() as _db:
+                    _sv = _db.execute(
+                        "select tavern_character_card_id, tavern_persona_card_id, save_kind, tavern_immersive "
+                        "from game_saves where id = %s and user_id = %s", (int(_sid), _uid),
+                    ).fetchone()
+                    if _sv and _sv.get("save_kind") == "tavern":
+                        _refresh_tavern_cards_from_library(_db, _uid, _sv, {"tavern": _tav})
+                        # 沉浸式开关从持久列回填(state_snapshot 会被 activate 擦掉,列才是真相源)。
+                        _tav["immersive"] = bool(_sv.get("tavern_immersive"))
+                        # 人格 skill:不把 30k 原文塞进每次 /api/state(前端内联渲染会内存爆)。
+                        # 剥离 metadata.skill_content + 截断异常大的 background;完整 skill 前端按需拉
+                        # (GET /api/me/character-cards/{id});服务端注入读的是内存态 state.data,不受影响。
+                        for _ck in ("character", "persona"):
+                            _c = _tav.get(_ck)
+                            if not isinstance(_c, dict):
+                                continue
+                            _md = _c.get("metadata")
+                            if isinstance(_md, dict) and _md.get("skill_content"):
+                                _md2 = dict(_md); _md2.pop("skill_content", None)
+                                _md2["has_skill_content"] = True
+                                _c["metadata"] = _md2
+                            if isinstance(_c.get("background"), str) and len(_c["background"]) > 2000:
+                                _c["background"] = _c["background"][:2000]
+            except Exception:
+                pass
     # 当前模型的 context window（tokens），由 platform_app.usage.context_window_for
     # 按 api_id+real_name 查映射表。FE Composer 里 ContextUsage 圆环需要这个值
     # 作为分母，从悬空 hard-coded 1.05M 变成真实当前模型上限。
@@ -1055,6 +1211,8 @@ def _payload(api_user: dict[str, Any] | None = None, *, include_catalog: bool = 
         "api_id": model["api_id"],
         "roles": list(ROLES.keys()),
         "preset": PRESET,
+        # 部署模式:local/desktop/self_hosted = 自部署 → 前端反馈抽屉转走中央服务器 + 显示选填邮箱。
+        "deployment": _deployment_mode(),
     }
     # 绝对路径仅 admin 可见
     if is_admin:
@@ -1064,6 +1222,18 @@ def _payload(api_user: dict[str, Any] | None = None, *, include_catalog: bool = 
     # SSE 路径(include_catalog=False)不发整份目录:见 _payload docstring。
     if include_catalog:
         payload["models"] = _redact_catalog(model_catalog, is_admin, user_id=_uid)
+        # gameState.models.selected 必须 = 该用户当前模型(= 上面 model,已按 gm 偏好 / 存档级
+        # session_model 算好),而非 catalog 里的全局 app_config 默认。否则前端 Composer 底部
+        # 「当前模型」标签读 catalog.selected 会拿到全局默认(常是用户没配 key 的 gemini)→
+        # 用户报「每次刷新跳 gemini-3.1-pro-preview」。与 payload['app'] 同源,单一真相。
+        try:
+            payload["models"]["selected"] = {
+                "api_id": model["api_id"],
+                "model_id": model.get("model_id") or model["real_name"],
+                "real_name": model["real_name"],
+            }
+        except Exception:
+            pass
         payload["tools"] = _redact_tools(tool_payload(), is_admin)
     # task 10：把当前激活存档的 id/title 直接挂在 /api/state 顶层 + state 字段里，
     # Game Console 左侧栏拿来显示「当前存档」，避免回退到 hard-coded mock id=11。
@@ -1160,6 +1330,7 @@ def _redact_catalog(catalog: dict[str, Any], is_admin: bool, user_id: int | None
     if user_id is not None:
         sel = result.get("selected") or {}
         if normalize_api_id(sel.get("api_id")) not in cred_ids:
+            _picked = False
             for api in result.get("apis", []):
                 if api.get("has_credential") and (api.get("models") or []):
                     first = api["models"][0]
@@ -1167,11 +1338,17 @@ def _redact_catalog(catalog: dict[str, Any], is_admin: bool, user_id: int | None
                         "api_id": api.get("id"),
                         "model_id": first.get("id") or first.get("real_name"),
                     }
+                    _picked = True
                     break
+            # 用户没有任何已配 key 的可用模型 → 不把用不了的全局默认(opus)当成用户的选择,
+            # 标记 needs_model_config,前端据此展示「请先配置模型」CTA 而非假模型名。
+            # admin 可走平台兜底,不标记(BYOK 平台:模型应来自用户自己的 key,不靠平台默认)。
+            if not _picked and not is_admin:
+                result["needs_model_config"] = True
     return result
 
 
-_MCP_SECRET_FIELDS = ("command", "args", "env", "credential", "secret", "token")
+_MCP_SECRET_FIELDS = ("command", "args", "env", "url", "headers", "credential", "secret", "token")
 
 
 def _redact_tools(tools: dict[str, Any], is_admin: bool) -> dict[str, Any]:
@@ -2202,17 +2379,8 @@ def _resolve_console_assistant_backend(api_user: dict[str, Any] | None):
     if api_user and api_user.get("id"):
         try:
             _uid_c = int(api_user["id"])
-            from core.llm_backend import first_user_model as _fum_c
-            _ud_c = _fum_c(_uid_c)
-            if _ud_c and api_id and api_id != _ud_c[0]:
-                from platform_app.user_credentials import get_credential as _gc_c
-                if api_id == "vertex_ai":
-                    from core.vertex_sa import has_user_sa as _hsa_c
-                    _ok_c = _hsa_c(_uid_c)
-                else:
-                    _ok_c = bool(_gc_c(_uid_c, api_id))
-                if not _ok_c:
-                    api_id, model_real = _ud_c
+            from core.llm_backend import guard_byok_usable as _guard_byok_c
+            api_id, model_real = _guard_byok_c(_uid_c, api_id, model_real)
         except Exception:
             pass
     # 用 GameMaster 构造 backend, 再借用其 ._backend

@@ -27,6 +27,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from core.json_parse import parse_llm_json
+from core.llm_backend import (
+    DEFAULT_FALLBACK_API as _DEFAULT_FALLBACK_API,
+    DEFAULT_FALLBACK_MODEL as _DEFAULT_FALLBACK_MODEL,
+)
 from core.logging import get_logger
 
 log = get_logger(__name__)
@@ -84,23 +89,11 @@ def _parse_verifier_output(text: str, acceptance: list[str]) -> list[str] | None
     if not text:
         return None
     text = text.strip()
-    # 1) 整段就是 JSON
-    parsed: Any = None
-    for candidate in (text, text.lstrip("`json").rstrip("`").strip()):
-        try:
-            parsed = json.loads(candidate)
-            break
-        except Exception:
-            parsed = None
-    # 2) ```json fence 兜底
-    if parsed is None:
-        import re
-        m = re.search(r"```(?:json)?\s*\n?\s*(\{[\s\S]*?\})\s*\n?```", text, re.MULTILINE)
-        if m:
-            try:
-                parsed = json.loads(m.group(1))
-            except Exception:
-                parsed = None
+    # 解析段:委托 core.json_parse.parse_llm_json(不传 want)(直解→剥围栏→平衡
+    # 括号扫描)。期待 {"unmet": [...]} 这类 object，但 *不* 加类型过滤——LLM 偶然
+    # 直接给 list 时也要让它存活,交由下面的 dict/list dispatch 归一(want=dict
+    # 会把 bare-list 当解析失败返 None,破坏文档承诺的 list 兼容)。
+    parsed: Any = parse_llm_json(text)
     if parsed is None:
         return None
 
@@ -180,13 +173,13 @@ def verify_acceptance_llm(
         api_id_override
         or _resolve_preferred_verifier_api(user_id)
         or _extractor._resolve_preferred_extractor_api(user_id)
-        or "vertex_ai"
+        or _DEFAULT_FALLBACK_API
     )
     model = (
         model_override
         or _resolve_preferred_verifier_model(user_id)
         or _extractor._resolve_preferred_extractor_model(user_id)
-        or "gemini-3.5-flash"
+        or _DEFAULT_FALLBACK_MODEL
     )
 
     user_prompt = _build_user_prompt(acceptance, response_text, updates or [])

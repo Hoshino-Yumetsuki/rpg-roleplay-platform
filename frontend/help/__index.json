@@ -25,5 +25,9 @@
   "game-composer": { "title": "游戏内·输入框", "file": "game-composer.md" },
   "game-memory": { "title": "游戏内·记忆", "file": "game-memory.md" },
   "game-timeline": { "title": "游戏内·时间线", "file": "game-timeline.md" },
-  "game-worldbook": { "title": "游戏内·世界书", "file": "game-worldbook.md" }
+  "game-worldbook": { "title": "游戏内·世界书", "file": "game-worldbook.md" },
+  "md-editor": { "title": "剧本编辑器", "file": "md-editor.md" },
+  "tavern": { "title": "酒馆模式", "file": "tavern.md" },
+  "image-gen": { "title": "AI 生图", "file": "image-gen.md" },
+  "tasks": { "title": "后台任务", "file": "tasks.md" }
 }

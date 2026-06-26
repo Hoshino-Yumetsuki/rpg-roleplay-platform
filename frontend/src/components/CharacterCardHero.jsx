@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import MediaStudio from './MediaStudio.jsx';
 import ImageLightbox from './ImageLightbox.jsx';
 
@@ -12,6 +13,7 @@ import ImageLightbox from './ImageLightbox.jsx';
      onChanged(url) : 头像变更后回调（刷新卡）
 */
 export default function CharacterCardHero({ card, editable = true, onChanged, scriptId = null }) {
+  const { t } = useTranslation();
   const { useState, useRef, useEffect, useCallback } = React;
   const [studio, setStudio] = useState(false);
   const [light, setLight] = useState(false);
@@ -22,7 +24,7 @@ export default function CharacterCardHero({ card, editable = true, onChanged, sc
 
   const raw = card || {};
   const url = raw.avatar_path || '';
-  const name = raw.name || '未命名角色';
+  const name = raw.name || t('card_hero.unnamed_character');
   const sub = raw.identity || raw.appearance || '';
   const api = (typeof window !== 'undefined' && window.api) || {};
 
@@ -55,7 +57,7 @@ export default function CharacterCardHero({ card, editable = true, onChanged, sc
         ? await api.cards.scriptUploadCardAvatar(scriptId, raw.id, file)
         : await api.cards.uploadAvatar(raw.id, file);
       if (r && r.url) onChanged && onChanged(r.url);
-    } catch (_) { try { window.__apiToast && window.__apiToast('上传失败', { kind: 'danger' }); } catch (e) {} }
+    } catch (_) { try { window.__apiToast && window.__apiToast(t('card_hero.upload_failed'), { kind: 'danger' }); } catch (e) {} }
     finally { setUploading(false); }
   }, [raw.id, onChanged]);
 
@@ -87,16 +89,16 @@ export default function CharacterCardHero({ card, editable = true, onChanged, sc
             </div>
             {editable && (
               <div className="mh-hero__actions">
-                <span className="mh-chip" onClick={(e) => { e.stopPropagation(); setStudio(true); }}>✦ 更换形象</span>
+                <span className="mh-chip" onClick={(e) => { e.stopPropagation(); setStudio(true); }}>✦ {t('card_hero.change_avatar')}</span>
               </div>
             )}
-            {uploading && <div className="mh-hero__actions" style={{ opacity: 1, left: 12, right: 'auto' }}><span className="mh-chip mh-chip--ghost">上传中…</span></div>}
+            {uploading && <div className="mh-hero__actions" style={{ opacity: 1, left: 12, right: 'auto' }}><span className="mh-chip mh-chip--ghost">{t('card_hero.uploading')}</span></div>}
           </>
         ) : (
           <div className="mh-empty__inner">
             <div className="mh-empty__icon">🎴</div>
             <div className="mh-empty__title">{name}</div>
-            <div className="mh-empty__hint">{editable ? '拖入图片 · 粘贴 · 或点击：生成 / 上传 / 选图库' : '暂无形象'}</div>
+            <div className="mh-empty__hint">{editable ? t('card_hero.empty_hint_editable') : t('card_hero.empty_hint_readonly')}</div>
           </div>
         )}
       </div>
@@ -119,7 +121,7 @@ export default function CharacterCardHero({ card, editable = true, onChanged, sc
           const ext = (blob.type && blob.type.split('/')[1]) || 'jpg';
           await uploadFile(new File([blob], 'crop.' + ext, { type: blob.type || 'image/jpeg' }));
         }) : undefined}
-        cropHint="拖动调整裁剪区域，应用后将更新该角色形象" />
+        cropHint={t('card_hero.crop_hint')} />
       {/* lightbox 由 ImageLightbox(portal 到 body)接管,根治 sticky 列困住 fixed 的 z-index bug */}
     </>
   );

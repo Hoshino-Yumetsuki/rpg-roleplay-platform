@@ -185,12 +185,13 @@ def _ensure_curated_embeddings(catalog: dict[str, Any]) -> dict[str, Any]:
     (幂等、按 real_name 去重、只改内存不落库),让新增 embedding 自愈生效。
     """
     try:
+        from model_probe import is_embedding_model  # lazy: model_probe imports model_registry
         default_by_id = {normalize_api_id(a.get("id")): a for a in DEFAULT_MODEL_CATALOG["apis"]}
         for api in catalog.get("apis", []):
             d = default_by_id.get(normalize_api_id(api.get("id")))
             if not d:
                 continue
-            curated = [m for m in (d.get("models") or []) if "embedding" in (m.get("capabilities") or [])]
+            curated = [m for m in (d.get("models") or []) if is_embedding_model(m)]
             if not curated:
                 continue
             have = {(m.get("real_name") or m.get("id")) for m in (api.get("models") or [])}
@@ -294,10 +295,11 @@ def apply_user_overlay(catalog: dict[str, Any], user_id: int | None) -> dict[str
                 # 保留全局菜单里该 provider 人工策展的 embedding 模型:模型同步通常只抓
                 # chat 模型(provider 的 /models 多不列 embedding),若被 overlay 直接覆盖,
                 # RAG 向量模型选择器就会空 → 用户配了 key 也选不到 embedding。
+                from model_probe import is_embedding_model  # lazy: model_probe imports model_registry
                 synced_names = {(m.get("real_name") or m.get("id")) for m in cleaned}
                 curated_embeds = [
                     m for m in (existing.get("models") or [])
-                    if "embedding" in (m.get("capabilities") or [])
+                    if is_embedding_model(m)
                     and (m.get("real_name") or m.get("id")) not in synced_names
                 ]
                 existing["models"] = cleaned + curated_embeds
@@ -357,11 +359,36 @@ def select_model(api_id: str, model_id: str) -> dict[str, Any]:
     return load_model_catalog()
 
 
+def _check_base_url(base_url: str) -> None:
+    """写入前对用户提供的 base_url 做 SSRF 预校验(纵深防御,运行时仍走 safe_httpx)。
+
+    空字符串跳过(部分 provider 不需要 base_url)。校验逻辑复用
+    platform_app.user_credentials._validate_base_url:解析 hostname → 检验真实 IP。
+    """
+    if not base_url:
+        return
+    try:
+        from platform_app.user_credentials import _validate_base_url
+    except ImportError:
+        # [round-4-P2] 依赖缺失(部分安装)时写时闸失效 → 至少留痕,不再静默。运行时仍有
+        #   safe_httpx 纵深防御兜底,故不硬失败阻断 admin 配置,但要可观测。
+        import logging
+        logging.getLogger(__name__).warning(
+            "[model_registry] _validate_base_url 不可导入,base_url 写时 SSRF 预校验被跳过(运行时 safe_httpx 兜底): %s", base_url
+        )
+        return
+    _validate_base_url(base_url)  # 非法地址抛 ValueError → 上抛拒绝写入(SSRF 写时闸)
+
+
 def upsert_api(api_data: dict[str, Any]) -> dict[str, Any]:
     catalog = load_model_catalog()
     api_id = normalize_api_id(api_data.get("api_id") or api_data.get("id"))
     if not api_id:
         raise ValueError("API id 不能为空")
+    # 写入前校验用户提供的 base_url(SSRF 写时闸,非法地址直接拒绝)。
+    incoming_base_url = str(api_data.get("base_url") or "").strip()
+    if "base_url" in api_data and incoming_base_url:
+        _check_base_url(incoming_base_url)
     api = find_api(catalog, api_id)
     normalized = copy.deepcopy(api) if api else (default_api_for(api_id) or {"id": api_id, "models": []})
     normalized["id"] = api_id
@@ -458,6 +485,36 @@ def find_api(catalog: dict[str, Any], api_id: str | None) -> dict[str, Any] | No
     return next((api for api in catalog.get("apis", []) if normalize_api_id(api.get("id")) == target), None)
 
 
+def base_url_for(api_id: str | None) -> str:
+    """从 live catalog 取该 provider 的 base_url（OpenAI 兼容兜底用）。
+
+    单一真源:_harness / extractor / command_agent 三处 _api_base_url 字节级重复 →
+    统一收到这里。异常或缺失返回空串(调用方据此判断"未知 base_url")。
+
+    注意:与 embedding.py 用 default_api_for(静态 DEFAULT 模板)取 base_url 数据源不同
+    —— 那处是【有意】防误连 api.openai.com,不走 live catalog,不收编到此。
+    """
+    try:
+        api = find_api(load_model_catalog(), api_id)
+        return api.get("base_url", "") if api else ""
+    except Exception:
+        return ""
+
+
+def api_kind(api_id: str | None) -> str:
+    """从 live catalog 取该 provider 的 kind;缺失/异常时退回 api_id 本身。
+
+    等价于散落各处的 `(api or {}).get("kind") or api_id`。纯查表 —— 不含
+    master.py 的中转站特判(catalog 无该 api 但用户凭证带 base_url_override →
+    强制 openai_compat),那是本函数的超集,保留在 GameMaster 构造一层。
+    """
+    try:
+        api = find_api(load_model_catalog(), api_id) or {}
+        return str(api.get("kind") or api_id)
+    except Exception:
+        return str(api_id)
+
+
 def find_model(api: dict[str, Any] | None, model_id: str | None) -> dict[str, Any] | None:
     if not api:
         return None
@@ -466,11 +523,15 @@ def find_model(api: dict[str, Any] | None, model_id: str | None) -> dict[str, An
 
 def first_enabled_api(catalog: dict[str, Any]) -> dict[str, Any]:
     apis = catalog.get("apis") or []
+    if not apis:
+        raise ValueError("model catalog has no APIs")
     return next((api for api in apis if api.get("enabled", True)), apis[0])
 
 
 def first_enabled_model(api: dict[str, Any]) -> dict[str, Any]:
     models = api.get("models") or []
+    if not models:
+        raise ValueError("model catalog has no models")
     return next((model for model in models if model.get("enabled", True)), models[0])
 
 

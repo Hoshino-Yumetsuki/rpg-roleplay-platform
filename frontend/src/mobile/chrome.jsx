@@ -2,14 +2,16 @@
    纯表现层,从设计稿(平台外壳)抬取并转 ESM。 */
 import React from 'react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Icon } from './icons.jsx';
 
 /* 复用页头:返回箭头 + 标题/副标题 + 右侧操作 */
 export function PageHeader({ title, sub, onBack, actions, center }) {
+  const { t } = useTranslation();
   return (
     <div className="pl-head">
       {onBack && (
-        <button className="pl-back" onClick={onBack} aria-label="返回">
+        <button className="pl-back" onClick={onBack} aria-label={t('common.back')}>
           <Icon name="chevron_left" size={20} />
         </button>
       )}
@@ -24,6 +26,7 @@ export function PageHeader({ title, sub, onBack, actions, center }) {
 
 /* ⓘ 信息提示:把长描述折进按需弹出的 popover */
 export function InfoHint({ text }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   if (!text) return null;
   return (
@@ -31,7 +34,8 @@ export function InfoHint({ text }) {
       <button
         type="button"
         className="ih-btn"
-        aria-label="说明"
+        aria-label={t('common.info_hint')}
+        aria-expanded={open}
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}
       >
         <Icon name="info" size={13} />
@@ -39,7 +43,7 @@ export function InfoHint({ text }) {
       {open && (
         <>
           <span className="ih-scrim" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
-          <span className="ih-pop">{text}</span>
+          <span className="ih-pop" role="tooltip">{text}</span>
         </>
       )}
     </span>

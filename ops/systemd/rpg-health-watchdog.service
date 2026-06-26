@@ -1,0 +1,11 @@
+[Unit]
+Description=RPG backend health watchdog (auto-heal on wedge)
+Documentation=file:/opt/rpg-roleplay/ops/README.md
+After=rpg-backend.service
+
+[Service]
+Type=oneshot
+# 需 root:跑 systemctl restart + runuser -u postgres psql。脚本自身有 flock/冷却/防风暴。
+ExecStart=/opt/rpg-roleplay/ops/health_watchdog.sh
+# 单轮探测+决策很快;给足余量防卡死(curl 自带 -m 10)。
+TimeoutStartSec=60

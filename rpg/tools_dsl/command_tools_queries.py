@@ -229,9 +229,15 @@ def _t_get_script_chapters(user_id: int, script_id: int | None, args: dict, stat
         with connect() as db:
             if not _user_can_read_script(db, int(sid), user_id):
                 return f"失败 (权限): 剧本 #{int(sid)} 不属于当前用户或未订阅"
+            # summary 权威源是 chapter_facts(提取流程写入,列名 chapter);script_chapters
+            # 从无 summary 列(旧查询 100% UndefinedColumn)。LEFT JOIN 保留全量章节(标题/序
+            # 来自权威的 script_chapters,未提取的章节不丢),summary 有则补、无则空串。
             rows = db.execute(
-                "select chapter_index, title, summary from script_chapters "
-                "where script_id = %s order by chapter_index limit 200",
+                "select sc.chapter_index, sc.title, coalesce(cf.summary, '') as summary "
+                "from script_chapters sc "
+                "left join chapter_facts cf "
+                "  on cf.script_id = sc.script_id and cf.chapter = sc.chapter_index "
+                "where sc.script_id = %s order by sc.chapter_index limit 200",
                 (int(sid),),
             ).fetchall() or []
         return json.dumps([dict(r) for r in rows[:50]], ensure_ascii=False, indent=2)

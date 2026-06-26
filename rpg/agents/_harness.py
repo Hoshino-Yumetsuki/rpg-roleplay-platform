@@ -34,16 +34,12 @@ log = get_logger(__name__)
 
 
 def _no_redirect_urlopen(req, *, timeout):
-    """SEC(H-4): 默认 opener 跟随重定向 → base_url 存入时校验过也能被 301 跳到内网/元数据,
-    且携 Authorization。统一用不跟随重定向的 opener 发请求。"""
-    import urllib.request
+    """SEC(H-4): 已并入 `core.outbound.safe_urlopen` —— 不跟随重定向 + use-time 重解析并把
+    socket pin 到已校验 IP(抗 DNS rebinding)。保留此薄包装仅为兼容既有调用点;新代码
+    直接用 `core.outbound.safe_urlopen`。"""
+    from core.outbound import safe_urlopen
 
-    class _NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *a, **k):
-            return None
-
-    opener = urllib.request.build_opener(_NoRedirect())
-    return opener.open(req, timeout=timeout)
+    return safe_urlopen(req, timeout=timeout)
 
 
 def call_agent_json(
@@ -165,12 +161,17 @@ def _anthropic_tool_use(
     """
     from anthropic import Anthropic
 
+    from core.outbound import safe_httpx_client
     from platform_app.user_credentials import resolve_api_key
     result = resolve_api_key(user_id, "anthropic", env_fallback="ANTHROPIC_API_KEY")
     key = result.get("key")
     if not key:
         raise RuntimeError("找不到 Anthropic API Key for agent harness")
-    client = Anthropic(api_key=key)
+    _base_url = result.get("base_url_override") or None
+    _client_kwargs: dict = {"api_key": key, "http_client": safe_httpx_client()}
+    if _base_url:
+        _client_kwargs["base_url"] = _base_url
+    client = Anthropic(**_client_kwargs)
     tool_name = tool_schema.get("name") or "emit_payload"
     resp = client.messages.create(
         model=model,
@@ -202,12 +203,17 @@ def _anthropic_json_text(
     """
     from anthropic import Anthropic
 
+    from core.outbound import safe_httpx_client
     from platform_app.user_credentials import resolve_api_key
     result = resolve_api_key(user_id, "anthropic", env_fallback="ANTHROPIC_API_KEY")
     key = result.get("key")
     if not key:
         raise RuntimeError("找不到 Anthropic API Key for agent harness")
-    client = Anthropic(api_key=key)
+    _base_url = result.get("base_url_override") or None
+    _client_kwargs: dict = {"api_key": key, "http_client": safe_httpx_client()}
+    if _base_url:
+        _client_kwargs["base_url"] = _base_url
+    client = Anthropic(**_client_kwargs)
     resp = client.messages.create(
         model=model,
         max_tokens=max_tokens,
@@ -271,6 +277,14 @@ def _vertex_structured(
     """Vertex call_structured 已设了 response_mime_type=application/json。"""
     from agents.gm import _VertexBackend
     backend = _VertexBackend(model=model, user_id=user_id)
+    # SA 缺失时 VertexBackend.client=None;不先拦就会在 client.models.* 抛 AttributeError
+    # ('NoneType' object has no attribute 'models'),日志难懂。给清晰可行动的凭据错误,
+    # 让上层(context_agent curator / extractor)优雅降级 + 用户知道去配 SA。
+    if backend.client is None:
+        raise RuntimeError(
+            getattr(backend, "_unavailable_message", "")
+            or "Vertex AI 不可用:未配置 Service Account(在「设置 → Agent Platform」上传 SA JSON)"
+        )
     text = backend.call_structured(
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
@@ -298,6 +312,13 @@ def _vertex_function_call(
     """
     from agents.gm import _VertexBackend
     backend = _VertexBackend(model=model, user_id=user_id)
+    # SA 缺失 → client=None;先拦,否则 backend.client.models.generate_content 抛
+    # AttributeError('NoneType'...models)(巡检 2026-06-20 抓到:curator harness vertex 路径)。
+    if backend.client is None:
+        raise RuntimeError(
+            getattr(backend, "_unavailable_message", "")
+            or "Vertex AI 不可用:未配置 Service Account(在「设置 → Agent Platform」上传 SA JSON)"
+        )
     from google.genai import types
 
     fn_decl = types.FunctionDeclaration(
@@ -362,6 +383,7 @@ def _openai_compat_json_mode(
     cred = resolve_api_key(user_id, api_id)
     if not cred.get("key"):
         raise RuntimeError(f"无 {api_id} 凭证可用于 agent harness")
+    import urllib.error
     import urllib.request
     base_url = cred.get("base_url_override") or _api_base_url(api_id)
     if not base_url:
@@ -390,10 +412,17 @@ def _openai_compat_json_mode(
     try:
         with _no_redirect_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
-        text = payload["choices"][0]["message"]["content"]
+        choice = (payload.get("choices") or [{}])[0]
+        text = choice.get("message", {}).get("content") or ""
+        if not text and not payload.get("choices"):
+            raise RuntimeError(f"provider 响应结构异常: {str(payload)[:200]}")
         usage = _openai_usage(payload.get("usage") or {})
         return text or "", usage
-    except Exception:
+    except urllib.error.HTTPError as exc:
+        # 仅对 400(endpoint 不支持 response_format)降级重发;5xx/超时/连接错误一律向上抛 ——
+        # 否则把上游瞬时故障误判为「特性不支持」→ 对非幂等 POST 重复请求(重复计费)且掩盖真因。
+        if exc.code != 400:
+            raise
         body_dict.pop("response_format", None)
         body = json.dumps(body_dict).encode("utf-8")
         req = urllib.request.Request(
@@ -404,7 +433,10 @@ def _openai_compat_json_mode(
         )
         with _no_redirect_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
-        text = payload["choices"][0]["message"]["content"]
+        choice = (payload.get("choices") or [{}])[0]
+        text = choice.get("message", {}).get("content") or ""
+        if not text and not payload.get("choices"):
+            raise RuntimeError(f"provider 响应结构异常: {str(payload)[:200]}")
         usage = _openai_usage(payload.get("usage") or {})
         return text or "", usage
 
@@ -431,6 +463,7 @@ def _openai_function_call(
     cred = resolve_api_key(user_id, api_id)
     if not cred.get("key"):
         raise RuntimeError(f"无 {api_id} 凭证可用于 agent harness")
+    import urllib.error
     import urllib.request
     base_url = cred.get("base_url_override") or _api_base_url(api_id)
     if not base_url:
@@ -468,7 +501,9 @@ def _openai_function_call(
         with _no_redirect_urlopen(req, timeout=timeout_sec) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         usage = _openai_usage(payload.get("usage") or {})
-        msg = payload["choices"][0]["message"]
+        if not payload.get("choices"):
+            raise RuntimeError(f"provider 响应结构异常: {str(payload)[:200]}")
+        msg = (payload.get("choices") or [{}])[0].get("message", {})
         tool_calls = msg.get("tool_calls") or []
         for tc in tool_calls:
             fn = tc.get("function") or {}
@@ -478,9 +513,20 @@ def _openai_function_call(
                 return args_text, usage
         # 没拿到 tool_call → 降级到文本内容(让调用方 parse)
         return msg.get("content") or "{}", usage
-    except Exception:
-        # endpoint 不支持 tools → 降级到 response_format json_object
-        log.warning(f"[_harness] {api_id} tools 不支持,降级到 json_object")
+    except urllib.error.HTTPError as exc:
+        # provider 以「请求形态不接受」拒绝 forced function-call 时,降级到 response_format=
+        # json_object 兼容模式重发(同渠道 GM 发纯对话能成,正是因为它不带 tools/tool_choice)。
+        # 群反馈实锤:大量中转(op/xf/…)对子代理的强制工具调用回 403/不支持,而 GM 正常 ——
+        # 根因就是请求形态,不是凭据。判为「形态拒绝」的码:
+        #   400 不支持 tools · 403 网关/WAF 禁掉带 tools 的请求 · 404/405 该 model 无
+        #   function-calling 路由 · 422 参数校验拒 tool_choice。
+        # 401(凭据)/429(限流)/5xx(上游故障)/超时 一律向上抛,交 provider_errors 正确分类,
+        # 不当「tools 不支持」静默降级(避免凭据/限流被掩盖)。降级只多发一次兼容请求:
+        # 真凭据问题时 json_object 仍会同码失败并向上抛,代价仅一次被拒(未计费)的请求。
+        _TOOLS_SHAPE_REJECT = {400, 403, 404, 405, 422}
+        if exc.code not in _TOOLS_SHAPE_REJECT:
+            raise
+        log.warning(f"[_harness] {api_id} 拒绝 tools 请求(HTTP {exc.code}),降级到 json_object 兼容模式")
         return _openai_compat_json_mode(
             api_id, model, system_prompt, user_prompt,
             user_id, timeout_sec, max_tokens,
@@ -504,12 +550,9 @@ def _openai_usage(u: dict) -> dict:
 
 
 def _api_base_url(api_id: str) -> str:
-    try:
-        from model_registry import find_api, load_model_catalog
-        api = find_api(load_model_catalog(), api_id)
-        return api.get("base_url", "") if api else ""
-    except Exception:
-        return ""
+    # 薄委托 → model_registry.base_url_for(单一真源:live catalog 取 base_url,异常返空)。
+    from model_registry import base_url_for
+    return base_url_for(api_id)
 
 
 # ── 模型偏好解析(给三个 agent 的 api_id/model 优先级解析共用)──────
@@ -519,8 +562,8 @@ def resolve_api_and_model(
     *,
     api_pref_key: str,
     model_pref_key: str,
-    default_api: str = "vertex_ai",
-    default_model: str = "gemini-3.5-flash",
+    default_api: str | None = None,
+    default_model: str | None = None,
     api_id_override: str | None = None,
     model_override: str | None = None,
 ) -> tuple[str, str]:
@@ -538,14 +581,20 @@ def resolve_api_and_model(
     避免用户重复配 5 个命名空间。
     """
     from core.llm_backend import (
+        DEFAULT_FALLBACK_API as _DEFAULT_FALLBACK_API,
+        DEFAULT_FALLBACK_MODEL as _DEFAULT_FALLBACK_MODEL,
         first_user_model as _first_user_model,
     )
     from core.llm_backend import (
+        guard_byok_usable as _guard_byok_usable,
         resolve_preferred_api as _resolve_api,
     )
     from core.llm_backend import (
         resolve_preferred_model as _resolve_model,
     )
+    # 兜底默认统一引用 catalog.selected 对齐的常量(消除散落 'vertex_ai'/'gemini-3.5-flash' 漂移)。
+    default_api = default_api or _DEFAULT_FALLBACK_API
+    default_model = default_model or _DEFAULT_FALLBACK_MODEL
     user_default = _first_user_model(user_id)
     api_id = (
         api_id_override
@@ -565,19 +614,10 @@ def resolve_api_and_model(
     # 但用户没传 SA / 没配该 provider 的 key)→ 回退到用户配过 key 的第一个模型。
     # 否则所有 harness 子代理(curator / acceptance / extractor / 黑天鹅)对没 SA 的
     # 用户都会抛「未找到 Vertex SA」而整段失败。显式 override 不受此守卫影响。
-    if not (api_id_override or model_override) and user_id and user_default and api_id and api_id != user_default[0]:
-        try:
-            from platform_app.user_credentials import get_credential
-            if api_id == "vertex_ai":
-                from core.vertex_sa import has_user_sa
-                _usable = has_user_sa(user_id)
-            else:
-                _usable = bool(get_credential(user_id, api_id))
-        except Exception:
-            _usable = True
-        if not _usable:
-            api_id, model = user_default[0], user_default[1]
-    return api_id, model
+    return _guard_byok_usable(
+        user_id, api_id, model,
+        allow_override=bool(api_id_override or model_override),
+    )
 
 
 def call_agent_tool_loop(
@@ -612,6 +652,7 @@ def call_agent_tool_loop(
 
     from anthropic import Anthropic
 
+    from core.outbound import safe_httpx_client
     from platform_app.user_credentials import resolve_api_key
 
     result = resolve_api_key(user_id, "anthropic", env_fallback="ANTHROPIC_API_KEY")
@@ -619,7 +660,11 @@ def call_agent_tool_loop(
     if not key:
         raise RuntimeError("找不到 Anthropic API Key for agent tool_loop")
 
-    client = Anthropic(api_key=key)
+    _base_url = result.get("base_url_override") or None
+    _client_kwargs: dict = {"api_key": key, "http_client": safe_httpx_client()}
+    if _base_url:
+        _client_kwargs["base_url"] = _base_url
+    client = Anthropic(**_client_kwargs)
 
     messages: list[dict] = [{"role": "user", "content": user_prompt}]
     trace: list[dict] = []

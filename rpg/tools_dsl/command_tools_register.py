@@ -269,6 +269,87 @@ def _register_phase2_tools() -> None:
 
 
 # ────────────────────────────────────────────────────────────
+# N (MD 编辑器) §5: script 级「列出」读工具
+# (executor 在 command_tools_script_write,读级闸 owner|subscriber)
+# 照抄 command_tools_queries 的 script 读工具注册行(scope="script" + _READ_ANY_ORIGIN)。
+# rule 4 同步前先用这三个定位现有 entry_id / anchor_id / logical_key。
+# ────────────────────────────────────────────────────────────
+
+
+def _register_script_read_tools() -> None:
+    from tools_dsl.command_tools_script_write import (
+        _SCRIPT_READ_ORIGINS,
+        _t_extract_from_selection,
+        _t_get_chapter_context,
+        _t_list_anchors,
+        _t_list_canon_entities,
+        _t_list_worldbook_entries,
+    )
+    registry = get_registry()
+    read_specs = [
+        ("list_worldbook_entries",
+         "列出剧本世界书条目精简清单(entry_id/title/keys/enabled/...)。"
+         "用 upsert_worldbook_entry 更新前先用它拿 entry_id。",
+         _t_list_worldbook_entries),
+        ("list_anchors",
+         "列出剧本时间线锚点精简清单(anchor_id/label/story_phase/章节区间)。"
+         "用 update_anchor 更新前先用它拿 anchor_id。",
+         _t_list_anchors),
+        ("list_canon_entities",
+         "列出剧本 canon 实体精简清单(logical_key/name/type/...)。"
+         "用 upsert_canon_entity 更新前先用它拿 logical_key。",
+         _t_list_canon_entities),
+    ]
+    for name, desc, exec_ in read_specs:
+        if registry.has(name):
+            continue
+        registry.register(ToolSpec(
+            name=name,
+            description=desc,
+            input_schema={"type": "object", "properties": {"script_id": {"type": "integer"}}},
+            executor=exec_,
+            scope="script",
+            origins=_SCRIPT_READ_ORIGINS,
+            destructive=False,
+        ))
+    # get_chapter_context:聚合读工具(需 chapter_index),单独注册(schema 与上面 list_* 不同)。
+    if not registry.has("get_chapter_context"):
+        registry.register(ToolSpec(
+            name="get_chapter_context",
+            description=(
+                "一次性取「该章相关编辑环境」(相关世界书/人物/词条/此刻时点/前情提要,按 chapter_index 防剧透)。"
+                "编辑或续写某章前先调它建立设定认知,免去逐个 list_*/get_* 多轮往返、也避免凭空写。"
+            ),
+            input_schema={"type": "object", "properties": {
+                "script_id": {"type": "integer"},
+                "chapter_index": {"type": "integer", "description": "正在编辑的章号(1-based)"},
+            }},
+            executor=_t_get_chapter_context,
+            scope="script",
+            origins=_SCRIPT_READ_ORIGINS,
+            destructive=False,
+        ))
+    # extract_from_selection:作者优先「把提取器拆成选区工具」—— 只产提议、不写库(调提取 LLM)。
+    if not registry.has("extract_from_selection"):
+        registry.register(ToolSpec(
+            name="extract_from_selection",
+            description=(
+                "对用户选中的一段正文跑结构化提取(复用提取器:反史实/反编造/中文别名归并铁律),"
+                "返回提议的人物/势力/地点/概念/事件/摘要(只产提议、不写库)。作者把设定写进正文后,"
+                "用它从选中段抽出知识资产,再按用户意愿用 upsert_*/create_anchor 落库(经写入权限闸)。"
+            ),
+            input_schema={"type": "object", "properties": {
+                "script_id": {"type": "integer"},
+                "text": {"type": "string", "description": "要提取信息的选中正文"},
+            }, "required": ["text"]},
+            executor=_t_extract_from_selection,
+            scope="script",
+            origins=_SCRIPT_READ_ORIGINS,
+            destructive=False,
+        ))
+
+
+# ────────────────────────────────────────────────────────────
 # Public: 一次性初始化所有工具
 # ────────────────────────────────────────────────────────────
 
@@ -365,6 +446,17 @@ def ensure_registered() -> None:
         register_image_tools()
     except Exception as exc:
         log.warning(f"[command_tools_register] image 工具注册失败: {exc}")
+    # N (MD 编辑器) §5: script 级「直写库」写工具(章节/世界书/NPC卡/锚点/canon,严格 owner 闸)
+    try:
+        from tools_dsl.command_tools_script_write import register_script_write_tools
+        register_script_write_tools()
+    except Exception as exc:
+        log.warning(f"[command_tools_register] script_write 工具注册失败: {exc}")
+    # N (MD 编辑器) §5: script 级「列出」读工具(世界书/锚点/canon,读级闸 owner|subscriber)
+    try:
+        _register_script_read_tools()
+    except Exception as exc:
+        log.warning(f"[command_tools_register] script_read 工具注册失败: {exc}")
     # task 68/72 — 给已注册工具打 intent_keywords + side_effect_topics 标签,
     # 供 ui_describe 模糊匹配 + dispatcher 状态变更广播。
     try:

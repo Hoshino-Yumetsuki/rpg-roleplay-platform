@@ -97,7 +97,7 @@ def _inject_capabilities(catalog: dict[str, Any]) -> dict[str, Any]:
 async def api_models(
     api_user: dict[str, Any] | None = Depends(get_current_user),
 ) -> JSONResponse:
-    from app import _redact_catalog, selected_model, _resolve_user_default_model_view
+    from app import _redact_catalog, selected_model, _resolve_effective_model_view
     from model_registry import load_catalog_for_user
     # 安全:每用户视图 = 全局菜单 + 该用户私有 overlay(同步模型 / 自建中转站)。
     _uid = int(api_user["id"]) if api_user and api_user.get("id") else None
@@ -105,12 +105,13 @@ async def api_models(
     is_admin = bool(api_user and api_user.get("role") == "admin")
     redacted = _redact_catalog(catalog, is_admin, user_id=_uid)
     enriched = _inject_capabilities(_inject_pricing(redacted))
-    # selected 必须是「该用户的 gm 偏好」(与 _get_gm 实际所用一致),否则前端 ModelPopover/底部标签
-    # 会用全局默认(常是用户没配 key 的 gemini)→ 表现为「当前模型莫名跳 gemini」。缺偏好才回退全局。
+    # selected 必须 = 当前真正生效的模型(per-save session_model > 用户 gm 偏好 > 全局),与
+    # _get_gm/_payload 同口径。否则游戏内切模型(写 per-save session_model)后,picker 重拉 /api/models
+    # 仍读到用户 gm 默认 → 高亮回退「列表第一个」(线上反馈:选任何模型都跳回 llama 3.1)。缺则回退全局。
     return JSONResponse({
         "ok": True,
         "models": _inject_health(enriched),
-        "selected": _resolve_user_default_model_view(api_user, catalog) or selected_model(catalog),
+        "selected": _resolve_effective_model_view(api_user, catalog) or selected_model(catalog),
     })
 
 
@@ -229,14 +230,16 @@ async def api_models_select(
                                   user_id=api_user["id"] if api_user else None)
         except Exception:
             pass  # 持久化失败不影响本次切换（内存已生效）
-        catalog = selected_model()
+        # selected 必须回报【用户刚选的】per-save 模型,而非 selected_model()(=全局 catalog 默认,
+        # 常是 gemini/llama)。否则前端拿 select 响应的 selected = 全局默认 → 选完即跳默认
+        # (线上反馈:选任何模型都回退列表第一个)。与 per-user 路径(下方)返回口径一致。
         return JSONResponse({
             "ok": True,
             "scope": "save",
             "save_id": save_id,
             "model_id": model_id,
             "api_id": api_id,
-            "selected": catalog,
+            "selected": {"api_id": api_id, "model_id": model_id, "real_name": model_id},
         })
 
     # save_id == None 路径:之前是写**全局 catalog selected**(admin 全平台默认),
@@ -297,8 +300,10 @@ async def api_models_select(
     uid = _user_key(api_user)
     with _state_lock:
         _gm_by_user.pop(uid, None)
-    catalog = selected_model()
-    return JSONResponse({"ok": True, "scope": "user", "api_id": api_id, "model_id": model_id, "selected": catalog})
+    # selected 必须反映「用户刚选的模型」,而非 selected_model()(=全局 app_config 默认,常是 gemini)。
+    # 否则前端拿到 select 响应的 selected 会是全局默认 → 选完即跳默认(用户报「修十次没好」)。
+    return JSONResponse({"ok": True, "scope": "user", "api_id": api_id, "model_id": model_id,
+                         "selected": {"api_id": api_id, "model_id": model_id, "real_name": model_id}})
 
 
 @router.post("/api/models/api", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)

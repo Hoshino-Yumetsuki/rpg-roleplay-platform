@@ -27,6 +27,7 @@ from typing import Any
 from . import save_io
 from .db import connect
 from .knowledge import script_pack
+from .perms import owns_save
 
 BUNDLE_VERSION = 1
 DEFAULT_TIER = "no_vectors"
@@ -40,12 +41,13 @@ _TIER_INCLUDE_CHUNKS: dict[str, bool] = {
 
 def _save_script_id(user_id: int, save_id: int) -> int:
     with connect() as db:
+        # 归属判定收敛到 perms.owns_save;通过后再取 script_id。
+        if not owns_save(db, save_id, user_id):
+            raise ValueError("无权访问该存档")
         row = db.execute(
-            "select script_id from game_saves where id = %s and user_id = %s",
-            (save_id, user_id),
+            "select script_id from game_saves where id = %s",
+            (save_id,),
         ).fetchone()
-    if not row:
-        raise ValueError("无权访问该存档")
     return int(row["script_id"])
 
 
@@ -132,7 +134,17 @@ def import_save_bundle(user_id: int, zip_bytes: bytes) -> dict[str, Any]:
     _remap_script_id(save_payload, int(old_raw) if old_raw is not None else None, new_script_id)
 
     # 3. 导入 per-save(import_save 校验 script_id 归属 → 现在是导入者自己的新剧本)
-    save_res = save_io.import_save(user_id, save_payload)
+    #    补偿回滚(反馈#71):import_script_pack 已 commit 剧本,若存档导入失败必须删掉刚建的剧本,
+    #    否则留下「有剧本无存档」的孤儿(且旧 missing-field 报错误导用户)。
+    try:
+        save_res = save_io.import_save(user_id, save_payload)
+    except Exception:
+        try:
+            from platform_app.script_import import delete_script
+            delete_script(user_id, new_script_id, force=True)
+        except Exception:
+            pass
+        raise
 
     warnings = list(pack_res.get("warnings", [])) + list(save_res.get("warnings", []))
     return {

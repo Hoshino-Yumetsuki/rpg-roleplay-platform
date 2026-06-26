@@ -25,6 +25,9 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from .db import connect, expose, init_db
+from .perms import script_owned
+from core.llm_backend import DEFAULT_FALLBACK_API, DEFAULT_FALLBACK_MODEL
+from model_aliases import credential_storage_api_id, normalize_api_id
 
 # ── 阶段定义 ────────────────────────────────────────────────────────
 # v29 (一站完成): wizard 末尾 chain LLM extract + 嵌入 → 用户上传后所有模块齐备
@@ -45,12 +48,63 @@ STAGES = [
 
 
 # ── 全局并发 semaphore（最多 2 个导入同时跑，第 3+ 个排队）──────────────
-# 用 threading.Semaphore 而非 asyncio.Semaphore：流水线跑在 daemon thread 里，
-# acquire() 在 worker thread 中阻塞，不占用 FastAPI event loop。
-_IMPORT_GLOBAL_SEM = threading.Semaphore(2)
+# 优先使用 Redis 跨进程信号量（多 worker 场景下总并发不超限）；Redis 不可用时
+# 回退到进程内 threading.Semaphore（单 worker / 本地开发仍正确）。
+_IMPORT_SEM_CAPACITY = 2
+_IMPORT_SEM_NAME = "import_pipeline"
+_IMPORT_GLOBAL_SEM = threading.Semaphore(_IMPORT_SEM_CAPACITY)  # 回退用
 # 当前正在等待 semaphore 的任务数（排队深度）。原子 +1/-1 用 _QUEUE_LOCK。
 _QUEUE_DEPTH: int = 0
 _QUEUE_LOCK = threading.Lock()
+
+
+def _redis_sem_init() -> bool:
+    """尝试初始化 Redis 信号量令牌池（幂等）。返回 True=Redis 可用，False=回退进程内。"""
+    try:
+        from redis_bus import sem_init
+        return sem_init(_IMPORT_SEM_NAME, _IMPORT_SEM_CAPACITY)
+    except Exception:
+        return False
+
+
+def _redis_sem_acquire(timeout_sec: int = 1800) -> tuple[bool, str | None]:
+    """
+    尝试从 Redis 取令牌。
+    返回 (used_redis, token)：used_redis=True 表示用了 Redis，token 为令牌字符串（release 时用）。
+    Redis 不可用时回退到进程内 Semaphore.acquire()。
+    """
+    try:
+        from redis_bus import sem_acquire
+        token = sem_acquire(_IMPORT_SEM_NAME, timeout_sec=timeout_sec)
+        if token is not None:
+            return True, token
+        # sem_acquire 返回 None：超时或 Redis 不可用
+    except Exception:
+        pass
+    # 回退：进程内阻塞
+    _IMPORT_GLOBAL_SEM.acquire()
+    return False, None
+
+
+def _redis_sem_release(used_redis: bool, token: str | None) -> None:
+    """归还令牌（与 _redis_sem_acquire 对称）。
+
+    [round-4-P2] 释放必须与 acquire 走的同一侧严格对称,否则会过度释放:
+      - used_redis=True：只还 Redis 令牌。绝不能再 release 进程内 Semaphore——
+        acquire 时根本没占进程内槽位,补释放会把计数器顶过容量(并发超限)。
+        若此刻 Redis 不可达,令牌暂时无法归还(下次 sem_init 幂等补种时,池空才补;
+        极端情况丢 1 个令牌,best-effort 限流可接受,绝不拿过度释放去换)。
+      - used_redis=False：acquire 走了进程内 Semaphore,这里对称 release。
+    """
+    if used_redis:
+        if token is not None:
+            try:
+                from redis_bus import sem_release
+                sem_release(_IMPORT_SEM_NAME, token)
+            except Exception:
+                pass  # Redis 抖动:宁可丢令牌也不过度释放进程内槽位
+        return
+    _IMPORT_GLOBAL_SEM.release()
 
 # ── 进程内 thread 跟踪表（best-effort）──────────────────────────────
 # 多 worker 部署时只对当前 worker 可见，
@@ -92,8 +146,8 @@ def estimate_budget(
     enable_cards: bool = True,
     enable_worldbook: bool = True,
     cards_top_n: int = 30,
-    model_api_id: str = "vertex_ai",
-    model_real_name: str = "gemini-3.5-flash",
+    model_api_id: str = DEFAULT_FALLBACK_API,
+    model_real_name: str = DEFAULT_FALLBACK_MODEL,
 ) -> dict[str, Any]:
     """开始导入前的预算。
 
@@ -373,6 +427,77 @@ def get_job_status(user_id: int, job_id: str | None = None, script_id: int | Non
     return {"ok": True, "found": True, "job": job}
 
 
+def wait_for_import_job(
+    user_id: int, job_id: str, *, timeout_s: float = 180.0, poll_s: float = 2.0,
+) -> dict[str, Any]:
+    """阻塞轮询 import_jobs 直到终态(done/done_with_errors/failed/cancelled)或超时,
+    返回 get_job_status 的 job dict(含 status/overall_progress/overall_total/stages/error/warnings)。
+
+    闭环用(用户反馈:导入/重建后 LLM 不知道好没好)。import_attached_script / rebuild_script_module
+    在 LLM 自主工具循环里【确定性】等真实结果,把成功/失败回灌循环,而非返回「已入队」回执后停摆。
+    job worker 是 in-process daemon thread(rebuild/full_pipeline),DB 轮询跨线程可靠且不依赖
+    in-process 句柄。轮询跑在 GM 工作线程(chat_pipeline 的 asyncio.to_thread 桥接),time.sleep
+    不阻塞事件循环、SSE 照常存活。超时返回当前(pending/running)快照,调用方据此优雅收尾。
+
+    安全:get_job_status 已按 (job_id, user_id) 过滤,他人 job 查不到 → 返 {found:False}。
+    """
+    import time
+
+    deadline = time.monotonic() + timeout_s
+    last: dict[str, Any] = {"status": "pending", "found": False}
+    while True:
+        try:
+            st = get_job_status(user_id, job_id=job_id)
+            if st.get("found") and isinstance(st.get("job"), dict):
+                last = st["job"]
+                if (last.get("status") or "").strip() in _TERMINAL_STATUSES:
+                    return last
+            elif st.get("found") is False:
+                # job 不存在(被清理/越权)→ 立即收尾,别空转到超时
+                return {"status": "not_found", "found": False}
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger(__name__).debug("[import] wait_for_import_job poll error: %s", exc)
+        if time.monotonic() >= deadline:
+            last = dict(last) if isinstance(last, dict) else {"status": "pending"}
+            last["timed_out"] = True
+            return last
+        time.sleep(poll_s)
+
+
+def summarize_job_result(res: dict[str, Any], action: str) -> str:
+    """把 wait_for_import_job 返回的 job 快照压成给 LLM/用户看的一行中文结果。
+    闭环工具(import_attached_script / rebuild_script_module)用它回灌真实结果。"""
+    res = res or {}
+    status = (res.get("status") or "").strip()
+    if res.get("timed_out"):
+        prog, tot = res.get("overall_progress"), res.get("overall_total")
+        prog_s = f"(进度 {prog}/{tot})" if prog is not None and tot else ""
+        return (f"{action}仍在后台进行{prog_s}:任务会继续跑完,"
+                f"稍后用 get_import_status / list_my_import_jobs 查最终结果。")
+    if status in ("done", "done_with_errors"):
+        parts = [f"{action}完成"]
+        stages = res.get("stages") or []
+        cnts = [
+            f"{s.get('label') or s.get('id')}:{s.get('count')}"
+            for s in stages
+            if isinstance(s, dict) and s.get("count") is not None and s.get("status") != "skipped"
+        ]
+        if cnts:
+            parts.append("(" + " / ".join(cnts) + ")")
+        if status == "done_with_errors":
+            w = res.get("warnings")
+            parts.append(f"— 部分阶段有问题:{w}" if w else "— 部分阶段未完全成功")
+        return " ".join(parts)
+    if status == "failed":
+        return f"{action}失败:{res.get('error') or '未知错误'}"
+    if status == "cancelled":
+        return f"{action}已被取消。"
+    if status == "not_found":
+        return f"{action}任务未找到(可能已被清理或越权)。"
+    return f"{action}当前状态:{status or '未知'}。"
+
+
 def cancel_job(user_id: int, job_id: str) -> dict[str, Any]:
     """请求取消：worker 在下个检查点会退出。"""
     init_db()
@@ -405,6 +530,7 @@ def _run_pipeline(job_id: str, user_id: int, script_id: int, options: dict[str, 
     global _QUEUE_DEPTH
 
     # ── 全局并发限制：acquire semaphore（排队期间 blocking，但在 daemon thread 里，不卡 event loop）
+    # 优先使用 Redis 跨进程信号量（多 worker 下总并发不超限）；回退到进程内 Semaphore。
     with _QUEUE_LOCK:
         _QUEUE_DEPTH += 1
     # 标记为 queued（如果还没标过）并写入当前排队深度
@@ -421,7 +547,9 @@ def _run_pipeline(job_id: str, user_id: int, script_id: int, options: dict[str, 
     except Exception:
         pass
 
-    _IMPORT_GLOBAL_SEM.acquire()  # 阻塞直到拿到槽（最多 2 个同时跑）
+    # 尝试初始化 Redis 信号量令牌池（幂等；首次调用时填充，后续 no-op）
+    _redis_sem_init()
+    _used_redis_sem, _sem_token = _redis_sem_acquire(timeout_sec=1800)
 
     with _QUEUE_LOCK:
         _QUEUE_DEPTH -= 1
@@ -431,7 +559,7 @@ def _run_pipeline(job_id: str, user_id: int, script_id: int, options: dict[str, 
         from .cluster import release_job_lock, try_acquire_job_lock
         if not try_acquire_job_lock(f"import_job:{job_id}"):
             # 已被别的 worker 占了，直接退出（那个 worker 会处理）
-            _IMPORT_GLOBAL_SEM.release()
+            _redis_sem_release(_used_redis_sem, _sem_token)
             return
     except Exception:
         try_acquire_job_lock = None  # type: ignore[assignment]
@@ -587,7 +715,7 @@ def _run_pipeline(job_id: str, user_id: int, script_id: int, options: dict[str, 
         finalize_job_if_unterminated(job_id)
         _RUNNING.pop(job_id, None)
         # 释放全局并发 semaphore，让下一个排队任务得以推进
-        _IMPORT_GLOBAL_SEM.release()
+        _redis_sem_release(_used_redis_sem, _sem_token)
         try:
             if release_job_lock:
                 release_job_lock(f"import_job:{job_id}")
@@ -732,10 +860,7 @@ def _stage_chunks(ctl: JobController, script_id: int, user_id: int) -> int:
         ).fetchall()
         if not chapters:
             return 0
-        script = db.execute(
-            "select * from scripts where id = %s and owner_id = %s",
-            (script_id, user_id),
-        ).fetchone()
+        script = script_owned(db, script_id, user_id)
         if not script:
             raise ValueError("script not found")
         book = knowledge._ensure_book(db, script)
@@ -766,10 +891,7 @@ def _stage_facts(ctl: JobController, script_id: int, user_id: int) -> int:
     known_concepts = knowledge._known_concepts(world)
 
     with connect() as db:
-        script = db.execute(
-            "select * from scripts where id = %s and owner_id = %s",
-            (script_id, user_id),
-        ).fetchone()
+        script = script_owned(db, script_id, user_id)
         book = knowledge._ensure_book(db, script)
         chapters = db.execute(
             "select * from script_chapters where script_id = %s order by chapter_index",
@@ -807,22 +929,16 @@ def _resolve_extractor_llm(user_id: int) -> tuple[str, str]:
         user_id,
         api_pref_key="extractor.api_id",
         model_pref_key="extractor.model_real_name",
-        default_api="vertex_ai",
-        default_model="gemini-3.5-flash",
+        default_api=DEFAULT_FALLBACK_API,
+        default_model=DEFAULT_FALLBACK_MODEL,
     )
-    return _normalize_llm_api_id(api_id), model
-
-
-def _normalize_llm_api_id(api_id: str) -> str:
-    """Normalize legacy/UI provider ids to backend catalog ids."""
-    value = (api_id or "").strip()
-    if value in {"vertex", "vertex_ai", "agent_platform", "AgentPlatform"}:
-        return "vertex_ai"
-    return value
+    # 别名→canonical 统一走全量别名表(原 _normalize_llm_api_id 只覆盖 vertex 残缺子集)。
+    return normalize_api_id(api_id), model
 
 
 def _credential_api_id_for(api_id: str) -> str:
-    return "AgentPlatform" if api_id == "vertex_ai" else api_id
+    # 薄委托:canonical→凭证寻址(Vertex 存 "AgentPlatform" 行)。与 normalize_api_id 方向相反。
+    return credential_storage_api_id(api_id)
 
 
 def require_user_llm_credential(user_id: int) -> dict[str, str]:
@@ -836,30 +952,10 @@ def require_user_llm_credential(user_id: int) -> dict[str, str]:
     }
 
 
-def _api_kind(api_id: str) -> str:
-    try:
-        from model_registry import find_api, load_model_catalog
-        api = find_api(load_model_catalog(), api_id) or {}
-        return str(api.get("kind") or api_id)
-    except Exception:
-        return api_id
-
-
 def _has_user_llm_credential(user_id: int | None, api_id: str) -> bool:
-    if not user_id:
-        return False
-    if _api_kind(api_id) == "vertex_ai" or api_id == "vertex_ai":
-        try:
-            from core.vertex_sa import has_user_sa
-            return has_user_sa(int(user_id), "AgentPlatform")
-        except Exception:
-            return False
-    try:
-        from platform_app.user_credentials import get_credential
-        cred = get_credential(int(user_id), api_id)
-        return bool(cred and cred.get("key"))
-    except Exception:
-        return False
+    # 薄委托 → core.llm_backend.user_can_use_provider(单一真源:vertex→BYOK SA / 其它→用户 key)。
+    from core.llm_backend import user_can_use_provider
+    return user_can_use_provider(user_id, api_id)
 
 
 def _require_user_llm_credential(user_id: int, api_id: str, model: str) -> None:
@@ -1106,6 +1202,10 @@ def _stage_phase_digests(script_id: int) -> int:
         return n
 
 
+# 高频人名扫描的章节范围,与 UI 文案「扫前 30 章高频角色名」对齐。
+_ENTITY_SCAN_CHAPTERS = 30
+
+
 def _stage_entities(ctl: JobController, script_id: int, user_id: int) -> list[dict[str, Any]]:
     """高频人名提取（中文 2-3 字 + 出现次数排序）。
 
@@ -1114,8 +1214,11 @@ def _stage_entities(ctl: JobController, script_id: int, user_id: int) -> list[di
     """
     with connect() as db:
         chapters = db.execute(
-            "select content from script_chapters where script_id = %s",
-            (script_id,),
+            # 与 UI「扫前 30 章高频角色名」一致:只扫前 30 章(主角通常早出场)。
+            # 此前漏 order/limit → 扫全书,把后期/次要角色也生成了卡(用户反馈:全书 NPC 都生成了)。
+            "select content from script_chapters where script_id = %s "
+            "order by chapter_index limit %s",
+            (script_id, _ENTITY_SCAN_CHAPTERS),
         ).fetchall()
         existing_names = set()
         for r in db.execute(
@@ -1436,7 +1539,13 @@ def _stage_worldbook(ctl: JobController, user_id: int, script_id: int) -> int:
                     insert into worldbook_entries(
                       book_id, script_id, title, keys, content, priority, enabled, metadata
                     ) values (%s, %s, %s, %s, %s, %s, true, %s)
-                    on conflict do nothing
+                    on conflict (script_id, title) do update set
+                      content   = excluded.content,
+                      keys      = excluded.keys,
+                      priority  = excluded.priority,
+                      metadata  = excluded.metadata,
+                      updated_at = now()
+                    where coalesce(worldbook_entries.metadata->>'source','') <> 'editor'
                     """,
                     (
                         book_id, script_id,
@@ -1447,7 +1556,8 @@ def _stage_worldbook(ctl: JobController, user_id: int, script_id: int) -> int:
                         Jsonb({"source": "llm_pipeline"}),
                     ),
                 )
-                count += 1
+                # rowcount=1 表示插入或更新成功;冲突且 where 不满足(editor 条目)时 rowcount=0
+                count += db.rowcount
         ctl.update(stage_progress=1)
         # phase_backend: 标记 worldbook 阶段写了多少条 — 0 当作 partial 让上层标 done_with_errors
         _stage_worldbook._last_count = count
@@ -1590,6 +1700,23 @@ def _stage_canon_extract(
         _log.getLogger(__name__).warning(
             "[canon→facts] backfill failed: %s", exc, exc_info=True,
         )
+
+    # 时间感知 KB(P1/P4):canon + chapter_facts.events 已就绪 → 物化揭示锚点 DAG + 三实体表
+    # reveal_anchor_key 映射,使该剧本的【新游戏】立刻具备前沿门控/统一召回(防剧透 + 进度按锚点)。
+    # 不挂这里则新导入的剧本无 reveal_anchors → 其上的新游戏退化为"不防剧透"。非致命,失败只告警。
+    try:
+        from kb.reveal import backfill_entity_reveal_anchors, backfill_reveal_anchors
+        _ra = backfill_reveal_anchors(script_id)
+        _ea = backfill_entity_reveal_anchors(script_id)
+        import logging as _log
+        _log.getLogger(__name__).info(
+            "[temporal-kb] script_id=%s reveal_anchors=%s entity_mapped=%s",
+            script_id, _ra.get("anchors"), _ea.get("total"),
+        )
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("[temporal-kb] anchor backfill failed: %s", exc, exc_info=True)
+
     ctl.update(stage_progress=1, stage_total=1)
     return canon_n, anchors_n, canon_status, anchors_status
 
@@ -2026,10 +2153,7 @@ def rebuild_chunks_from_db(user_id: int, script_id: int) -> dict[str, Any]:
             (script_id,),
         ).fetchone()
         before_count = int(before["c"]) if before else 0
-        script = db.execute(
-            "select * from scripts where id = %s and owner_id = %s",
-            (script_id, user_id),
-        ).fetchone()
+        script = script_owned(db, script_id, user_id)
         if not script:
             return {"ok": False, "error": "无权访问该剧本"}
         book = knowledge._ensure_book(db, script)
@@ -2068,10 +2192,7 @@ def rebuild_facts_from_db(user_id: int, script_id: int) -> dict[str, Any]:
             (script_id,),
         ).fetchone()
         before_count = int(before["c"]) if before else 0
-        script = db.execute(
-            "select * from scripts where id = %s and owner_id = %s",
-            (script_id, user_id),
-        ).fetchone()
+        script = script_owned(db, script_id, user_id)
         if not script:
             return {"ok": False, "error": "无权访问该剧本"}
         book = knowledge._ensure_book(db, script)
@@ -2111,13 +2232,19 @@ def rebuild_facts_from_db(user_id: int, script_id: int) -> dict[str, Any]:
     }
 
 
-def rebuild_cards_from_canon(user_id: int, script_id: int) -> dict[str, Any]:
-    """LLM(可零 LLM 路径):从 kb_canon_entities 的 character 类回填 character_cards。
+def rebuild_cards_from_canon(user_id: int, script_id: int, *,
+                             chapter_max: int | None = None) -> dict[str, Any]:
+    """零 LLM:从 kb_canon_entities 的 character 类回填 character_cards。
     无 canon 数据时退化为 _aggregate_characters_from_facts(零 LLM 词频)。
+
+    chapter_max(进度感知角色卡 Phase 1A):仅回填 first_revealed_chapter<=chapter_max
+    的角色(过滤掉中后期才出场的角色,序章重建时不引入未登场角色);并透传
+    first_revealed_chapter 给 _sync(别再被刷成 0 丢防剧透章)。None=全书(默认)。
     """
     from . import knowledge
     from .knowledge.session import _aggregate_characters_from_facts
     partial_failures: list[dict[str, Any]] = []
+    cmax = int(chapter_max) if chapter_max is not None else None
     with connect() as db:
         before = db.execute(
             "select count(*) as c from character_cards "
@@ -2125,20 +2252,25 @@ def rebuild_cards_from_canon(user_id: int, script_id: int) -> dict[str, Any]:
             (script_id,),
         ).fetchone()
         before_count = int(before["c"]) if before else 0
-        script = db.execute(
-            "select * from scripts where id = %s and owner_id = %s",
-            (script_id, user_id),
-        ).fetchone()
+        script = script_owned(db, script_id, user_id)
         if not script:
             return {"ok": False, "error": "无权访问该剧本"}
         book = knowledge._ensure_book(db, script)
-        # 优先用 canon entity (LLM extract 已有);否则用 facts 聚合
-        canon_rows = db.execute(
-            "select name, aliases, summary, importance from kb_canon_entities "
+        # 优先用 canon entity (LLM extract 已有);否则用 facts 聚合。
+        # 补取 first_revealed_chapter:① 透传给 _sync 修「重建后丢防剧透章」② chapter_max 区间过滤。
+        # 0 / NULL = 未知章节,保守放行(不误隐藏该出场的角色,与 canon_repo._reveal_clause 语义一致)。
+        canon_sql = (
+            "select name, aliases, summary, importance, "
+            "coalesce(first_revealed_chapter, 0) as first_revealed_chapter "
+            "from kb_canon_entities "
             "where script_id = %s and type = 'character' "
-            "order by importance desc nulls last",
-            (script_id,),
-        ).fetchall()
+        )
+        canon_args: list[Any] = [script_id]
+        if cmax is not None:
+            canon_sql += "and (coalesce(first_revealed_chapter, 0) <= %s or coalesce(first_revealed_chapter, 0) = 0) "
+            canon_args.append(cmax)
+        canon_sql += "order by importance desc nulls last"
+        canon_rows = db.execute(canon_sql, tuple(canon_args)).fetchall()
         source = "canon"
         if canon_rows:
             chars: dict[str, Any] = {}
@@ -2157,11 +2289,14 @@ def rebuild_cards_from_canon(user_id: int, script_id: int) -> dict[str, Any]:
                     "sample_dialogue": [],
                     "priority": int(r.get("importance") or 0),
                     "aliases": list(r.get("aliases") or []),
+                    # 透传防剧透章(canon SELECT 已取),否则 _sync 写 0 丢章。
+                    "first_revealed_chapter": int(r.get("first_revealed_chapter") or 0),
+                    "importance": int(r.get("importance") or 0),
                 }
         else:
             source = "chapter_facts"
             try:
-                chars = _aggregate_characters_from_facts(script_id)
+                chars = _aggregate_characters_from_facts(script_id, chapter_max=cmax)
             except Exception as exc:
                 partial_failures.append({"stage": "aggregate", "error": str(exc)})
                 chars = {}
@@ -2174,8 +2309,47 @@ def rebuild_cards_from_canon(user_id: int, script_id: int) -> dict[str, Any]:
     return {
         "ok": True, "source": source,
         "before_count": before_count, "after_count": after_count,
+        "chapter_max": cmax,
         "partial_failures": partial_failures,
     }
+
+
+def rebuild_cards_with_llm(user_id: int, script_id: int, *,
+                           chapter_max: int | None = None,
+                           model: str = "deepseek-v4-flash",
+                           api_id: str = "deepseek",
+                           progress_cb=None) -> dict[str, Any]:
+    """可选 LLM 丰富重建(进度感知角色卡 Phase 1A):走 run_llm_extraction(带 chapter_max)
+    对 1..chapter_max 区间重抽规范层,产「该时期态」的丰富 identity/background,然后零 LLM
+    路径把 canon 回填到 character_cards。BYOK,用户付费。
+
+    优雅降级:LLM 抽取失败(无 key / 配额 / 网络)→ 回退零 LLM 版(rebuild_cards_from_canon),
+    保证「重建」永远有产物、永不报错卡死。
+    """
+    from .knowledge.llm_extract import run_llm_extraction
+    llm_ok = False
+    llm_error = ""
+    try:
+        r = run_llm_extraction(
+            user_id, script_id,
+            algorithm="arc",
+            model=model, api_id=api_id,
+            chapter_min=1, chapter_max=chapter_max,
+            confirmed=True,
+            progress_cb=progress_cb,
+        )
+        llm_ok = bool(r.get("ok"))
+        if not llm_ok:
+            llm_error = str(r.get("error") or r.get("message") or "llm_extract failed")
+    except Exception as exc:
+        llm_error = str(exc)
+    # 无论 LLM 是否成功,都跑零 LLM 回填把(新或旧)canon → character_cards。
+    out = rebuild_cards_from_canon(user_id, script_id, chapter_max=chapter_max)
+    out["source"] = "llm_extract" if llm_ok else (out.get("source") or "canon")
+    out["llm_ok"] = llm_ok
+    if llm_error and not llm_ok:
+        out.setdefault("partial_failures", []).append({"stage": "llm_extract", "error": llm_error})
+    return out
 
 
 def rebuild_worldbook_with_llm(user_id: int, script_id: int, *,
@@ -2189,11 +2363,7 @@ def rebuild_worldbook_with_llm(user_id: int, script_id: int, *,
             (script_id,),
         ).fetchone()
         before_count = int(before["c"]) if before else 0
-        owned = db.execute(
-            "select 1 from scripts where id = %s and owner_id = %s",
-            (script_id, user_id),
-        ).fetchone()
-        if not owned:
+        if not script_owned(db, script_id, user_id):
             return {"ok": False, "error": "无权访问该剧本"}
     if source == "canon":
         with connect() as db:
@@ -2231,7 +2401,11 @@ REBUILD_MODULES = {
     "chunks":        ("rebuild_chunks",       "切块重建",     False),
     "chapter-facts": ("rebuild_facts",        "章节事实重建", False),
     "canon":         ("rebuild_canon",        "规范实体重建", True),
-    "cards":         ("rebuild_cards",        "角色卡重建",   True),
+    # cards = rebuild_cards_from_canon,**零 LLM**(从 canon/facts 反推,canon 空则退化 facts 词频),
+    # 恒免费、不需任何 LLM 凭证。之前误标 True → schedule_module_rebuild 的 needs_llm 闸会
+    # require_user_llm_credential 拦截,导致没配 key(或 key 校验不过)的用户「角色卡重置不了」
+    # (而 anchors=False 的时间线却能重做)。修正为 False,与 estimate 路径(本就 force False)对齐。
+    "cards":         ("rebuild_cards",        "角色卡重建",   False),
     "worldbook":     ("rebuild_worldbook",    "世界书重建",   True),  # may be True or False depending on source
     "anchors":       ("rebuild_anchors",      "时间线重建",   False),
     "embeddings":    ("rebuild_embeddings",   "向量重嵌入",   False),
@@ -2287,10 +2461,7 @@ def estimate_module_rebuild(
         return int(row["c"]) if row else 0
 
     with connect() as db:
-        script = db.execute(
-            "select id, chapter_count from scripts where id = %s and owner_id = %s",
-            (script_id, user_id),
-        ).fetchone()
+        script = script_owned(db, script_id, user_id)
         if not script:
             raise ValueError("无权访问该剧本")
 
@@ -2328,11 +2499,22 @@ def estimate_module_rebuild(
     affects: list[str] = []
     note = ""
     model: str | None = None
+    tokens_est = 0       # 仅真·chat-LLM 模块(canon 全量 / worldbook-llm)>0;其余为 0 = 真免费
+    cost_est = 0.0
 
     kind, _label, needs_llm = REBUILD_MODULES[module]
     source_pref = str(body.get("source") or body.get("mode") or "").lower()
-    if module == "worldbook" and source_pref == "canon":
-        needs_llm = False
+    # needs_llm 必须反映 runner 的**实际**调用:之前 tokens_est/cost_est 写死 0,所有模块(含真
+    # 烧 LLM 的 canon 全量重抽 / worldbook-llm)都显示「免费」,会误导用户(群反馈)。这里按真实
+    # 路径校正 needs_llm,下方再据此算 token+成本。
+    # - worldbook 默认 canon(零 LLM),仅 source=='llm' 才烧 LLM;
+    # - cards = rebuild_cards_from_canon,**零 LLM**(从 canon/facts 反推),恒免费;
+    # - canon 默认全量 LLM 重抽,resolve_only 是零 LLM。
+    if module == "worldbook":
+        needs_llm = (source_pref == "llm")
+    if module == "cards":
+        # cards 默认零 LLM(从 canon/facts 反推),恒免费;仅 source/mode=='llm' 的丰富重建烧 LLM。
+        needs_llm = (source_pref == "llm")
     if module == "canon" and source_pref == "resolve_only":
         needs_llm = False
 
@@ -2382,12 +2564,17 @@ def estimate_module_rebuild(
                 "count": chunks_total,
                 "total": max(chapter_count, 1),
             })
-        if module in {"cards", "worldbook"} and source_pref == "canon" and canon_total == 0:
+        # worldbook 默认 canon(零 LLM,从知识库人物建)且**无回退** → canon 为空时硬失败
+        # 「kb_canon_entities 为空」(前端表现为「点了没反应」,群反馈行者无疆)→ 给阻断 prereq。
+        # cards **不在此列**:rebuild_cards_from_canon 在 canon 为空时会退化为 facts 词频(零 LLM),
+        # 不会硬失败,不该被拦。
+        if module == "worldbook" and source_pref != "llm" and canon_total == 0:
             prereqs.append({
                 "key": "canon",
                 "label": "规范实体",
                 "ok": False,
-                "hint": "当前没有规范实体,请先重做「知识库人物」。",
+                "hint": "当前没有规范实体(知识库人物为空),请先重做「知识库人物」,"
+                        "或将世界书来源改为 LLM 生成。",
             })
         if needs_llm:
             api_id, llm_model = _resolve_extractor_llm(user_id)
@@ -2403,6 +2590,63 @@ def estimate_module_rebuild(
                     "credential_api_id": _credential_api_id_for(api_id),
                     "needs_credentials": True,
                 })
+            # 真·chat-LLM 路径才算 token+成本(否则「免费」会撒谎)。粗估,UI 标注≈。
+            #   canon 全量重抽 = 跑全书 chunks(input≈全文,output≈每块结构化产出);
+            #   worldbook-llm = 按 canon 规模的若干次抽取调用。
+            est_in = est_out = 0
+            if module == "canon":
+                # canon 全量重抽走 arc 算法。真实用量用 **arc 感知**的 extract.budget.estimate
+                # (与 wizard /llm-extract/estimate 同一权威源,~1.16M 与实测 838k@63% 对得上),
+                # 而不是按「整本全文都喂 LLM」估的 chars/2(高估~2x);且原 `length(text)` 列名是
+                # 错的(实际列名 content),会直接抛错让估算 500。统一口径,消除三套估算打架。
+                try:
+                    from extract.budget import estimate as _budget_estimate
+                    with connect() as db:
+                        _b = _budget_estimate(
+                            db, script_id, algorithm="arc",
+                            model=(llm_model or "deepseek-v4-flash"),
+                        )
+                    est_in = int(_b.get("est_input_tokens") or 0)
+                    est_out = int(_b.get("est_output_tokens") or 0)
+                except Exception:
+                    est_in = est_out = 0
+            elif module == "cards":                 # 必是 source=='llm'(否则 needs_llm=False)
+                # 丰富重建走 run_llm_extraction(arc),与 canon 同口径估;chapter_max 限区间。
+                try:
+                    from extract.budget import estimate as _budget_estimate
+                    _cmax_raw = body.get("chapter_max")
+                    try:
+                        _cmax = int(_cmax_raw) if _cmax_raw not in (None, "") else None
+                    except (TypeError, ValueError):
+                        _cmax = None
+                    with connect() as db:
+                        _b = _budget_estimate(
+                            db, script_id, algorithm="arc",
+                            model=(llm_model or "deepseek-v4-flash"),
+                        )
+                    est_in = int(_b.get("est_input_tokens") or 0)
+                    est_out = int(_b.get("est_output_tokens") or 0)
+                    # chapter_max 区间钳:按 chapter_max/全书章数 线性折减(粗估,UI 标≈)。
+                    if _cmax and chapter_count and _cmax < chapter_count:
+                        ratio = max(0.0, min(1.0, _cmax / float(chapter_count)))
+                        est_in = int(est_in * ratio)
+                        est_out = int(est_out * ratio)
+                except Exception:
+                    est_in = est_out = 0
+            elif module == "worldbook":             # 必是 source=='llm'(否则 needs_llm=False)
+                _base = max(canon_total, 20)
+                est_in = _base * 1500
+                est_out = _base * 300
+            if est_in or est_out:
+                tokens_est = est_in + est_out
+                try:
+                    from model_probe import get_pricing
+                    _pr = get_pricing(api_id, llm_model) or {}
+                    _ip = float(_pr.get("input", 0) or 0)
+                    _op = float(_pr.get("output", 0) or 0)
+                    cost_est = round((est_in * _ip + est_out * _op) / 1_000_000, 4)
+                except Exception:
+                    cost_est = 0.0
         note = "该模块将作为后台任务运行,可关闭页面后回来查看进度。"
 
     return {
@@ -2410,8 +2654,10 @@ def estimate_module_rebuild(
         "script_id": script_id,
         "module": module,
         "kind": kind,
-        "tokens_est": 0,
-        "cost_est": 0.0,
+        "tokens_est": tokens_est,
+        "cost_est": cost_est,
+        "est_input_tokens": tokens_est,  # 兼容前端 est_input_tokens 读取
+        "approximate": tokens_est > 0,   # >0 即非免费,UI 可标「≈」
         "model": model,
         "affects": affects,
         "prereqs": prereqs,
@@ -2430,21 +2676,23 @@ def schedule_module_rebuild(
     if module not in REBUILD_MODULES:
         raise ValueError(f"unknown module: {module}")
     kind, action_label, needs_llm = REBUILD_MODULES[module]
+    source_pref = str(body.get("source") or body.get("mode") or "").lower()
     if needs_llm:
-        # canon/cards 默认走 LLM;worldbook 看 body.source;cards 也允许零 LLM (canon-only)
-        source_pref = str(body.get("source") or body.get("mode") or "").lower()
-        if module == "worldbook" and source_pref == "canon":
-            needs_llm = False
+        # canon 默认走 LLM;worldbook **默认 canon(零 LLM)**,仅 source=='llm' 才需 LLM ——
+        # 必须与 _run_module_rebuild 的 `src = source or "canon"` 对齐。否则默认(无 source)的
+        # worldbook 会被误要求 LLM 凭证(没配 key 直接 credentials_required),而 runner 实际走
+        # canon → 表现为「点生成世界书没反应/报错」。
+        if module == "worldbook":
+            needs_llm = (source_pref == "llm")
         if module == "canon" and source_pref == "resolve_only":
             needs_llm = False
+    # 进度感知角色卡:cards 默认零 LLM(False);仅 source/mode=='llm' 的丰富重建才需 BYOK 凭证。
+    if module == "cards" and source_pref == "llm":
+        needs_llm = True
     if needs_llm:
         require_user_llm_credential(user_id)
     with connect() as db:
-        owned = db.execute(
-            "select 1 from scripts where id = %s and owner_id = %s",
-            (script_id, user_id),
-        ).fetchone()
-        if not owned:
+        if not script_owned(db, script_id, user_id):
             raise ValueError("无权访问该剧本")
 
     if module == "embeddings":
@@ -2500,7 +2748,40 @@ def _run_module_rebuild(
         elif module == "chapter-facts":
             result = rebuild_facts_from_db(user_id, script_id)
         elif module == "cards":
-            result = rebuild_cards_from_canon(user_id, script_id)
+            # 进度感知角色卡:chapter_max 区间 + 可选 LLM 丰富(source/mode=='llm')。
+            cmax_raw = body.get("chapter_max")
+            try:
+                cmax = int(cmax_raw) if cmax_raw not in (None, "") else None
+            except (TypeError, ValueError):
+                cmax = None
+            if source == "llm":
+                # 进度只有 0/100 的根因:此前只有 arc_extract 阶段写 overall_progress,seed/
+                # per_chapter/resolve/embed 只写 stage_progress,而前端浮窗读的是 overall_*。给每个
+                # 阶段分配一段 overall 进度带,段内按 done/total 线性插值 → 全程平滑推进。
+                _BANDS = {"seed": (0, 5), "per_chapter": (5, 60), "arc_extract": (60, 85),
+                          "resolve": (85, 95), "embed": (95, 100)}
+
+                def _cards_progress(stage: str, info: dict) -> None:
+                    try:
+                        total = int(info.get("total") or 0)
+                        done = int(info.get("done") or 0)
+                        band = _BANDS.get(stage)
+                        if band:
+                            lo, hi = band
+                            frac = (done / total) if total > 0 else 0.0
+                            overall = int(lo + (hi - lo) * max(0.0, min(1.0, frac)))
+                            ctl.update(stage=stage, stage_progress=done, stage_total=max(total, 1),
+                                       overall_progress=overall, overall_total=100)
+                    except Exception:
+                        pass
+                result = rebuild_cards_with_llm(
+                    user_id, script_id, chapter_max=cmax,
+                    model=str(body.get("model") or "deepseek-v4-flash"),
+                    api_id=str(body.get("api_id") or "deepseek"),
+                    progress_cb=_cards_progress,
+                )
+            else:
+                result = rebuild_cards_from_canon(user_id, script_id, chapter_max=cmax)
         elif module == "canon":
             # full = 重抽 LLM;resolve_only = 从 chapter_extracts 重 cluster (零 LLM)
             from extract.rebuild import rebuild_canon_resolve_from_facts
@@ -2510,15 +2791,37 @@ def _run_module_rebuild(
             else:
                 # full LLM: 走 schedule_llm_extraction 同款 (但这里直接调底层)
                 from platform_app.knowledge.llm_extract import run_llm_extraction
-                before = _count(db, "kb_canon_entities", script_id)
+                # db 复用修复:上面写 started_at 的 with connect() 已退出、连接已还池,这里不能再用
+                # 那个 db(workers≥2 时可能已被别的 worker 取走 = 未定义行为)。各取独立连接。
+                with connect() as _dbc:
+                    before = _count(_dbc, "kb_canon_entities", script_id)
+                # 进度回传:arc 每弧完成 → 更新 overall 进度。否则整段 ~100 弧提取期 overall_progress
+                # 恒 0、stage 卡在 canon,用户以为卡死(实则后台在烧)。arc_extract 是主阶段,映射到
+                # overall;done/total 由 as_completed 串行回调,无并发竞争。终态会把 overall_total
+                # 重置回 1(见下方写终态),避免 done 时显示 1/弧数。
+                def _canon_progress(stage: str, info: dict) -> None:
+                    try:
+                        total = int(info.get("total") or 0)
+                        done = int(info.get("done") or 0)
+                        if stage == "arc_extract" and total:
+                            ctl.update(stage="arc_extract", stage_progress=done,
+                                       stage_total=total, overall_progress=done,
+                                       overall_total=max(total, 1))
+                        elif stage in ("seed", "per_chapter", "resolve", "embed"):
+                            ctl.update(stage=stage, stage_progress=done,
+                                       stage_total=max(total, 1))
+                    except Exception:
+                        pass
                 r = run_llm_extraction(
                     user_id, script_id,
                     algorithm=str(body.get("algorithm") or "arc"),
                     model=str(body.get("model") or "deepseek-v4-flash"),
                     api_id=str(body.get("api_id") or "deepseek"),
                     confirmed=True,
+                    progress_cb=_canon_progress,
                 )
-                after = _count(db, "kb_canon_entities", script_id) if r.get("ok") else before
+                with connect() as _dbc:
+                    after = _count(_dbc, "kb_canon_entities", script_id) if r.get("ok") else before
                 result = {
                     "ok": bool(r.get("ok")),
                     "source": "llm_extract",
@@ -2576,6 +2879,26 @@ def _run_module_rebuild(
             from .knowledge import embedding as _embed
             counts = {}
             partial_failures = []
+            # KB 卫生(设计 O §5.2):「重做」= 强制重嵌。先把被选类型的向量清成 NULL,再跑增量循环
+            # (_embed_chunks_loop_inner / embed_canon_entities 都按 WHERE embedding_vec IS NULL 重嵌)→
+            # 真重嵌全部,而非「秒完成」空操作(群反馈:世界书编辑后重做秒完成、实际没重新生成)。
+            # embed_script 会重嵌 chunks+cards+worldbook,canon 由 embed_canon_entities 重嵌,故清空安全。
+            _FORCE_CLEAR = {
+                "chunks":    "update document_chunks set embedding_vec=NULL where script_id=%s",
+                "cards":     "update character_cards set embedding_vec=NULL, embedded_at=NULL where script_id=%s and card_type='npc'",
+                "worldbook": "update worldbook_entries set embedding_vec=NULL, embedded_at=NULL where script_id=%s",
+                "canon":     "update kb_canon_entities set embedding=NULL where script_id=%s",
+            }
+            with connect() as db:
+                for _k in includes:
+                    _sql = _FORCE_CLEAR.get(_k)
+                    if not _sql:
+                        continue
+                    try:
+                        db.execute(_sql, (script_id,))
+                    except Exception as exc:
+                        partial_failures.append({"stage": f"force_clear_{_k}", "error": str(exc)})
+                db.commit()
             with connect() as db:
                 if "chunks" in includes or "cards" in includes or "worldbook" in includes:
                     try:
@@ -2626,6 +2949,7 @@ def _run_module_rebuild(
             status=final_status,
             stage="done",
             overall_progress=1,
+            overall_total=1,   # 重置:canon 进度回传期间把 overall_total 改成弧数,终态要还原成 1/1=100%
             stage_progress=1,
             stage_total=1,
             source=str(result.get("source") or ""),
@@ -2664,6 +2988,9 @@ def _run_module_rebuild(
             db.execute(
                 "update import_jobs set finished_at=now() where job_id=%s", (job_id,),
             )
+    finally:
+        # 兜底:无论正常/异常/被吞的错误,确保不留 status='running' 僵尸行(镜像 _run_pipeline)
+        finalize_job_if_unterminated(job_id)
 
 
 def _count(db, table: str, script_id: int) -> int:

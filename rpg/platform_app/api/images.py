@@ -62,10 +62,12 @@ def create_image_record(
     model: str | None = None,
     params: dict | None = None,
     save_id: str | None = None,
+    message_index: int | None = None,
 ) -> int:
     """INSERT 一行 ai_images，返回新行 id。
 
     save_id: 可选，关联游戏存档 ID（Phase 3 新增）。
+    message_index: 可选，聊天内生图所属 assistant 消息索引(反馈#74:刷新后据此确定性还原)。
     """
     from psycopg.types.json import Jsonb
 
@@ -73,8 +75,8 @@ def create_image_record(
     with connect() as db:
         row = db.execute(
             """
-            insert into ai_images (user_id, kind, api_id, model, prompt, params, status, save_id)
-            values (%s, %s, %s, %s, %s, %s, 'pending', %s)
+            insert into ai_images (user_id, kind, api_id, model, prompt, params, status, save_id, message_index)
+            values (%s, %s, %s, %s, %s, %s, 'pending', %s, %s)
             returning id
             """,
             (
@@ -85,6 +87,7 @@ def create_image_record(
                 prompt,
                 Jsonb(params or {}),
                 save_id or None,
+                message_index,
             ),
         ).fetchone()
     if not row:
@@ -109,6 +112,7 @@ def update_image_record(
                    url    = coalesce(%s, url),
                    error  = coalesce(%s, error)
              where id = %s
+               and status <> 'cancelled'
             """,
             (status, url, error, int(image_id)),
         )
@@ -261,6 +265,18 @@ async def api_generate_image(request: Request):
             init_db()
             _att_script_id = attach.get("script_id")
             with connect() as db:
+                if not _att_script_id:
+                    # 兜底:NPC 卡(card_type='npc'、user_id=NULL、挂 script_id)未带 script_id 时,
+                    # 从卡自身取并注入 attach —— 让入队鉴权与 worker 写回都走 scripts.owner_id,
+                    # 不再误落到 user_id 分支报 403(剧本 owner 给本剧本 NPC 卡生图本应允许)。
+                    _c = db.execute(
+                        "select user_id, script_id, card_type from character_cards where id = %s",
+                        (int(card_id),),
+                    ).fetchone()
+                    if (_c and _c.get("card_type") == "npc"
+                            and _c.get("script_id") and not _c.get("user_id")):
+                        _att_script_id = int(_c["script_id"])
+                        attach["script_id"] = _att_script_id
                 if _att_script_id:
                     # NPC 卡(user_id=NULL,挂 script_id):owner 走 scripts.owner_id
                     row = db.execute(
@@ -317,6 +333,38 @@ async def api_generate_image(request: Request):
     return json_response({"ok": True, **result})
 
 
+@router.post("/api/images/{image_id}/cancel")
+async def api_image_cancel(image_id: int, request: Request):
+    """取消本人的生图任务。pending → 直接从队列删除(永不执行);generating → 标 cancelled,
+    worker 完成时丢弃结果(不覆盖成 done、不写回附着目标)。幂等:已终态返回 noop。
+    取消只能由本接口显式触发——关闭生图弹窗/页面绝不取消队列。"""
+    user = require_user(request)
+    uid = int(user["id"])
+    init_db()
+    with connect() as db:
+        row = db.execute(
+            "select status from ai_images where id = %s and user_id = %s",
+            (image_id, uid),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="生图任务不存在或无权操作")
+        st = str(row["status"] or "")
+        if st in ("done", "failed", "cancelled"):
+            return json_response({"ok": True, "status": st, "noop": True})
+        db.execute(
+            "update ai_images set status = 'cancelled', error = '用户取消' "
+            "where id = %s and user_id = %s",
+            (image_id, uid),
+        )
+        # 尚未开始的队列任务直接删,避免 worker 再捡起来跑
+        db.execute(
+            "delete from chat_postproc_tasks where task_kind = 'image_gen' "
+            "and status = 'pending' and (payload->>'image_id') = %s",
+            (str(image_id),),
+        )
+    return json_response({"ok": True, "status": "cancelled"})
+
+
 @router.get("/api/images/list")
 async def api_list_images(request: Request):
     """按存档列出该用户的生图记录（仅 owner 可查）。
@@ -335,7 +383,7 @@ async def api_list_images(request: Request):
     with connect() as db:
         rows = db.execute(
             """
-            select id, url, kind, prompt, status, created_at
+            select id, url, kind, prompt, status, created_at, message_index
               from ai_images
              where user_id = %s and save_id = %s
              order by created_at desc
@@ -351,6 +399,7 @@ async def api_list_images(request: Request):
             "prompt": r["prompt"] or "",
             "status": r["status"] or "pending",
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "message_index": r["message_index"],
         }
         for r in rows
     ]

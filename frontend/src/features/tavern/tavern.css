@@ -149,6 +149,7 @@
   border: 1px solid var(--accent); border-radius: 5px;
   padding: 1px 6px; outline: none; font-family: inherit;
 }
+.tv-chat-title-edit:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tv-chat-time { font-size: 10.5px; flex-shrink: 0; }
 .tv-chat-snippet {
   font-size: 11.5px; margin-top: 2px;
@@ -160,7 +161,7 @@
 .tv-chat-menu-btn { opacity: 0; width: 24px; height: 24px; }
 .tv-chat-item:hover .tv-chat-menu-btn,
 .tv-chat-item:focus-within .tv-chat-menu-btn { opacity: 1; }
-.tv-menu-scrim { position: fixed; inset: 0; z-index: 1499; }
+.tv-menu-scrim { position: fixed; inset: 0; z-index: 1499; overscroll-behavior: contain; }
 .tv-menu {
   position: absolute; top: 100%; right: 0; z-index: 1500; margin-top: 2px;
   background: var(--panel); border: 1px solid var(--line-soft);
@@ -248,13 +249,14 @@
   border-radius: 22px;
   box-shadow: 0 2px 18px -4px rgba(0, 0, 0, 0.28);
 }
-.tavern-chat .gc-composer .gc-textarea { padding: 14px 16px 4px; }
+.tavern-chat .gc-composer .gc-textarea { padding: 10px 16px; }
 
 /* ── 两张卡抽屉 ──────────────────────────────────────────────────── */
 .tv-drawer-backdrop {
   position: fixed; inset: 0; z-index: 2000;
   background: rgba(0,0,0,0.5);
   display: flex; justify-content: flex-end;
+  overscroll-behavior: contain;
 }
 .tv-drawer {
   width: min(560px, 100vw);
@@ -302,6 +304,16 @@
   border-color: var(--line);
 }
 .tvp-thinking-label { color: var(--text-quiet); }
+/* 等待首 token 的克制指示:与「思考过程」折叠条同样的低调样式,标签 + 右侧转圈,无大圆角浮条 */
+.tvp-thinking-waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--text-quiet);
+}
+.tvp-thinking-waiting .gc-waiting-gm-elapsed { margin-left: 2px; }
 .tvp-thinking-body {
   margin-top: 4px;
   padding: 8px 10px;

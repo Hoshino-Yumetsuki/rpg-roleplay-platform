@@ -14,6 +14,7 @@ context_agent 本身不再硬编码"小说时间线锚点 / ChapterFact 检索 /
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from collections.abc import Callable, Generator
@@ -27,9 +28,25 @@ from context_providers import (
     resolve_content_pack,
     run_providers,
 )
-from retrieval import retrieve_context
+from retrieval import retrieve_context  # noqa: F401 (retrieve_fn_compat 内部委托;保留以兼容)
+from kb.recall import retrieve_fn_compat  # P5:统一召回 flag 门控包装(默认 off=委托 retrieve_context)
 from timeline_index import timeline_filter_for_label
 from timeline_state import detect_time_directives
+
+log = logging.getLogger(__name__)
+
+# curator harness 调用的瞬时错误特征(命中则重试一次再降级):超时/连接/限流/网关。
+_TRANSIENT_MARKERS = (
+    "timeout", "timed out", "temporarily", "connection", "reset", "econn",
+    "429", "500", "502", "503", "504", "rate limit", "overloaded", "unavailable",
+)
+
+
+def _is_transient_err(exc: Exception) -> bool:
+    if isinstance(exc, (TimeoutError, ConnectionError)):
+        return True
+    m = str(exc).lower()
+    return any(k in m for k in _TRANSIENT_MARKERS)
 
 AGENT_PROMPT = """\
 你是 Demand Resolver 子代理。你的唯一任务是把玩家的自然语言输入翻译成
@@ -212,6 +229,7 @@ def run_context_agent(
             shared_with_main_gm=False,
             transport="agent_harness",
         )
+        harness_err: dict = {}
         try:
             llm_text = _call_curator_via_harness(
                 user_id=user_id,
@@ -220,16 +238,24 @@ def run_context_agent(
                 system_prompt=AGENT_PROMPT,
                 user_prompt=task_prompt_text,
                 stop_requested=stop_requested,
+                err_sink=harness_err,
             )
         except _CuratorStopped:
             yield {"type": "stopped", "steps": steps}
             return
         if llm_text is None:
-            curator_plan = _local_fallback_plan(directives, user_input,
-                                                reason="harness 调用失败，降级到本地规则。")
+            # Option A:把真实原因(403/401/余额/限流…)明确告诉用户,不再静默「调用失败」。
+            _emsg = harness_err.get("message")
+            if _emsg:
+                _notice = (f"子代理调用失败:{_emsg}"
+                           f"(服务商 {harness_err.get('api')} · 模型 {harness_err.get('model')})"
+                           f" 本回合已临时降级到本地规则。")
+            else:
+                _notice = "子代理调用失败(网络/超时等),已临时降级到本地规则。"
+            curator_plan = _local_fallback_plan(directives, user_input, reason=_notice)
             yield step(
                 "llm_curator",
-                "harness 调用失败，降级到本地规则。",
+                _notice,
                 "done",
                 plan=curator_plan,
                 fallback=True,
@@ -297,7 +323,7 @@ def run_context_agent(
         script_id=script_id,
         book_id=book_id,
         save_id=save_id,  # task 107E
-        retrieve_fn=retrieve_context,
+        retrieve_fn=retrieve_fn_compat,  # P5:flag off→retrieve_context;on→recall;shadow→双跑
         timeline_filter_fn=timeline_filter_for_label,
     )
     contributions, used_ids = run_providers(state, manifest, demand, services)
@@ -369,6 +395,39 @@ def run_context_agent(
     }
 
 
+def _resolve_need_retrieval(plan: dict[str, Any], user_input: str) -> bool:
+    """Q Phase 3 司命 RAG 闸判定。**确定性优先**(遵守 harness 确定性铁律:不纯靠 LLM 遵守提示词):
+    - 司命 LLM 显式给了 need_retrieval(bool/"false"/0)→ 信它(schema-enforced 的 Anthropic 最可靠)。
+    - 弱模型(flash)常整字段省略 → 落确定性启发式:短输入 + 无目标实体 + 无目标地点 + 无时间跳转
+      → 纯对话/情绪/简单互动,跳过检索;否则检索(宁可多检索不漏关键素材)。
+    """
+    raw = plan.get("need_retrieval")
+    if raw is not None:
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)):
+            return raw != 0
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip().lower() not in ("false", "0", "no", "否")
+    # 司命没给(flash 常省)→ 确定性兜底。**只看玩家输入文本本身**,不看 curator 的
+    # target_entities —— 实测弱模型会把在场 NPC 全填进 target_entities(即便玩家只是点头),
+    # 那个信号被污染、不可用。改用输入文本的「提问/求设定」标记 + 长度。
+    text = (user_input or "").strip()
+    # 显式提问/求原著设定/剧情信号 → 必检索
+    _LORE_MARK = ("?", "？", "为什么", "怎么", "如何", "是谁", "什么", "哪", "历史", "来历",
+                  "由来", "背景", "设定", "原著", "讲讲", "讲述", "告诉我", "介绍", "规则",
+                  "发生了", "之前", "当年", "据说", "传说", "典故")
+    if any(m in text for m in _LORE_MARK):
+        return True
+    # 去新地点 / 时间跳转 → 检索(这些字段污染少)
+    if str(plan.get("target_location") or "").strip() or str(plan.get("timeline_target") or "").strip():
+        return True
+    # 短输入且无 lore 信号 → 纯对话/情绪/简单动作,跳过检索
+    if len(text) <= 18:
+        return False
+    return True
+
+
 def _demand_from_curator_plan(curator_plan: dict[str, Any], user_input: str) -> Demand:
     """把 LLM/本地 curator_plan dict 包成 Demand 结构体，供 providers 使用。"""
     plan = curator_plan or {}
@@ -382,6 +441,7 @@ def _demand_from_curator_plan(curator_plan: dict[str, Any], user_input: str) -> 
         target_time=str(plan.get("target_time") or ""),
         timeline_target=str(plan.get("timeline_target") or ""),
         retrieval_query=_retrieval_query(user_input, plan),
+        need_retrieval=_resolve_need_retrieval(plan, user_input),
         retrieval_needs={
             "must_include": list((plan.get("retrieval_plan") or {}).get("must_include")
                                   or plan.get("must_include") or []),
@@ -524,11 +584,13 @@ def _call_curator_via_harness(
     system_prompt: str,
     user_prompt: str,
     stop_requested: Callable[[], bool],
+    err_sink: dict | None = None,
 ) -> str | None:
     """走统一 agent harness 调 curator。
 
     优先级:override > user_preferences("context_agent.api_id"/"model_real_name")> 默认。
     返回原始文本(JSON);失败/超时返回 None;stop_requested 触发抛 _CuratorStopped。
+    err_sink:可选 dict,失败时把 {category,message,api,model} 写入,供调用方给用户明确报错(非静默降级)。
     """
     from agents._harness import call_agent_json, resolve_api_and_model
 
@@ -541,18 +603,35 @@ def _call_curator_via_harness(
     )
 
     def _do_call() -> str:
-        text, _usage = call_agent_json(
-            api_id=api_id,
-            model=model,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            user_id=user_id,
-            tool_schema=_CURATOR_TOOL_SCHEMA,  # 三通道都启用强 schema
-            max_tokens=1200,
-            timeout_sec=30,
-            agent_kind="curator",
-        )
-        return text or ""
+        # 瞬时错误(超时/网络/限流/网关)重试一次再放弃,减少「换模型也容易触发降级」(群反馈)。
+        # 关键:把真实异常 log 出来——旧实现 except 直接吞成 None,导致「不知道是网络还是什么」。
+        attempts = 2
+        for attempt in range(attempts):
+            try:
+                text, _usage = call_agent_json(
+                    api_id=api_id,
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    user_id=user_id,
+                    tool_schema=_CURATOR_TOOL_SCHEMA,  # 三通道都启用强 schema
+                    max_tokens=1200,
+                    timeout_sec=45,   # 30→45:慢 BYOK provider 不至于一上来就超时降级
+                    agent_kind="curator",
+                )
+                return text or ""
+            except Exception as exc:
+                transient = _is_transient_err(exc)
+                log.warning(
+                    "[context_agent] curator harness 失败 (try %d/%d, api=%s model=%s, transient=%s): %s: %s",
+                    attempt + 1, attempts, api_id, model, transient,
+                    type(exc).__name__, str(exc)[:240],
+                )
+                if transient and attempt + 1 < attempts:
+                    time.sleep(0.6)
+                    continue
+                raise
+        return ""
 
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="curator-harness")
     future = executor.submit(_do_call)
@@ -564,7 +643,18 @@ def _call_curator_via_harness(
             time.sleep(0.03)
         try:
             return future.result()
-        except Exception:
+        except Exception as exc:
+            # 分类真实错误写入 err_sink,供上层给用户明确提示(403/401/余额/限流…),不再静默降级。
+            if err_sink is not None:
+                try:
+                    from agents.provider_errors import classify_provider_error
+                    cls = classify_provider_error(exc)
+                    if cls:
+                        err_sink["category"], err_sink["message"] = cls[0], cls[1]
+                    err_sink.setdefault("api", api_id)
+                    err_sink.setdefault("model", model)
+                except Exception:
+                    pass
             return None
     finally:
         executor.shutdown(wait=False, cancel_futures=True)

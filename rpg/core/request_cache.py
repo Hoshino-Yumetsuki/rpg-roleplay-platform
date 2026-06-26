@@ -56,6 +56,18 @@ def get_user_prefs_cached(user_id: int) -> dict:
     return cache[user_id]
 
 
+def invalidate_user_prefs_cache(user_id: int) -> None:
+    """写完 user_preferences 后清掉本请求内该 user 的 prefs 缓存。
+
+    否则同一请求里在写 prefs 之后再调 get_user_prefs_cached / resolve_preferred_*
+    会命中"写前"的快照,读到旧的 selected 模型(模型选择器"刷新后回退"症状之一)。
+    非请求上下文(cache=None)为无操作。
+    """
+    cache = _user_prefs_cache.get()
+    if cache is not None:
+        cache.pop(int(user_id), None)
+
+
 def _select_all_prefs(user_id: int) -> dict:
     """一次 SELECT,返回 preferences dict(失败则返回 {})。"""
     try:
@@ -105,5 +117,6 @@ def _fetch_cred(user_id: int, api_id: str) -> dict | None:
 __all__ = [
     "reset_request_caches",
     "get_user_prefs_cached",
+    "invalidate_user_prefs_cache",
     "get_api_cred_cached",
 ]

@@ -35,6 +35,11 @@ from context_engine.loaders import (
     _load_worldbook_db,
     _safe_load_chars,
 )
+from context_engine.projection import (
+    apply_projection_to_card,
+    clear_projection_cache,
+    project_character_state,
+)
 from context_engine.rules_text import (
     _agent_runtime_rules,
     _context_agent_debug,
@@ -61,6 +66,10 @@ __all__ = [
     "_load_characters_db",
     "_load_worldbook_db",
     "_load_world",
+    # projection (进度感知角色卡 Phase 2)
+    "project_character_state",
+    "apply_projection_to_card",
+    "clear_projection_cache",
     # formatters
     "_player_card",
     "_active_character_cards",

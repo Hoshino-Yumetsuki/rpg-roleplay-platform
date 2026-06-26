@@ -29,6 +29,29 @@ def test_classify_ratelimit():
     assert cat == "ratelimit"
 
 
+def test_classify_context_length():
+    # 反馈 #69:openrouter 400 上下文超长(玩家选了小上下文模型,剧情上下文撑爆 32768)。
+    class _E(Exception):
+        status_code = 400
+    real = ("Error code: 400 - {'error': {'message': \"This endpoint's maximum context "
+            "length is 32768 tokens. However, you requested about 34964 tokens. "
+            "Please reduce the length of either one\", 'code': 400}}")
+    cat, msg = classify_provider_error(_E(real))
+    assert cat == "context"
+    assert "上下文" in msg and "更大" in msg
+    assert "34964" not in msg  # 不回显原始异常细节
+    # 跨提供商措辞
+    assert classify_provider_error(RuntimeError("prompt is too long: 250000 tokens > 200000"))[0] == "context"
+    assert classify_provider_error(RuntimeError("input length and `max_tokens` exceed context limit"))[0] == "context"
+
+
+def test_context_does_not_swallow_other_400():
+    # 空 assistant / 参数错等其它 400 不能被误判成 context(否则掩盖真因)。
+    class _E(Exception):
+        status_code = 400
+    assert classify_provider_error(_E("Error code: 400 - messages: last message must not be empty")) is None
+
+
 def test_classify_unknown_returns_none():
     assert classify_provider_error(RuntimeError("connection to server at 10.0.0.5 failed")) is None
     assert classify_provider_error(FileNotFoundError("/opt/rpg-roleplay/.env")) is None

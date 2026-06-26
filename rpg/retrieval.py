@@ -430,6 +430,11 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
     # spoiler-safe 默认:progress=1(绝不 None,否则 _reveal_clause 放行全书=剧透)、mode=none。
     _progress_chapter = 1
     _foreknowledge_mode: str = "none"
+    # 剧情引导强度(rail=贴原著 / guided=软引导默认 / free=自由),从 game_sessions.worldline
+    # jsonb 读(与 foreknowledge_mode 同源)。rail 档下,下方「锚点章节原文」会确定性注入当前
+    # 进度章节的原著正文(含对话)并指示忠实重现;guided/free 维持活世界默认(原文仅作风格参考)。
+    _steering_strength: str = "guided"
+    _save_id_prog: int | None = None  # P4(S5):前沿门控需要;在进度同步块里赋值,此处先兜底防 NameError
     # task 117: 算法 phase fallback — 当 state.world.time 空(turn=0 等)时 timeline_filter
     # 拿不到 chapter window,从 phase_digests 拿该 save 当前 phase 的 chapter_range。
     # 这样 BM25/worldbook 不会全文检索整本书。
@@ -451,11 +456,6 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
             try:
                 _save_id_prog = _resolve_save_id_from_user(user_id)
                 if _save_id_prog:
-                    from agents.anchor_seed_agent import get_progress_window as _gpw_sync
-                    _wt_sync = (world.get("time") or "").strip()
-                    _pw_sync = _gpw_sync(_save_id_prog, world_time_label=_wt_sync,
-                                         script_id=int(script_id), window_size=50)
-                    _progress_chapter = max(1, int(_pw_sync.get("chapter_min") or 1))
                     from gm_serving.settings import advance_progress as _adv_prog
                     from platform_app.db import connect as _conn_prog
                     with _conn_prog() as _db_prog:
@@ -465,7 +465,47 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                         _wl_prog = (_sess_prog or {}).get("worldline") if _sess_prog else None
                         if isinstance(_wl_prog, dict):
                             _foreknowledge_mode = _wl_prog.get("foreknowledge_mode") or "none"
-                        _adv_prog(_db_prog, _save_id_prog, _progress_chapter)
+                            _steering_strength = _wl_prog.get("steering_strength") or "guided"
+                        # 进度真源 = 存档已写的 progress_chapter(权威)+ 已满足锚点最大原著章(reliable)。
+                        # 【绝不】再用 world.time→timeline 映射(旧 get_progress_window.chapter_min)
+                        # materialize 进度:story_time_label 是不可靠的「章节标题当时间」(见
+                        # project_timeline_world_model),会把 progress bogus-jump 到远章(实测 occ=0
+                        # 的存档被推到 77/89);advance_progress 又 max-only 不可逆 → 用户卡死。
+                        # 只按【已确认锚点】(occurred/variant)的最大原著章确定性推进。
+                        try:
+                            _progress_chapter = max(1, int((_wl_prog or {}).get("progress_chapter") or 1))
+                        except (TypeError, ValueError):
+                            _progress_chapter = 1
+                        _msat = _db_prog.execute(
+                            "select coalesce(max(source_chapter), 0) as c from save_anchor_states "
+                            "where save_id = %s and status in ('occurred', 'variant')",
+                            (_save_id_prog,),
+                        ).fetchone()
+                        _last_sat = int((_msat or {}).get("c") or 0)
+                        if _last_sat >= 1:
+                            _adv_prog(_db_prog, _save_id_prog, _last_sat)
+                            _progress_chapter = max(_progress_chapter, _last_sat)
+                        # P4(S7):flag on 时进度改由【前沿派生】——丢弃可能被旧猜章器冲高的 worldline 标量
+                        # (over-shoot 根源),但绝不低于「已确认锚点」可靠底 _last_sat。正常档 derived==_last_sat,
+                        # 等价旧行为;over-shoot 档则收敛回真实章。shadow 记 标量↔派生 供切换前核对。
+                        from kb.reveal import (_frontier_on as _fr_on,
+                                               _frontier_shadow as _fr_shadow,
+                                               derived_progress_chapter as _dpc)
+                        if _fr_on(_save_id_prog):
+                            try:
+                                _derived = _dpc(_save_id_prog, db=_db_prog)
+                                if _fr_shadow():
+                                    log.warning("[shadow] progress scalar=%s derived=%s floor=%s",
+                                                _progress_chapter, _derived, _last_sat)
+                                _progress_chapter = max(1, _last_sat, int(_derived))
+                            except Exception as _dpc_exc:
+                                log.warning("[retrieval] derived_progress_chapter 跳过(非致命): %s", _dpc_exc)
+                        elif _fr_shadow():
+                            try:
+                                log.warning("[shadow] progress scalar=%s derived=%s floor=%s",
+                                            _progress_chapter, _dpc(_save_id_prog, db=_db_prog), _last_sat)
+                            except Exception:
+                                pass
             except Exception as _prog_err:
                 log.warning(f"[retrieval] progress_chapter 同步跳过(非致命): {_prog_err}")
         if not timeline_filter.get("anchor_chapter"):
@@ -525,18 +565,44 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                         anchor_max = int(_pw.get("chapter_max") or anchor_min)
             except Exception:
                 pass
+        # 开场兜底:若所有派生都没给出 anchor_min(timeline 未命中 + 无进度窗口),
+        # 开局(turn=0)必须仍从序章(第1章)起注入原著正文 —— 否则 GM 收不到任何原著开篇,
+        # 即便开了「贴原著」也会凭训练数据自由发挥开局(用户反馈:序章脱离原著、自设剧情)。
+        if anchor_min is None and is_opening and script_id:
+            anchor_min, anchor_max = 1, 3
         if anchor_min and script_id:
-            anchor_text = _load_anchor_chapter_text(int(script_id), anchor_min, anchor_max, max_chars=9000)
+            _rail = (_steering_strength == "rail")
+            # rail(贴原著)档多给预算,让当前章原著的对话/桥段尽量完整进 GM 上下文。
+            anchor_text = _load_anchor_chapter_text(
+                int(script_id), anchor_min, anchor_max, max_chars=14000 if _rail else 9000)
             if anchor_text:
-                # task 131: 明确标记"风格 + 骨架参考,不是必须复现的戏剧强度"
-                parts.append(
-                    "=== 锚点章节原文 (双重用途, 严格区分) ===\n"
-                    "【骨架用途】时空 / 角色 / 事件骨架 — 必须保持。\n"
-                    "【风格用途】学作者句法 / 用词 / 节奏 — 模仿。\n"
-                    "**不模仿情绪强度** — 原文极端事件密度高不代表你本轮要复制那种密度,\n"
-                    "玩家本轮输入的戏剧强度才决定你本轮的戏剧强度。\n\n"
-                    + anchor_text
-                )
+                if _rail:
+                    # 贴原著(rail)档:确定性把当前进度章节的原著正文(含对话)喂进 GM,并指示
+                    # 忠实重现关键对话与桥段。用户主动选了「贴原著」,本段优先级高于下方 master.py
+                    # 「原文=风格参考 / 发生方式可变」的活世界默认说明(用反馈:原著对话/关键情节被跳)。
+                    # 确定性部分=原文已注入+预算更大;能否复现到位仍取决于模型,故此为 rail 档语义。
+                    parts.append(
+                        "=== 锚点章节原文 · 贴原著档(最高优先) ===\n"
+                        "本回合处于【贴原著】引导强度。以下是当前进度章节的原著正文。\n"
+                        "**你必须忠实重现其中的关键对话与桥段**:原著存在的人物对话尽量保留原话 / 原意,\n"
+                        "原著发生的关键情节(冲突 / 死亡 / 相遇 / 转折等)不得跳过或一笔带过。\n"
+                        "玩家的输入决定切入视角与节奏,但不得让剧情脱离本章原著走向。\n"
+                        "本段指示优先于其他「原文仅供风格参考 / 发生方式可变」的说明。\n"
+                        "**注意:即使下方原著正文中夹带英文 / 德文等外语台词,你的叙事语言仍跟随本剧本既定的\n"
+                        "主体语言(通常即原著正文的主体语言),不要因此切换;外语台词可在角色说话时原样保留,\n"
+                        "但旁白 / 动作 / 心理 / 场景描写保持既定语言。**\n\n"
+                        + anchor_text
+                    )
+                else:
+                    # task 131(活世界默认):原文标记"风格 + 骨架参考,不是必须复现的戏剧强度"
+                    parts.append(
+                        "=== 锚点章节原文 (双重用途, 严格区分) ===\n"
+                        "【骨架用途】时空 / 角色 / 事件骨架 — 必须保持。\n"
+                        "【风格用途】学作者句法 / 用词 / 节奏 — 模仿。\n"
+                        "**不模仿情绪强度** — 原文极端事件密度高不代表你本轮要复制那种密度,\n"
+                        "玩家本轮输入的戏剧强度才决定你本轮的戏剧强度。\n\n"
+                        + anchor_text
+                    )
                 # task 131-B: 抽出原文前几段当作"作者文风样本",最高优先级 style anchor
                 style_sample = _extract_style_sample(anchor_text)
                 if style_sample:
@@ -711,6 +777,32 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                         "(改 NPC 关系/势力立场,或改写原著锚点) 时,调 record_history_anchor 留档,"
                         "下次 GM 就能查 list_recent_history 看自己创造了什么。"
                     )
+                # 永恒记忆·情景召回(episodic_recall flag 默认关):按当前情境从【全程】游戏历史
+                # 语义召回最相关的往事,补足"近因 6 条"覆盖不到的远期记忆。分支安全(谱系 CTE)、
+                # 无 embedder/pgvector 静默返空。写在玩家创造的历史块,绝不碰 script 域。
+                try:
+                    from core.feature_flags import feature_enabled
+                    if feature_enabled("episodic_recall", user_id):
+                        from platform_app.db import connect as _epi_connect
+                        with _epi_connect() as _edb:
+                            _cm = _edb.execute(
+                                "select active_commit_id from game_saves where id=%s", (_sid_for_hist,),
+                            ).fetchone()
+                        _commit = int((_cm or {}).get("active_commit_id") or 0)
+                        if _commit:
+                            from kb.episodic import retrieve_episodic
+                            _epi = retrieve_episodic(_sid_for_hist, _commit, user_id, user_input, k=5)
+                            if _epi:
+                                _el = ["=== 相关往事·语义召回 (玩家亲历的过去,与本回合最相关) ==="]
+                                for _i, _e in enumerate(_epi, 1):
+                                    _meta = " · ".join(x for x in [
+                                        (_e.get("story_time") or "").strip(),
+                                        (_e.get("location") or "").strip()] if x)
+                                    _el.append(f"{_i}. {_e.get('summary') or ''}" + (f"  ({_meta})" if _meta else ""))
+                                _el.append("以上按当前情境从全程历史召回,当作【已发生事实】参考,勿复述成新发生。")
+                                parts.append("\n".join(_el))
+                except Exception as _epi_err:
+                    log.warning(f"[retrieval] episodic recall 注入失败 (非致命): {_epi_err}")
         except Exception as _hist_err:
             log.warning(f"[retrieval] history_anchors 注入失败 (非致命): {_hist_err}")
 
@@ -725,8 +817,16 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                 # 复用 canon_repo._reveal_clause(与 Phase D 同语义,单一真源):
                 #   CTE 实体用裸列;parent self-join 用 p. 前缀,防"早章子实体的后期父势力名"泄漏
                 #   (父若未揭示 → join 不命中 → 该实体退化为顶级独立项,不显示父名)。
-                _rc, _rc_p = _rc_fn(_progress_chapter, _foreknowledge_mode)
-                _rc_par, _rc_par_p = _rc_fn(_progress_chapter, _foreknowledge_mode, prefix="p.")
+                # P4(S5):flag on 且有 save_id → 前沿门控(占位符个数不变:标量章号 → save_id)。
+                from kb.reveal import (_frontier_on, _frontier_shadow, _shadow_diff_log,
+                                       reveal_clause_v2 as _rc_v2)
+                _use_v2_tree = bool(_save_id_prog) and _frontier_on(_save_id_prog)
+                if _use_v2_tree:
+                    _rc, _rc_p = _rc_v2(int(_save_id_prog), _foreknowledge_mode, prefix="")
+                    _rc_par, _rc_par_p = _rc_v2(int(_save_id_prog), _foreknowledge_mode, prefix="p.")
+                else:
+                    _rc, _rc_p = _rc_fn(_progress_chapter, _foreknowledge_mode)
+                    _rc_par, _rc_par_p = _rc_fn(_progress_chapter, _foreknowledge_mode, prefix="p.")
                 with _connect_tree() as _db_tree:
                     # 拉前 25 个 importance 最高的有 parent_logical_key 的实体 + 它们的 parent
                     # 再拉前 8 个无 parent 但有 children 的顶级 entity
@@ -753,6 +853,18 @@ def retrieve_context(user_input: str, verbose: bool = False, state=None, user_id
                         """,
                         (script_id, *_rc_p, script_id, *_rc_par_p),
                     ).fetchall()
+                    # 影子比对:top_entities 在旧 vs 新门控下放行的 logical_key 集合(隔离主剧透面)。
+                    if _frontier_shadow() and _save_id_prog:
+                        _top_sql = ("select logical_key from kb_canon_entities where script_id=%s "
+                                    "and type in ('faction','location','concept') and entity_subtype != '' "
+                                    "and {clause} order by importance desc limit 60")
+                        _o_rc, _o_p = _rc_fn(_progress_chapter, _foreknowledge_mode)
+                        _n_rc, _n_p = _rc_v2(int(_save_id_prog), _foreknowledge_mode, prefix="")
+                        _old_keys = {r["logical_key"] for r in _db_tree.execute(
+                            _top_sql.format(clause=_o_rc), (script_id, *_o_p)).fetchall()}
+                        _new_keys = {r["logical_key"] for r in _db_tree.execute(
+                            _top_sql.format(clause=_n_rc), (script_id, *_n_p)).fetchall()}
+                        _shadow_diff_log("hierarchy top_entities", _old_keys, _new_keys)
                 if rows:
                     # 建邻接:parent_lk → [(name, subtype, importance), ...]
                     by_parent: dict[str, list[dict]] = {}

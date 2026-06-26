@@ -63,8 +63,11 @@ def rebuild_timeline_anchors(script_id: int) -> dict[str, Any]:
         sc = db.execute("select id, title from scripts where id = %s", (sid,)).fetchone()
         if not sc:
             return {"ok": False, "reason": f"script {sid} not found"}
-        # 删旧锚点
-        db.execute("delete from script_timeline_anchors where script_id = %s", (sid,))
+        # 删旧锚点 —— 只删原著骨架(source='novel');保留编辑器续写新增的(source='editor')。
+        db.execute(
+            "delete from script_timeline_anchors where script_id = %s and coalesce(source,'novel') <> 'editor'",
+            (sid,),
+        )
         # 聚合
         rows = db.execute(
             """
@@ -110,6 +113,7 @@ def rebuild_timeline_anchors(script_id: int) -> dict[str, Any]:
                   chapter_min, chapter_max, chapter_count,
                   sample_title, sample_summary, keywords, confidence
                 ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (script_id, story_phase, story_time_label) do nothing
                 """,
                 (sid, phase, time_label, ch_min, ch_max, n,
                  sample_title, sample_summary, keywords, confidence),
@@ -136,6 +140,43 @@ def rebuild_all_scripts_timeline_anchors() -> dict[str, Any]:
     for r in rows:
         results.append(rebuild_timeline_anchors(int(r["id"])))
     return {"ok": True, "count": len(results), "scripts": results}
+
+
+def collapse_phase_duplicate_anchors(db, script_id: int) -> int:
+    """删除「空 story_phase」的重复锚点 —— 当同 (script_id, story_time_label) 已存在
+    非空 phase 的行时,空 phase 行是重复写入,删除。
+
+    根因:script_timeline_anchors 唯一键是 (script_id, story_phase, story_time_label),
+    但有两类写入者对 story_phase 写法不一致:
+      · resolve.build_timeline(拆书/canon 提取)—— story_phase 恒写空串 ''
+      · rebuild_timeline_anchors / rebuild.rebuild_timeline_from_db(知识同步/时间线重建)
+        —— story_phase 写真值('开端'/'发展'…)
+    若用户先做过知识同步/时间线重建(写真 phase),之后又重跑拆书提取(写空 phase),
+    同一个 story_time_label(如「序章」)就会留下两行(一行 phase='',一行 phase='开端'),
+    唯一键因 phase 不同不去重 → 时间线面板出现两个同名节点都判「当前」。
+
+    确定性收敛:非空 phase 行为权威,删空 phase 行。**只删「同 label 有非空兄弟」的空行**;
+    某 label 只有空 phase 行时(该 label 唯一来源)不动,删了会丢锚点。
+
+    返回删除的行数。
+    """
+    deleted = db.execute(
+        """
+        delete from script_timeline_anchors a
+         where a.script_id = %s
+           and coalesce(a.story_phase, '') = ''
+           and coalesce(a.source, 'novel') <> 'editor'
+           and exists (
+             select 1 from script_timeline_anchors b
+              where b.script_id = a.script_id
+                and b.story_time_label = a.story_time_label
+                and coalesce(b.story_phase, '') <> ''
+           )
+        returning a.id
+        """,
+        (int(script_id),),
+    ).fetchall()
+    return len(deleted)
 
 
 # ── Phase 2: Resolve — 用户输入 label → 锚点 ────────────────────────
@@ -329,6 +370,7 @@ def _extract_chapter_number(label: str) -> int | None:
 __all__ = [
     "rebuild_timeline_anchors",
     "rebuild_all_scripts_timeline_anchors",
+    "collapse_phase_duplicate_anchors",
     "resolve_timeline_anchor",
     "list_timeline_anchors",
 ]

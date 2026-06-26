@@ -4,6 +4,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
+from core.llm_backend import DEFAULT_FALLBACK_API, DEFAULT_FALLBACK_MODEL
+
 from .. import script_import
 from ..db import connect
 from ._deps import json_response, require_user
@@ -63,8 +65,14 @@ async def api_script_llm_extract_usage(script_id: int, days: int = 30, user=Depe
     """
     days = max(1, min(int(days or 30), 365))
     with connect() as db:
-        owned = db.execute("select 1 from scripts where id=%s and owner_id=%s",
-                           (script_id, user["id"])).fetchone()
+        owned = db.execute(
+            """select 1 from scripts s
+            where s.id = %s and (
+              s.owner_id = %s
+              or s.id in (select script_id from user_script_subscriptions where user_id = %s)
+            )""",
+            (script_id, user["id"], user["id"]),
+        ).fetchone()
         if not owned:
             return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
         # 汇总
@@ -141,10 +149,16 @@ async def api_script_llm_extract_estimate(request: Request, script_id: int, user
         "note": "约 $0.09(38 弧 × deepseek-v4-flash)。"
       }
     """
-    # 校验 owner
+    # 校验 owner-or-subscriber
     with connect() as db:
-        owned = db.execute("select 1 from scripts where id=%s and owner_id=%s",
-                           (script_id, user["id"])).fetchone()
+        owned = db.execute(
+            """select 1 from scripts s
+            where s.id = %s and (
+              s.owner_id = %s
+              or s.id in (select script_id from user_script_subscriptions where user_id = %s)
+            )""",
+            (script_id, user["id"], user["id"]),
+        ).fetchone()
     if not owned:
         return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
     body = {}
@@ -320,8 +334,8 @@ async def api_script_import_budget(request: Request, script_id: int, user=Depend
         enable_cards=bool(body.get("enable_cards", True)),
         enable_worldbook=bool(body.get("enable_worldbook", True)),
         cards_top_n=int(body.get("cards_top_n", 30)),
-        model_api_id=body.get("model_api_id") or "vertex_ai",
-        model_real_name=body.get("model_real_name") or "gemini-3.5-flash",
+        model_api_id=body.get("model_api_id") or DEFAULT_FALLBACK_API,
+        model_real_name=body.get("model_real_name") or DEFAULT_FALLBACK_MODEL,
     ))
 
 
@@ -556,6 +570,18 @@ async def api_rebuild_embeddings(request: Request, script_id: int, user=Depends(
 async def api_rebuild_full_pipeline(request: Request, script_id: int, user=Depends(require_user)):
     """alias for /import-pipeline — 跑全套 chunks/facts/cards/worldbook。"""
     return await api_script_import_pipeline(request, script_id, user)
+
+
+# ⚠️ 通用兜底:必须放在上面所有字面 /rebuild/<module> 路由之后(字面路由先注册先命中,本路由只兜
+# 字面没覆盖的形态)。根治「章节摘要重做 405 Method Not Allowed」——前端 module 键是下划线
+# chapter_facts(matrix 把后端 dash 'chapter-facts' 归一成下划线显示,派发时没转回),而字面路由是连字符,
+# 故无路由匹配→405。这条把任意模块名(下划线/别名)经 normalize_rebuild_module 归一后派发。
+# 新增具体 rebuild 路由必须加在本路由之前。
+@router.post("/api/scripts/{script_id}/rebuild/{module}")
+async def api_rebuild_module_generic(request: Request, script_id: int, module: str, user=Depends(require_user)):
+    """通用重做派发(前端契约 POST /rebuild/{module})。module 经 _rebuild_dispatch→normalize_rebuild_module
+    归一(chapter_facts→chapter-facts 等);未知模块返 {ok:false,error}。"""
+    return await _rebuild_response(request, script_id, module, user)
 
 
 @router.get("/api/scripts/rebuild-jobs/{job_id}/stream")

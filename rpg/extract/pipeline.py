@@ -44,17 +44,11 @@ def run_extraction(
     """
     from platform_app.db import connect
 
+    from extract.progress import emit_progress
+
     def _emit(stage, info):
-        if progress_cb:
-            try:
-                progress_cb(stage, info)
-            except Exception as _exc:
-                # phase_backend: 不 silent — log.warning(exc_info)
-                import logging as _logging
-                _logging.getLogger(__name__).warning(
-                    "[pipeline._emit] progress_cb failed for stage=%s: %s",
-                    stage, _exc, exc_info=True,
-                )
+        # 取消信号(InterruptedError)经 emit_progress 上抛,不再被吞 → 取消可生效。
+        emit_progress(progress_cb, stage, info, source=__name__)
 
     # 读可提取章节(短连接,立即释放)— 用 content_descriptor 优先于怪标题
     # chapter_min/max 支持懒/增量提取的切片(W5)
@@ -134,20 +128,27 @@ def run_extraction(
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = [pool.submit(_one, i, ch) for i, ch in enumerate(chapters)]
-        for f in as_completed(futures):
-            try:
-                idx, ex = f.result()
-                if ex is not None:
-                    extracts_dict[idx] = ex
-            except Exception as _exc:
-                import logging as _logging
-                _logging.getLogger(__name__).warning(
-                    "[pipeline] _one future raised: %s", _exc, exc_info=True,
-                )
-            with done_lock:
-                done_count[0] += 1
-                if progress_cb and done_count[0] % 20 == 0:
-                    _emit("per_chapter", {"done": done_count[0], "total": len(chapters)})
+        try:
+            for f in as_completed(futures):
+                try:
+                    idx, ex = f.result()
+                    if ex is not None:
+                        extracts_dict[idx] = ex
+                except Exception as _exc:
+                    import logging as _logging
+                    _logging.getLogger(__name__).warning(
+                        "[pipeline] _one future raised: %s", _exc, exc_info=True,
+                    )
+                with done_lock:
+                    done_count[0] += 1
+                    if progress_cb and done_count[0] % 20 == 0:
+                        _emit("per_chapter", {"done": done_count[0], "total": len(chapters)})
+        except (InterruptedError, KeyboardInterrupt):
+            # 用户取消(_emit 上抛):取消还没开跑的 future,别再白烧 LLM。
+            # 已在跑的(≤concurrency 个)无法中断,__exit__ 的 shutdown 只等这些,有界。
+            for fut in futures:
+                fut.cancel()
+            raise
 
     # 按原始章节顺序还原
     extracts = [extracts_dict[i] for i in range(len(chapters)) if i in extracts_dict]

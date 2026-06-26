@@ -20,7 +20,9 @@ SETTINGS_SCHEMA: list[dict] = [
      "help": "suspicious 时 NPC 会对玩家的异常先知起疑。"},
     {"key": "steering_strength", "label": "剧情引导强度", "type": "enum", "default": "guided",
      "options": ["rail", "guided", "free"], "locked_after_create": False, "step": 4,
-     "help": "rail=强力贴原著;guided=软目标引导(默认);free=最大自由。"},
+     "help": "rail=贴原著(强力锚点):把下一个待发生锚点当成必须推进的下一拍,GM 主动收束、"
+             "偏离 1-3 轮内拉回(仍允许合理变体);guided=软引导(默认温和):软目标朝锚点自然推进;"
+             "free=自由:不注入引导。"},
     {"key": "spoiler_guard", "label": "防剧透强度", "type": "enum", "default": "strict",
      "options": ["strict", "loose"], "locked_after_create": False, "step": 4,
      "help": "strict=严格按进度过滤未揭示内容;loose=放宽。"},
@@ -60,6 +62,23 @@ def read_settings(db, save_id: int) -> dict:
         if k in wl:
             out[k] = wl[k]
     out["progress_chapter"] = wl.get("progress_chapter")
+    # P4(S7):flag on 时 progress_chapter 降级为【前沿派生只读】(与 GM 门控同源,根治 over-shoot);
+    # 过渡期保留 _legacy(=worldline 标量)供前端/影子核对。前端数值语义不变(玩家读到第几章)。
+    # floor 用【已确认锚点最大原著章】(可靠、确定性)而非 worldline 标量 —— 后者可能被旧猜章器冲高,
+    # 拿它当 floor 会把 over-shoot 带回显示。前沿未种时(灰度窗口)floor 兜住,不坍缩到第1章;
+    # 前沿已种时 derived==floor。与 retrieval.py:495 的 max(1,_last_sat,_derived) 同源。
+    try:
+        from kb.reveal import _frontier_on, derived_progress_chapter
+        if _frontier_on(save_id):
+            out["progress_chapter_legacy"] = out.get("progress_chapter")
+            _derived = derived_progress_chapter(save_id, db=db)
+            _fr = db.execute(
+                "select coalesce(max(source_chapter),0) c from save_anchor_states "
+                "where save_id=%s and status in ('occurred','variant')", (save_id,)).fetchone()
+            _floor = max(1, int((_fr or {}).get("c") or 0))
+            out["progress_chapter"] = max(_floor, int(_derived))
+    except Exception:
+        pass
     return out
 
 
@@ -69,31 +88,42 @@ def apply_settings(db, save_id: int, updates: dict[str, Any], *, is_create: bool
     sess = _ensure_session(db, save_id)
     if not sess:
         return {"error": "存档无 session"}
-    wl = sess.get("worldline") if isinstance(sess.get("worldline"), dict) else {}
-    wl = dict(wl)
+    wl_existing = sess.get("worldline") if isinstance(sess.get("worldline"), dict) else {}
+    # is_create 不信客户端:客户端传 is_create=true 即可在后续 PATCH 改锁死项(starting_worldline)。
+    # 改由服务端判定——仅当锁死项尚未落库(worldline 不含任何 _LOCKED 键=未初始化)才放行。
+    # 建档首发 PATCH(worldline 空)→ 放行;之后(已含锁死键)→ 任何 is_create 都被忽略。
+    server_uninitialized = not any(k in wl_existing for k in _LOCKED)
+    effective_is_create = bool(is_create) and server_uninitialized
     applied, rejected = {}, {}
     for k, v in (updates or {}).items():
         if k not in _DEFAULTS and k != "progress_chapter":
             rejected[k] = "未知设置"
             continue
-        if k in _LOCKED and not is_create:
+        if k in _LOCKED and not effective_is_create:
             rejected[k] = "建档后锁死"
             continue
         if k in _VALID and v not in _VALID[k]:
             rejected[k] = f"非法值(允许:{sorted(_VALID[k])})"
             continue
-        wl[k] = v
         applied[k] = v
-    db.execute("update game_sessions set worldline=%s, updated_at=now() where save_id=%s",
-               (Jsonb(wl), save_id))
+    # 原子按键合并(jsonb ||):只覆盖本次改的键,不整列读改写 → 避免 workers=2 并发丢更新/抹掉对方键。
+    if applied:
+        db.execute(
+            "update game_sessions set worldline = coalesce(worldline, '{}'::jsonb) || %s::jsonb, "
+            "updated_at=now() where save_id=%s",
+            (Jsonb(applied), save_id),
+        )
     return {"applied": applied, "rejected": rejected}
 
 
 def advance_progress(db, save_id: int, chapter: int) -> None:
-    """推进玩家进度(取 max,只增不减)。防剧透集合随之扩。"""
-    from psycopg.types.json import Jsonb
-    sess = _ensure_session(db, save_id)
-    wl = dict(sess.get("worldline") if isinstance(sess.get("worldline"), dict) else {})
-    cur = wl.get("progress_chapter") or 0
-    wl["progress_chapter"] = max(cur, int(chapter))
-    db.execute("update game_sessions set worldline=%s where save_id=%s", (Jsonb(wl), save_id))
+    """推进玩家进度(取 max,只增不减)。防剧透集合随之扩。
+    用单条原子 SQL(greatest 在 DB 内算)替代「读-改-写整 jsonb」:workers=2 下两并发回合
+    各读到旧 progress 再写回会丢更新,且整列覆盖还会抹掉对方刚写的其它 worldline 键。"""
+    _ensure_session(db, save_id)
+    db.execute(
+        "update game_sessions set worldline = jsonb_set(coalesce(worldline, '{}'::jsonb), "
+        "'{progress_chapter}', to_jsonb(greatest(coalesce((worldline->>'progress_chapter')::int, 0), %s)), true) "
+        "where save_id=%s",
+        (int(chapter), save_id),
+    )

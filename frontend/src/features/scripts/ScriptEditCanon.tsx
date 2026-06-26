@@ -18,7 +18,7 @@ import CSAlert from '@cloudscape-design/components/alert';
 import CSInput from '@cloudscape-design/components/input';
 import CSSelect from '@cloudscape-design/components/select';
 import CSTextFilter from '@cloudscape-design/components/text-filter';
-import CSSplitPanel from '@cloudscape-design/components/split-panel';
+import DetailDrawer from '../components/DetailDrawer.jsx';
 import CSTokenGroup from '@cloudscape-design/components/token-group';
 import CSExpandableSection from '@cloudscape-design/components/expandable-section';
 import CSFormField from '@cloudscape-design/components/form-field';
@@ -652,7 +652,7 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
           </CSFormField>
           <CSFormField label={t('scripts.edit.canon.field_subtype')}>
             <CSInput
-              placeholder="国家/军队/宗门"
+              placeholder={t('script_canon.subtype_ph')}
               value={newForm.entity_subtype}
               onChange={({ detail }) => setNewForm((f) => ({ ...f, entity_subtype: detail.value }))}
             />
@@ -846,24 +846,14 @@ export function CanonEntityEditorView({ scriptId, ownerId, currentUserId }) {
         </CSAlert>
       )}
       {adding && !readonly && <AddEntityForm />}
-      {splitOpen && selected ? (
-        <CSSplitPanel
-          header={selected.name || selected.logical_key}
-          i18nStrings={{
-            closeButtonAriaLabel: t('common.close'),
-            openButtonAriaLabel: t('scripts.edit.canon.open_detail'),
-            preferencesTitle: t('scripts.edit.canon.panel_prefs'),
-            preferencesPositionLabel: t('scripts.edit.canon.panel_pos'),
-            preferencesPositionSide: t('scripts.edit.canon.panel_side'),
-            preferencesPositionBottom: t('scripts.edit.canon.panel_bottom'),
-            preferencesConfirm: t('common.confirm'),
-            preferencesCancel: t('common.cancel'),
-            resizeHandleAriaLabel: t('scripts.edit.canon.resize_handle'),
-          }}
-        >
-          <DetailPanel entity={selected} />
-        </CSSplitPanel>
-      ) : null}
+      <DetailDrawer
+        open={splitOpen && !!selected}
+        title={selected?.name || selected?.logical_key || ''}
+        onClose={() => { setSelected(null); setSplitOpen(false); }}
+        closeLabel={t('common.close')}
+      >
+        {selected && <DetailPanel entity={selected} />}
+      </DetailDrawer>
       {tableEl}
     </CSSpaceBetween>
   );
@@ -1537,24 +1527,14 @@ export function AnchorEditorView({ scriptId, ownerId, currentUserId }) {
         </CSAlert>
       )}
       {adding && !readonly && <AddAnchorForm />}
-      {splitOpen && selected ? (
-        <CSSplitPanel
-          header={`${selected.story_phase || ''} · ${t('scripts.editor.chapter_range', { min: selected.chapter_min ?? '?', max: selected.chapter_max ?? '?' })}`}
-          i18nStrings={{
-            closeButtonAriaLabel: t('common.close'),
-            openButtonAriaLabel: t('scripts.edit.anchors.open_detail'),
-            preferencesTitle: t('scripts.edit.anchors.panel_prefs'),
-            preferencesPositionLabel: t('scripts.edit.anchors.panel_pos'),
-            preferencesPositionSide: t('scripts.edit.anchors.panel_side'),
-            preferencesPositionBottom: t('scripts.edit.anchors.panel_bottom'),
-            preferencesConfirm: t('common.confirm'),
-            preferencesCancel: t('common.cancel'),
-            resizeHandleAriaLabel: t('scripts.edit.anchors.resize_handle'),
-          }}
-        >
-          <DetailPanel anchor={selected} />
-        </CSSplitPanel>
-      ) : null}
+      <DetailDrawer
+        open={splitOpen && !!selected}
+        title={`${selected?.story_phase || ''} · ${t('scripts.editor.chapter_range', { min: selected?.chapter_min ?? '?', max: selected?.chapter_max ?? '?' })}`}
+        onClose={() => { setSelected(null); setSplitOpen(false); }}
+        closeLabel={t('common.close')}
+      >
+        {selected && <DetailPanel anchor={selected} />}
+      </DetailDrawer>
       {tableEl}
     </CSSpaceBetween>
   );

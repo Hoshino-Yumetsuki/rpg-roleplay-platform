@@ -190,7 +190,8 @@ def _attach_db_state(payload: dict[str, Any]) -> dict[str, Any]:
             with connect() as db:
                 row = db.execute(
                     """
-                    select dirty, snapshot_hash, turn_at_commit, turn_runtime, commit_id, ref_id
+                    select dirty, snapshot_hash, turn_at_commit, turn_runtime, commit_id, ref_id,
+                           state_snapshot->'session_model' as session_model
                     from runtime_checkouts
                     where user_id = %s and save_id = %s
                     """,
@@ -202,6 +203,10 @@ def _attach_db_state(payload: dict[str, Any]) -> dict[str, Any]:
                     payload["turn_at_commit"] = int(row.get("turn_at_commit") or 0)
                     payload["turn_runtime"] = int(row.get("turn_runtime") or 0)
                     payload["turns_ahead"] = payload["turn_runtime"] - payload["turn_at_commit"]
+                    # 带上 DB 真值 session_model(供 _ensure_loaded 检测跨 worker 模型漂移)。
+                    _sm = row.get("session_model")
+                    if isinstance(_sm, dict):
+                        payload["session_model"] = _sm
     except Exception:
         pass
     return payload

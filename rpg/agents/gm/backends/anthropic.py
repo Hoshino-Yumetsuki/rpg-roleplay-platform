@@ -62,11 +62,13 @@ class _AnthropicBackend:
         except Exception:
             byok_only = True  # 配置读不到时按更保守的生产策略
         env_fb = "" if (byok_only and user_id) else "ANTHROPIC_API_KEY"
+        # ANTHROPIC_API_KEY 的 env 回退已由 resolve_api_key(env_fallback) 在非 byok_only 下完成,
+        # 不再重复 os.environ 取一次。仅 EMBED_API_KEY 是 resolve_api_key 不覆盖的历史遗留二次回退。
         result = resolve_api_key(user_id, "anthropic", env_fallback=env_fb)
         key = result.get("key")
         if not key and not byok_only:
             # 仅本地/匿名开发模式才看 EMBED_API_KEY 这种历史遗留 fallback
-            key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("EMBED_API_KEY")
+            key = os.environ.get("EMBED_API_KEY")
         if not key:
             raise ValueError(
                 "Anthropic API key 未配置。请在「设置 → API 设置」添加你自己的 Anthropic API Key。"
@@ -75,9 +77,15 @@ class _AnthropicBackend:
         # 读超时原 120s 太紧:GM 带 reasoning 的长回合常被中途切断 → 整轮 token 白烧。
         # 提到 300s,可用 RPG_GM_TIMEOUT 调。
         _read_to = float(os.environ.get("RPG_GM_TIMEOUT", "300"))
+        # HTTP/2:一个 run 内多个流式调用(推理+工具轮)多路复用同一连接,省掉 ×N TCP+TLS 握手
+        # (SDK 流式到 [DONE] 即停不 drain → HTTP/1.1 下 httpx 无法归还 socket;h2 关 stream≠关连接,
+        # 故仍复用)。api.anthropic.com 支持 h2;safe_httpx_client 缺 h2 包时自动回退 1.1。
+        # 复用 safe_httpx_client 取其 h2+回退+不跟随重定向;固定官方端点,SSRF 守卫为无害冗余。
+        from core.outbound import safe_httpx_client
         self.client = Anthropic(
             api_key=key,
             timeout=httpx.Timeout(_read_to, connect=10.0),
+            http_client=safe_httpx_client(timeout=_read_to),
         )
         self.model_name = model
         self.user_id = user_id  # task 141: 给 _thinking_param 用

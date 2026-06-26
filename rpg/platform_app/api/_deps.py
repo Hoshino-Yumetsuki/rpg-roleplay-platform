@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse as BaseJSONResponse
 
@@ -158,15 +158,23 @@ def _local_default_user() -> dict | None:
         return None
 
 
+def _is_loopback(request: Request) -> bool:
+    """请求是否来自本机回环(127.0.0.1 / ::1 / localhost)。LAN 设备走真实 IP → False。"""
+    host = (request.client.host if request.client else "") or ""
+    return host in {"127.0.0.1", "::1", "localhost"} or host.startswith("127.")
+
+
 def current_user(request: Request) -> dict | None:
     try:
         init_db()
         user = auth.user_from_token(request.cookies.get(SESSION_COOKIE))
-        # 本地/自部署免登录模式(_auth_required()=False)且无 cookie 时,回退到库里第一个
-        # 用户,让单用户本地部署开箱即用(否则前端 online=true & authed=false 会跳回登录页,
-        # 业务接口也拿不到用户上下文)。服务器模式(_auth_required()=True)绝不走这条路。
+        # 本地/自部署免登录模式(_auth_required()=False)且无 cookie 时,回退到库里第一个用户,
+        # 让单用户本地部署开箱即用。**安全收紧**:仅「本机回环 + 默认账户未设密码」时才免登录回退;
+        # LAN 设备(非回环)或默认账户已设密码 → 必须有真实会话(cookie / 魔法链接),
+        # 否则同网任意设备都能越权拿到默认账户(做好本地部署鉴权)。服务器模式绝不走这条路。
         if user is None and not _auth_required():
-            user = _local_default_user()
+            if _is_loopback(request) and not auth.local_account_has_password():
+                user = _local_default_user()
         if user:
             uid = int(user["id"])
             if uid not in _ENSURED_DEFAULT_USERS:
@@ -184,16 +192,30 @@ def require_user(request: Request) -> dict:
     return user
 
 
+def is_admin(user: dict | None) -> bool:
+    """纯 admin 管理权谓词(role == 'admin')。
+
+    注意:这与「平台兜底资格」(role ∈ {admin, vip_user},见
+    knowledge.embedding.has_platform_fallback_role)是不同职责,资格集合不同,绝不跨用。
+    """
+    return bool(user and user.get("role") == "admin")
+
+
+def require_admin(user=Depends(require_user)) -> dict:
+    """FastAPI Depends:要求当前用户是 admin,否则 403。"""
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user
+
+
 def _resolve_save_id(user_id: int, body: dict) -> int:
     raw = body.get("save_id")
     if raw:
         sid = int(raw)
         # P1 fix: 显式校验 save 属于本人，不依赖下游兜底
+        from ..perms import owns_save
         with connect() as db:
-            cur = db.cursor()
-            cur.execute("select id from game_saves where id=%s and user_id=%s", (sid, user_id))
-            row = cur.fetchone()
-            if not row:
+            if not owns_save(db, sid, user_id):
                 raise HTTPException(status_code=403, detail="无权访问该存档")
         return sid
     with connect() as db:
@@ -221,7 +243,7 @@ def platform_for(user: dict | None) -> dict:
     return payload
 
 
-_MCP_SECRET_FIELDS = ("command", "args", "env", "credential", "secret", "token")
+_MCP_SECRET_FIELDS = ("command", "args", "env", "url", "headers", "credential", "secret", "token")
 
 
 def _redact_mcp_in_tools(tools: dict, is_admin: bool) -> dict:

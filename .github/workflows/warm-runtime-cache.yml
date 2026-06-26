@@ -1,0 +1,61 @@
+name: warm-runtime-cache
+
+# 在【默认分支 main】上预热「便携运行时(Python+依赖+PG)」的 actions/cache。
+#
+# 为什么需要它:GitHub Actions 缓存按 ref 隔离 —— 一个 run 只能恢复【自己 ref】和【默认分支 main】
+# 的缓存。desktop-release.yml 只在 `tags: v*` 上跑,各 tag 是不同 ref、互相看不到对方缓存,所以
+# release 之间永远缓存未命中、每次重建运行时 → 字节不一致 → electron-updater 差量很大。
+# 把同一份运行时预热到 main 作用域后,每个 release tag 构建都能从 main 恢复【同一份字节一致】的
+# 运行时 → blockmap 差量极小 → 本地部署只拉很小的增量更新包。
+#
+# 缓存 key 必须与 desktop-release.yml 完全一致(否则白热):
+#   rt-<platform>-<arch>-py3.12.13-pg17.10-<hash(rpg/requirements.txt)>
+# 依赖(requirements.txt)变 → key 变 → 这里重建并刷新 main 缓存 → 下次 release 自动用新基线。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rpg/requirements.txt'
+      - 'desktop/scripts/bundle-backend.sh'
+      - 'desktop/scripts/bundle-backend.ps1'
+      - '.github/workflows/warm-runtime-cache.yml'
+  schedule:
+    - cron: '0 6 * * 1'   # 每周一 06:00 UTC:刷新,防 7 天未访问被驱逐
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, platform: mac, arch: arm64 }
+          - { os: windows-latest, platform: win, arch: x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 恢复/保存运行时缓存(main 作用域)
+        uses: actions/cache@v4
+        with:
+          path: desktop/.runtime-cache
+          key: rt-${{ matrix.platform }}-${{ matrix.arch }}-py3.12.13-pg17.10-${{ hashFiles('rpg/requirements.txt') }}
+
+      - name: 预热运行时 (mac/linux)
+        if: matrix.platform == 'mac'
+        working-directory: desktop
+        env:
+          RUNTIME_ONLY: '1'
+        run: bash scripts/bundle-backend.sh
+
+      - name: 预热运行时 (windows)
+        if: matrix.platform == 'win'
+        working-directory: desktop
+        shell: pwsh
+        env:
+          RUNTIME_ONLY: '1'
+        run: ./scripts/bundle-backend.ps1

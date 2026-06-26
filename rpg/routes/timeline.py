@@ -116,9 +116,53 @@ async def api_saves_timeline(
             for r in phase_rows
         ]
 
+        # 4. 当前剧情章节 — 面板高亮的唯一确定性依据 (修复 active_phase_index 恒卡 0)。
+        #    active_phase_index 是"实际足迹 phase 序号", 与剧本章节无关 → 拿它当
+        #    scriptAnchors 下标永远高亮第 0 个。改用真实进度章节:
+        #      ① game_sessions.worldline->>'progress_chapter' (mark_anchor_satisfied/
+        #         satisfy 端点 advance_progress 写入的权威进度)
+        #      ② 为空时退到 get_progress_window 的 last_satisfied / chapter_min
+        #      ③ 都没有兜底 1 (剧本开头)。
+        current_chapter: int | None = None
+        try:
+            sess_row = db.execute(
+                "select worldline->>'progress_chapter' as pc from game_sessions where save_id = %s",
+                (save_id,),
+            ).fetchone()
+            if sess_row and sess_row.get("pc") is not None:
+                current_chapter = int(sess_row["pc"])
+        except Exception:
+            current_chapter = None
+
+        # ①.5 出生点兜底:新档首回合前还没有 game_sessions 行(progress_chapter 为空),
+        #     但所选出生点已由 workspace._build_initial_snapshot 写进
+        #     game_saves.state_snapshot.world.timeline.anchor_chapter_range。读它的起始章作当前章,
+        #     否则面板恒退回序章(反馈 #66/#67:游戏实际从选定锚点开始,仅世界线显示错回序章)。
+        if not current_chapter or current_chapter < 1:
+            try:
+                bp = db.execute(
+                    "select (state_snapshot #>> '{world,timeline,anchor_chapter_range,0}') as ch "
+                    "from game_saves where id = %s",
+                    (save_id,),
+                ).fetchone()
+                if bp and bp.get("ch") is not None:
+                    current_chapter = int(bp["ch"])
+            except Exception:
+                pass
+
+    if not current_chapter or current_chapter < 1:
+        try:
+            from agents.anchor_seed_agent import get_progress_window
+            win = get_progress_window(save_id, script_id=script_id)
+            current_chapter = win.get("last_satisfied_chapter") or win.get("chapter_min") or 1
+        except Exception:
+            current_chapter = 1
+    current_chapter = max(1, int(current_chapter))
+
     return JSONResponse({
         "ok": True,
         "script_anchors": script_anchors,
         "save_phases": save_phases,
         "current_phase_index": active_phase_index,
+        "current_chapter": current_chapter,
     })

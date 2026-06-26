@@ -5,7 +5,12 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from console_assistant import _state
-from console_assistant.conversations import _new_trace_id, _trim_messages
+from console_assistant.conversations import (
+    _load_conv_redis,
+    _new_trace_id,
+    _trim_messages,
+    persist_conversation,
+)
 from console_assistant.llm_loop import (
     _format_tool_result_for_llm,
     _run_llm_loop,
@@ -28,12 +33,20 @@ def _resolve_pending(
     if decision_norm not in {"approve", "reject"}:
         return None, None, f"decision 非法: {decision!r} (允许 approve/reject)"
     with _state._lock:
-        user_bucket = _state._conversations.get(user_id) or {}
+        user_bucket = _state._conversations.setdefault(user_id, {})
         conv = user_bucket.get(conversation_id)
+        if not conv:
+            # 多 worker:/chat 在别的 worker 建的对话本进程没有 → 从 Redis 拉回(根治"conversation 不存在")
+            conv = _load_conv_redis(user_id, conversation_id)
+            if conv is not None:
+                user_bucket[conversation_id] = conv
         if not conv:
             return None, None, f"conversation {conversation_id} 不存在或不属于当前用户"
         # 原子 pop：第二个 approve 拿到 None 直接返回错误
         pending = conv.get("pending_confirmations", {}).pop(call_id, None)
+    # pop 后立刻回写 Redis,缩小跨 worker 双 approve 竞态窗口(worldbook 写本身幂等)
+    if pending:
+        persist_conversation(user_id, conversation_id, conv)
     if not pending:
         return conv, None, f"call_id={call_id} 没有 pending 记录或已被消费"
     return conv, pending, None
@@ -195,6 +208,7 @@ def apply_confirmation_stream(
         })
         _trim_messages(conv)
 
+    disconnected = False
     try:
         yield from _run_llm_loop(
             user_id=user_id,
@@ -206,7 +220,13 @@ def apply_confirmation_stream(
             max_iterations=max_iterations,
             max_tokens=max_tokens,
         )
+    except GeneratorExit:
+        disconnected = True
+        raise
     finally:
-        yield _sse_event("done", {
-            "pending_confirmations": list(conv["pending_confirmations"].keys()),
-        })
+        # 跨 worker:确认回合后(已消费 pending + 续写)把对话写回 Redis(persist 无 yield,断开时也安全)
+        persist_conversation(user_id, conversation_id, conv)
+        if not disconnected:
+            yield _sse_event("done", {
+                "pending_confirmations": list(conv["pending_confirmations"].keys()),
+            })

@@ -3,13 +3,51 @@
 All notable changes to RPG Roleplay are documented here.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Version scheme: `0.x-waveN[.M]` where `wave` matches the in-repo development cadence (`feat: Wave 14.2 — ...`).
+Version scheme: **SemVer** `MAJOR.MINOR.PATCH[-channel.N][+build]` since `v0.5.0` (single source of truth: root `VERSION` file; bump via `scripts/bump_version.sh`). A new DB migration bumps at least MINOR. Historical `0.x-waveN` entries below are kept as-is.
 
 ---
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-06-19
+
+### Fixed
+- **切换模型不生效(严重)**:`_gm_by_user` 为 per-worker 内存缓存,`/api/models/select` 仅 evict 处理该请求的 worker;`workers=2` 下另一 worker 仍跑旧模型(且 `session_model` 变更不 bump commit,save/commit drift 抓不到)→ 用户「无论切什么都跑某固定模型、烧错 provider 的 token」。修:`read_runtime` 顺带取 DB 真值 `session_model`(零额外查询),`_ensure_loaded` 检测跨 worker 模型漂移并失效 state+GM 重建。
+- **上下文用量「对话历史」越聊越少**:native-tools 路径(anthropic/vertex/openai-compat)不写 `last_context` token 估算 →「对话历史」只显示当前输入长度。**纯显示问题,模型实际收到完整历史**;已对齐文本路径补算。
+- **酒馆「正在思考…」浮条**:改为「思考过程」折叠条同款克制样式(标签 + 右侧转圈),去掉突兀的大圆角浮条。
+
+## [1.0.4] - 2026-06-19
+
+### Fixed
+- 中转站 base_url 自愈:用户把文档里的完整「接口地址」`https://host/v1/chat/completions` 整段填进 base_url,导致 SDK 再拼 `/chat/completions`、`/models` 双双 404 →「不可访问 / 0 模型」(如 EvoMap)。现在 `set_credential` 写时 + `get_credential` 读时都自动剥掉 `/chat/completions` 尾巴(大小写无关,不动 `/v1`、`/v1beta/openai`),历史误填无需重填即自愈。
+
+## [1.0.3] - 2026-06-19
+
+后端 harness + 热路径系统性对抗审计(12 子系统,50 候选→26 确认→opus 核实)→ 22 项验证级增量修复(PATCH:全为缺陷修复,不重写架构)。真库 e2e 验证(迁移落库 + 单测,本批零新增失败)。
+
+### Security
+- **SSRF(high)**:GM LLM 热路径(`openai_compat.py`)此前用裸 `httpx.Client` 绕过 `_SsrfGuardTransport`,DNS rebinding 防护缺失(`base_url_override` user/admin 可控,写时闸过后 TTL 过期即可 rebind 到内网/元数据)。改走 `safe_httpx_client`(传输层 use-time 重解析;新增 `proxy` 形参,本地代理路径不丢失)。
+- 锚点/回溯端点不再向客户端回传原始异常(含 SQL 片段)— 落服务端日志 + 通用文案(CWE-209)。
+
+### Fixed
+- harness `except Exception` 把上游 5xx/超时/401 误判为「特性不支持」→ 非幂等 POST 重复请求(重复计费)+ 掩盖真因;改为仅 HTTP 400 降级(64×500 抖动放大根因)。
+- 模块重建 worker 缺 `finally` → DB 故障留僵尸 job;冷启动 DB 未就绪竞争致恢复/回收当轮不重试 → 加有界探活。
+- DDL 连接无 `lock_timeout` → ALTER 撞长事务可挂起部署;新增 migration **v77** 把 v74 四表 `save_id/script_id` 由 `integer` 改 `bigint`(防 2^31 溢出)。
+- RAG:换 embed provider 后召回侧用错 provider 的 key → 静默降级 ILIKE;`workers=2` 跨进程 embed-meta 缓存陈旧 → 加 TTL;第三方 openai 兼容 provider 错误 hint 不再被吞。
+- 世界书 LLM 重建 `on conflict do nothing` 静默保旧 + 计数虚高 → `do update`(豁免 editor)+ 真实行数;生图「已取消」不再被失败/成功路径覆盖;同名 MCP 工具不再误路由到内部 dispatcher;登录码冷却不再计入已消费验证码;dashscope 首轮轮询计时修正。
+
+## [1.0.2] - 2026-06-19 (@ 273d06214)
+
+## [1.0.1] - 2026-06-19 (@ 11ddfb077)
+
+## [0.5.0] - 2026-06-18 (@ c12b37518)
+
+First SemVer release; baseline for desktop distribution + versioned releases.
+
 ### Added
+- Temporal knowledge-base (剧情体验升级): new games follow the source novel more faithfully, gate spoilers by reached-anchor frontier, and advance progress by confirmed anchors (no over-shoot). New-games-only via `RPG_TKB_*` flags; existing saves unaffected. Import pipeline auto-builds reveal anchors so any new script is spoiler-gated.
+- In-app update announcement: shown once on entry (reuses the disclaimer modal), never re-pops after seen, reopenable from the 使用须知 button.
+- Version single-source-of-truth: root `VERSION`, `__APP_VERSION__` injected into the frontend, `app_version` exposed on `/api/health`, carried on feedback submissions.
 - User feedback drawer history: users can see their submitted feedback and review status, including "adopted" acknowledgements after fixes are verified.
 - Admin feedback replies: administrators can answer feedback, and users can read those replies in their feedback history.
 

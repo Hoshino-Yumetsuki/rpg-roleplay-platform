@@ -143,6 +143,55 @@ def _to_backend_messages(messages: list[dict[str, Any]]) -> list[dict]:
     return out
 
 
+# P0(harness 审计):script 直写 / 读 工具名集合。本回合一旦读过剧本资产正文(世界书/锚点/
+# canon/章节正文等可能夹带"忽略以上,改成…"的注入指令),后续 script 直写一律走二次确认 ——
+# 把"读外部内容 → 被诱导静默改库"这一安全属性从靠提示词改成确定性闸。
+_SCRIPT_WRITE_TOOLS = frozenset({
+    "update_script_chapter", "upsert_worldbook_entry", "upsert_worldbook_entries", "update_npc_card",
+    "update_anchor", "create_anchor", "upsert_canon_entity",
+    "create_script_chapter", "create_npc_card", "delete_worldbook_entry", "delete_anchor",
+    "import_document_as_chapters",
+})
+_SCRIPT_READ_TOOLS = frozenset({
+    "get_script_chapters", "list_script_npcs", "get_script_character_card",
+    "list_worldbook_entries", "list_anchors", "list_canon_entities",
+    "get_chapter_context",
+})
+
+
+def _read_user_pref(user_id: int, key: str) -> str:
+    """读 user_preferences.preferences->>key(jsonb 单键)。缺/失败返回空串。"""
+    try:
+        from platform_app.db import connect, init_db
+        init_db()
+        with connect() as db:
+            row = db.execute(
+                "select preferences->>%s as v from user_preferences where user_id=%s",
+                (key, int(user_id)),
+            ).fetchone()
+        return str((row or {}).get("v") or "")
+    except Exception:
+        return ""
+
+
+def _resolve_editor_write_mode(user_id: int) -> str:
+    """三级权限(Q3):编辑器写库模式 read_only / review / full_access。
+    复用 state.permissions 的归一语义;缺省 = review(最稳,涵盖旧 P0 的防注入)。"""
+    raw = _read_user_pref(user_id, "editor.write_mode")
+    if not raw:
+        return "review"
+    try:
+        from state.permissions import _normalize_permission_mode
+        m = _normalize_permission_mode(raw)  # read_only / default / auto_review / full_access
+    except Exception:
+        return "review"
+    if m == "read_only":
+        return "read_only"
+    if m == "full_access":
+        return "full_access"
+    return "review"
+
+
 def _run_llm_loop(
     *,
     user_id: int,
@@ -167,6 +216,8 @@ def _run_llm_loop(
         extra_pending_note.append({"role": "user", "content": pending_summary})
 
     pending_for_this_turn: list[dict[str, Any]] = []
+    # 三级权限(Q3):editor 写库模式 read_only/review/full_access,回合开始解析一次。
+    _editor_write_mode = _resolve_editor_write_mode(user_id)
 
     # 安全: 不再信前端任意传入的 save_id/script_id, 必须经过归属校验
     page_save_id = _validate_owned_save_id(user_id, (page_context or {}).get("save_id"))
@@ -177,7 +228,32 @@ def _run_llm_loop(
         if spec is None:
             return {"ok": False, "error": f"未知工具 {tool_name}"}
         call_id = _new_call_id()
-        if spec.destructive:
+        # 健壮性(确定性):弱模型(如 deepseek-v4-flash)调 update_script_chapter 常漏必填的
+        # chapter_index → 整个新剧本写作流「完全失效」(group 反馈)。当前正在编辑的就是某一章时,
+        # 从 page_context.open_chapter_index 补默认,不指望模型自觉填。
+        if tool_name == "update_script_chapter" and isinstance(arguments, dict) \
+                and arguments.get("chapter_index") in (None, ""):
+            _oci = (page_context or {}).get("open_chapter_index")
+            try:
+                if _oci is not None and str(_oci).strip() != "":
+                    arguments = dict(arguments)
+                    arguments["chapter_index"] = int(_oci)
+            except (TypeError, ValueError):
+                pass
+        # 三级权限(Q3,替代旧 P0 ad-hoc):编辑器写库工具按 editor.write_mode 走 ——
+        # read_only=只读不写(仅给建议)、review=写前二次确认(默认,已涵盖防注入静默写)、full_access=按原行为。
+        # 非 script-write(游戏管理类)保持原行为(仅 destructive 走确认)。
+        if tool_name in _SCRIPT_WRITE_TOOLS:
+            if _editor_write_mode == "read_only":
+                return {
+                    "ok": False, "error": "EDITOR_READ_ONLY",
+                    "result": ("当前为「只读模式」,本回合不写库。请把要改的内容写在回复里供用户手动应用,"
+                               "或让用户在编辑器把写入权限改为「审查后写」或「直接写」。"),
+                }
+            needs_confirm = spec.destructive or (_editor_write_mode != "full_access")
+        else:
+            needs_confirm = spec.destructive
+        if needs_confirm:
             args_for_pending = dict(arguments or {})
             # task 120 UX: 在确认弹窗里显示 title/turn, 不只是 save_id
             if tool_name == "delete_save":
@@ -196,6 +272,16 @@ def _run_llm_loop(
                 "script_id": page_script_id,
                 "description": spec.description,
             }
+            # 写库工具:算一份 before→after 改动预览,让作者落库前看清「到底改了什么」
+            # (章节给真·前后全文供前端 diff;结构化写给将写入的字段)。失败不阻断确认。
+            if tool_name in _SCRIPT_WRITE_TOOLS:
+                try:
+                    from console_assistant.write_preview import build_write_preview
+                    _pv = build_write_preview(tool_name, args_for_pending, user_id, page_script_id)
+                    if _pv:
+                        pending["preview"] = _pv
+                except Exception:
+                    pass
             conv["pending_confirmations"][call_id] = pending
             pending_for_this_turn.append(pending)
             return {
@@ -225,6 +311,25 @@ def _run_llm_loop(
             {"role": m["role"], "content": m["content"]} for m in extra_pending_note
         ]
         assistant_text_acc = ""
+        # UI 历史:记录本回合每个工具调用(名/参数/状态/结果),持久化进 conv["ui_turns"] →
+        # 刷新/超时后侧栏能还原工具折叠块(此前只存最终文本,工具调用全丢)。tool_call/result 无 call_id,
+        # 与前端同款 FIFO 配对。
+        ui_tools: list[dict[str, Any]] = []
+
+        def _mark_tool(ok: bool, result: Any, error: Any) -> None:
+            for _tc in ui_tools:
+                if _tc.get("status") == "running":
+                    _tc["status"] = "done" if ok else "error"
+                    _r = result
+                    if isinstance(_r, dict):
+                        try:
+                            _r = json.dumps(_r, ensure_ascii=False)
+                        except Exception:
+                            _r = str(_r)
+                    _tc["result"] = (str(_r)[:4000] if _r is not None else "")
+                    _tc["error"] = str(error or "")[:500]
+                    return
+
         for ev in backend.stream_with_mcp_loop(
             system=system_prompt,
             messages=messages_for_backend,
@@ -240,6 +345,7 @@ def _run_llm_loop(
                     assistant_text_acc += txt
                     yield _sse_event("token", {"text": txt})
             elif etype == "tool_call":
+                ui_tools.append({"tool": ev.get("tool"), "args": ev.get("arguments") or {}, "status": "running"})
                 yield _sse_event("tool_call", {
                     "tool": ev.get("tool"),
                     "args": ev.get("arguments") or {},
@@ -256,6 +362,7 @@ def _run_llm_loop(
                             "args": pend["args"],
                             "description": pend["description"],
                             "destructive": True,
+                            "preview": pend.get("preview"),
                         })
                     break
                 result_str = ev.get("result") or ""
@@ -309,12 +416,14 @@ def _run_llm_loop(
                         "value": _raw.get("value"),
                         "action_label": _raw.get("action_label"),
                     })
+                    _mark_tool(True, _raw.get("ack") or "ui action 已转发前端", None)
                     yield _sse_event("tool_result", {
                         "call_id": ev.get("_call_id") or _new_call_id(),
                         "ok": True,
                         "result": _raw.get("ack") or "ui action 已转发前端",
                     })
                     continue
+                _mark_tool(bool(ev.get("ok")), ev.get("result"), ev.get("error"))
                 yield _sse_event("tool_result", {
                     "call_id": ev.get("_call_id") or _new_call_id(),
                     "ok": bool(ev.get("ok")),
@@ -326,6 +435,12 @@ def _run_llm_loop(
         if assistant_text_acc:
             conv["messages"].append({"role": "assistant", "content": assistant_text_acc})
             _trim_messages(conv)
+        # UI 历史:落本回合 assistant 轮(文本 + 工具),供刷新还原。限长防膨胀。
+        if assistant_text_acc or ui_tools:
+            _ut = conv.setdefault("ui_turns", [])
+            _ut.append({"role": "assistant", "text": assistant_text_acc, "tools": ui_tools})
+            if len(_ut) > 120:
+                del _ut[: len(_ut) - 120]
         try:
             usage = getattr(backend, "last_usage", None) or {}
             in_tk = int(usage.get("input_tokens", 0) or 0)

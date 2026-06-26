@@ -25,6 +25,7 @@ from platform_app.db import connect, expose, init_db
 def delete_subtree(user_id: int, node_id: int) -> dict[str, Any]:
     init_db()
     runtime_payload: dict[str, Any] | None = None
+    activate: dict[str, Any] | None = None  # 推迟到锁/连接释放后再执行的 runtime 激活(防连接池死锁)
     with connect() as db:
         node = _commit_for_user(db, user_id, node_id)
         if not node:
@@ -35,7 +36,7 @@ def delete_subtree(user_id: int, node_id: int) -> dict[str, Any]:
         # 与回合提交 / autosave 同 key 的锁:删子树可能改 game_saves 活跃指针(active 被删时回退到
         # fallback),读 game_saves 之前取,防并发回合在我们读指针与写 fallback 之间提交被覆盖。
         acquire_save_advisory_lock(db, node["save_id"], user_id)
-        ids = collect_ids(db, node["id"])
+        ids = collect_ids(db, node["id"], save_id=node["save_id"])
         paths = [
             row["state_path"]
             for row in db.execute("select state_path from branch_commits where id = any(%s)", (ids,)).fetchall()
@@ -53,17 +54,29 @@ def delete_subtree(user_id: int, node_id: int) -> dict[str, Any]:
             ref = _upsert_ref(db, node["save_id"], MAIN_REF, fallback["id"], active=True)
             _set_save_active(db, node["save_id"], fallback["id"], ref["id"])
             _write_checkout(db, user_id, node["save_id"], ref["id"], fallback["id"])
-            runtime_payload = _runtime_module.activate_state_snapshot(
-                user_id,
-                node["save_id"],
-                fallback["id"],
-                commit_state(fallback),
-                fallback["state_path"],
-                ref_id=ref["id"],
-            )
+            # STABILITY(2026-06-14 CF 524 真因):activate_state_snapshot 会**另开一个 DB 连接**。
+            # 若在持有本事务连接 + advisory 锁时调用,高并发下「人人持 conn#1+锁、等 conn#2」会把
+            # PgBouncer 连接池拖入死锁 → worker 事件循环冻结 → 全站不响应。改为捕获参数、推迟到
+            # with 块外(锁与连接均已释放)再激活,与 rollback_to_message 的做法一致。
+            activate = {
+                "save_id": node["save_id"],
+                "commit_id": fallback["id"],
+                "state": commit_state(fallback),
+                "state_path": fallback["state_path"],
+                "ref_id": ref["id"],
+            }
         save_id = node["save_id"]
     for path in paths:
         _unlink_branch_state(path)
+    if activate:
+        runtime_payload = _runtime_module.activate_state_snapshot(
+            user_id,
+            activate["save_id"],
+            activate["commit_id"],
+            activate["state"],
+            activate["state_path"],
+            ref_id=activate["ref_id"],
+        )
     result = tree(user_id, save_id)
     if runtime_payload:
         result["runtime"] = runtime_payload

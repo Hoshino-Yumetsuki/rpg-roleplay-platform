@@ -105,6 +105,60 @@ class TestCredentialOverlaySync(unittest.TestCase):
         names = {m.get("real_name") or m.get("id") for m in overlay["deepseek"]}
         self.assertEqual(names, {"new-model-z"}, "应只剩新 key 同步来的模型，旧模型被移除")
 
+    # ── 深审新发现的两层(此前 10 次修复从未覆盖)─────────────────────────────
+    def test_set_credential_forces_refresh_on_autosync(self):
+        """换 key 自动同步必须 force_refresh=True。
+
+        否则会命中改 key 前「校验连接/拉取模型」刚写满的旧 key 60s 缓存,
+        把旧 key 的模型写进 overlay → 「换 key 后列表不刷新」(issue #22 后端根因)。
+        """
+        import model_probe
+        from platform_app import user_credentials
+        captured = {}
+        orig = model_probe.list_remote_models
+
+        def _spy(api_id, *a, **k):
+            captured["force_refresh"] = k.get("force_refresh")
+            return {"ok": True, "models": [{"id": "m1", "real_name": "m1"}]}
+
+        model_probe.list_remote_models = _spy
+        try:
+            user_credentials.set_credential(self.uid, "deepseek", "sk-new-key-xyz")
+        finally:
+            model_probe.list_remote_models = orig
+        self.assertIs(
+            captured.get("force_refresh"), True,
+            "set_credential 自动同步必须强制刷新,绝不能读旧 key 的缓存",
+        )
+
+    def test_set_credential_invalidates_stale_list_cache(self):
+        """换 key 后旧 key 的 _LIST_CACHE 条目必须被清,否则 /api/models/remote 60s 内仍返旧。"""
+        import model_probe
+        from platform_app import user_credentials
+        ck = f"{self.uid}::deepseek"
+        model_probe._LIST_CACHE[ck] = (9e18, [{"id": "old", "real_name": "old"}])
+        orig = model_probe.list_remote_models
+        model_probe.list_remote_models = lambda *a, **k: {
+            "ok": True, "models": [{"id": "new", "real_name": "new"}],
+        }
+        try:
+            user_credentials.set_credential(self.uid, "deepseek", "sk-new-key-xyz")
+        finally:
+            model_probe.list_remote_models = orig
+        self.assertNotIn(
+            ck, model_probe._LIST_CACHE,
+            "换 key 后旧 key 的远程模型缓存必须被失效",
+        )
+
+    def test_delete_credential_invalidates_list_cache(self):
+        """删 key 后 _LIST_CACHE 条目必须被清,否则删后「拉取远程模型」仍返已删 key 清单。"""
+        import model_probe
+        from platform_app import user_credentials
+        ck = f"{self.uid}::deepseek"
+        model_probe._LIST_CACHE[ck] = (9e18, [{"id": "old", "real_name": "old"}])
+        user_credentials.delete_credential(self.uid, "deepseek")
+        self.assertNotIn(ck, model_probe._LIST_CACHE, "删 key 后远程模型缓存必须被失效")
+
 
 if __name__ == "__main__":
     unittest.main()

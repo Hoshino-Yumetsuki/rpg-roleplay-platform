@@ -58,12 +58,22 @@ def replace_synced_models(user_id: int, api_id: str, models: list[dict[str, Any]
         rows.append(norm)
     init_db()
     with connect() as db:
+        # 保留用户已设的可见性:re-sync 前读旧 enabled-by-model,新清单里**沿用**用户的选择
+        # (否则每次同步都把用户隐藏的模型重新打开 → 用户「启用 provider 但只留几个模型」永远无效)。
+        prev: dict[str, bool] = {}
+        for er in db.execute(
+            "select model_id, enabled from user_model_entries where user_id = %s and api_id = %s",
+            (int(user_id), canonical),
+        ).fetchall() or []:
+            prev[er["model_id"]] = bool(er["enabled"])
         # 覆盖语义:先清该 (user, api_id) 旧 overlay,再写新清单
         db.execute(
             "delete from user_model_entries where user_id = %s and api_id = %s",
             (int(user_id), canonical),
         )
         for r in rows:
+            # 旧的若被用户隐藏(enabled=false)则保留隐藏;新模型沿用同步默认(通常 true)。
+            keep_enabled = prev.get(r["id"], r["enabled"])
             db.execute(
                 """
                 insert into user_model_entries
@@ -78,10 +88,33 @@ def replace_synced_models(user_id: int, api_id: str, models: list[dict[str, Any]
                 """,
                 (
                     int(user_id), canonical, r["id"], r["real_name"],
-                    r["display_name"], r["enabled"], Jsonb(r["capabilities"]),
+                    r["display_name"], keep_enabled, Jsonb(r["capabilities"]),
                 ),
             )
     return len(rows)
+
+
+def set_overlay_model_enabled(user_id: int, api_id: str, model: str, enabled: bool) -> int:
+    """设置该用户某同步模型(overlay)的可见性(enabled)。model 可传 model_id 或 real_name。
+
+    用户(含 admin)用此隐藏自己同步来的单个模型(如 openrouter 几百个里只留几个);
+    与全局 /api/models/visibility 不同 —— 那个写全局 model_entries,管不到 per-user overlay。
+    Returns: 受影响行数(0 = 该模型不在用户 overlay 里)。
+    """
+    if not user_id or not model:
+        return 0
+    canonical = normalize_api_id(api_id) or (api_id or "").strip()
+    if not canonical:
+        return 0
+    init_db()
+    with connect() as db:
+        rows = db.execute(
+            "update user_model_entries set enabled = %s, updated_at = now() "
+            "where user_id = %s and api_id = %s and (model_id = %s or real_name = %s) "
+            "returning model_id",
+            (bool(enabled), int(user_id), canonical, str(model), str(model)),
+        ).fetchall()
+    return len(rows or [])
 
 
 def load_overlay(user_id: int) -> dict[str, list[dict[str, Any]]]:
@@ -110,5 +143,8 @@ def load_overlay(user_id: int) -> dict[str, list[dict[str, Any]]]:
             "display_name": r["display_name"],
             "enabled": bool(r["enabled"]),
             "capabilities": list(r.get("capabilities") or ["text", "streaming"]),
+            # synced=True 标记「这是用户同步来的 overlay 模型」:前端据此把可见性 toggle 路由到
+            # per-user 端点(/api/me/models/visibility)而非全局端点。
+            "synced": True,
         })
     return by_api

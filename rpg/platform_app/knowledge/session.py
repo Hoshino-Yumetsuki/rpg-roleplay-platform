@@ -9,6 +9,7 @@ from platform_app.db import connect, expose, init_db
 from platform_app.knowledge._session_repo import _db_upsert_game_session
 from platform_app.knowledge._sync import _ensure_book
 from platform_app.knowledge._utils import _clean_text
+from platform_app.perms import owns_save
 
 log = get_logger(__name__)
 
@@ -16,12 +17,12 @@ log = get_logger(__name__)
 def _state_from_save(user_id: int, save_id: int) -> dict[str, Any]:
     init_db()
     with connect() as db:
+        if not owns_save(db, save_id, user_id):
+            raise ValueError("无权访问该存档")
         row = db.execute(
-            "select state_snapshot from game_saves where id = %s and user_id = %s",
-            (save_id, user_id),
+            "select state_snapshot from game_saves where id = %s",
+            (save_id,),
         ).fetchone()
-    if not row:
-        raise ValueError("无权访问该存档")
     state = row.get("state_snapshot") if isinstance(row, dict) else {}
     return state if isinstance(state, dict) else {}
 
@@ -132,14 +133,17 @@ def _sync_session_state(db, session: dict[str, Any], book_id: int, user_id: int,
 def ensure_game_session(user_id: int, save_id: int, state: dict[str, Any] | None = None) -> dict[str, Any]:
     init_db()
     with connect() as db:
+        # 归属判定收敛到 perms.owns_save;通过后再取联表数据(script_title/owner_id)。
+        if not owns_save(db, save_id, user_id):
+            raise ValueError("无权访问该存档")
         save = db.execute(
             """
             select game_saves.*, scripts.owner_id, scripts.title as script_title
             from game_saves
             join scripts on scripts.id = game_saves.script_id
-            where game_saves.id = %s and game_saves.user_id = %s
+            where game_saves.id = %s
             """,
-            (save_id, user_id),
+            (save_id,),
         ).fetchone()
         if not save:
             raise ValueError("无权访问该存档")
@@ -188,26 +192,45 @@ _CHINESE_NON_NAME_BLACKLIST: frozenset[str] = frozenset({
 })
 
 
-def _aggregate_characters_from_facts(script_id: int) -> dict[str, Any]:
+def _aggregate_characters_from_facts(script_id: int, *, chapter_max: int | None = None) -> dict[str, Any]:
     """从 chapter_facts.characters 纯聚合角色卡候选,不调 LLM。
 
     返回与 _load_characters() 兼容的 chars dict:
     {name: {name, identity, appearance, personality, speech_style,
-            secrets, sample_dialogue, priority, aliases}}
+            secrets, sample_dialogue, priority, aliases, first_revealed_chapter}}
     过滤 count < 2 的路人,取 top 50 by priority(总出场次数)。
+
+    chapter_max(进度感知角色卡 Phase 1A):仅聚合 chapter<=chapter_max 的章节,
+    并记每个角色「最早出现章节」当 first_revealed_chapter,透传给 _sync(防剧透章)。
+    None=全书(默认)。
 
     task 47: 加 _CHINESE_NON_NAME_BLACKLIST 过滤副词/连词/语气词等
     被 _rank_entities 误识别的"假人名"(如"不知道/起来/不过/这时候")。
     """
     out: dict[str, Any] = {}
+    cmax = int(chapter_max) if chapter_max is not None else None
     with connect() as db:
-        rows = db.execute(
-            "select characters from chapter_facts where script_id=%s and characters is not null",
-            (script_id,),
-        ).fetchall()
+        if cmax is not None:
+            rows = db.execute(
+                "select chapter, characters from chapter_facts "
+                "where script_id=%s and characters is not null and chapter <= %s "
+                "order by chapter asc",
+                (script_id, cmax),
+            ).fetchall()
+        else:
+            rows = db.execute(
+                "select chapter, characters from chapter_facts where script_id=%s and characters is not null "
+                "order by chapter asc",
+                (script_id,),
+            ).fetchall()
 
     for row in rows:
-        characters = row.get("characters") if isinstance(row, dict) else row[0]
+        if isinstance(row, dict):
+            chapter_num = row.get("chapter")
+            characters = row.get("characters")
+        else:
+            chapter_num = row[0]
+            characters = row[1]
         if not characters or not isinstance(characters, list):
             continue
         for ch in characters:
@@ -223,6 +246,10 @@ def _aggregate_characters_from_facts(script_id: int) -> dict[str, Any]:
             if any(c.isdigit() for c in name) or "/" in name or "." in name:
                 continue
             count = int(ch.get("count") or 1)
+            try:
+                cnum = int(chapter_num) if chapter_num is not None else 0
+            except (TypeError, ValueError):
+                cnum = 0
             if name not in out:
                 out[name] = {
                     "name": name,
@@ -235,9 +262,13 @@ def _aggregate_characters_from_facts(script_id: int) -> dict[str, Any]:
                     "sample_dialogue": [],
                     "priority": count,
                     "aliases": [],
+                    # 最早出现章节 = first_revealed_chapter(rows 已按 chapter asc,首见即最早)。
+                    "first_revealed_chapter": cnum if cnum > 0 else 0,
                 }
             else:
                 out[name]["priority"] += count
+                if cnum > 0 and (out[name].get("first_revealed_chapter") or 0) == 0:
+                    out[name]["first_revealed_chapter"] = cnum
 
     # task 47: 提高路人过滤门槛 — count<5 不要(原 <2 太宽松,2-3 字假名词容易达到)
     filtered = {name: card for name, card in out.items() if card["priority"] >= 5}

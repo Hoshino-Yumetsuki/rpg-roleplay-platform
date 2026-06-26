@@ -50,8 +50,9 @@ class SetCredentialValidatesProxy(unittest.TestCase):
         """proxy 做格式校验(scheme://host),但**不**调 _validate_base_url(那会拦 127.0.0.1,
         而本地梯子恰恰是 localhost)。"""
         self.assertIn("socks5", USER_CRED_PY)  # 允许 socks5 代理
-        # 找到 proxy 校验那段,确认它用的是格式正则,而不是 _validate_base_url(proxy)
-        self.assertRegex(USER_CRED_PY, r'proxy.*re\.match', )
+        # 找到 proxy 校验那段,确认它用的是格式正则,而不是 _validate_base_url(proxy)。
+        # 代码现写作 `re.match(r"...", proxy, ...)`(proxy 在 re.match 之后)→ 用此序匹配。
+        self.assertRegex(USER_CRED_PY, r're\.match\([^\n]*proxy')
         self.assertNotRegex(USER_CRED_PY, r'_validate_base_url\(\s*proxy\s*\)',
                             "不能对 proxy 调 _validate_base_url —— 会拦掉合法的本地 127.0.0.1 梯子。")
 

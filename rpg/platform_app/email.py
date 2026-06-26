@@ -396,3 +396,68 @@ def build_policy_notice_email(
         footer_html="如有疑问，请联系 support@stellatrix.icu。<br>For questions, contact support@stellatrix.icu.",
     )
     return subject, text, html
+
+
+def build_feedback_reply_email(
+    reply_text: str, feedback_preview: str = "", lang: str = "zh-CN"
+) -> tuple[str, str, str]:
+    """反馈回执邮件:把管理员对某条反馈的回复发给提交者(或留邮箱的本地版用户)。"""
+    is_zh = lang.lower().startswith("zh")
+    subject = (
+        "你的反馈有回复了 / We replied to your feedback"
+        if is_zh
+        else "We replied to your feedback — Stellatrix RPG"
+    )
+    preview = (feedback_preview or "").strip()
+    preview_short = preview[:160] + ("…" if len(preview) > 160 else "")
+    if is_zh:
+        text = (
+            "你好,\n\n你之前提交的反馈,我们处理后回复如下:\n\n"
+            f"{reply_text}\n\n"
+            + (f"——\n你的反馈:{preview_short}\n\n" if preview_short else "")
+            + "感谢你的反馈。\n\n---\n[EN] We replied to your feedback:\n" + reply_text
+        )
+        lead = "你之前提交的反馈,我们处理后回复如下。"
+    else:
+        text = (
+            "Hello,\n\nWe've reviewed your feedback and replied:\n\n"
+            f"{reply_text}\n\n"
+            + (f"--\nYour feedback: {preview_short}\n\n" if preview_short else "")
+            + "Thank you for the feedback."
+        )
+        lead = "We've reviewed the feedback you submitted and replied below."
+    main = f"""
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="sr-panel" style="width:100%;background:#1a1817;border:1px solid #36322d;border-radius:8px;">
+        <tr><td style="padding:18px;">
+          <div class="sr-text" style="color:#c8c2b7;font-size:15px;line-height:1.72;">{escape(reply_text).replace(chr(10), '<br>')}</div>
+        </td></tr>
+      </table>
+    """
+    secondary = (
+        f"""
+      <div style="height:16px;line-height:16px;">&nbsp;</div>
+      <div class="sr-muted" style="color:#968f85;font-size:13px;line-height:1.65;">
+        你的反馈:{escape(preview_short)}
+      </div>
+    """
+        if preview_short
+        else ""
+    )
+    html = _render_email(
+        preheader="你的反馈有回复了" if is_zh else "We replied to your feedback",
+        eyebrow="Feedback Reply",
+        title="你的反馈有回复了" if is_zh else "We replied to your feedback",
+        lead_html=lead,
+        main_html=main,
+        secondary_html=secondary,
+        footer_html="这封邮件因你在反馈时留下了邮箱而发送。<br>You received this because you left an email with your feedback.",
+    )
+    return subject, text, html
+
+
+def send_feedback_reply_email(
+    to: str, reply_text: str, feedback_preview: str = "", lang: str = "zh-CN"
+) -> None:
+    """发送反馈回执邮件。失败抛 EmailSendError,由调用方 catch+warn(同 auth.py 模式)。"""
+    subject, text, html = build_feedback_reply_email(reply_text, feedback_preview, lang)
+    _send_resend(to, subject, text, html)

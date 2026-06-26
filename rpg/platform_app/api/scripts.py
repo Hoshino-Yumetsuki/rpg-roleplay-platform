@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, Response
 
 from .. import knowledge, script_import
 from ..db import connect
+from ..perms import script_owned
 from ._deps import json_response, require_user
 
 _MAX_COVER_BYTES = 8 * 1024 * 1024  # 8 MB
@@ -255,9 +256,15 @@ async def api_script_chapters(
     """章节列表，支持 ?q=... 标题/内容全文 ILIKE 搜索。"""
     try:
         if q:
-            # 全文搜索分支
+            # 全文搜索分支 — 权限与非搜索路径一致:owner ∪ subscriber
             with connect() as db:
-                owned = db.execute("select 1 from scripts where id=%s and owner_id=%s", (script_id, user["id"])).fetchone()
+                owned = db.execute(
+                    """select 1 from scripts s where s.id = %s and (
+                         s.owner_id = %s
+                         or s.id in (select script_id from user_script_subscriptions where user_id = %s)
+                       )""",
+                    (script_id, user["id"], user["id"]),
+                ).fetchone()
                 if not owned:
                     return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
                 rows = db.execute(
@@ -308,7 +315,7 @@ async def api_script_timeline(script_id: int, user=Depends(require_user)):
         rows = db.execute(
             """
             select id, story_phase, story_time_label, chapter_min, chapter_max,
-                   chapter_count, sample_summary, confidence
+                   chapter_count, sample_summary, confidence, keywords, sample_title
             from script_timeline_anchors
             where script_id = %s
             order by chapter_min asc, id asc
@@ -328,6 +335,10 @@ async def api_script_timeline(script_id: int, user=Depends(require_user)):
             "chapter_count": r["chapter_count"],
             "sample_summary": r["sample_summary"],
             "confidence": float(r["confidence"] or 0),
+            # 编辑器锚点编辑需全字段回显,否则用户在「看似为空」的 keywords/sample_title 里输入
+            # 会静默覆盖 DB 真实值(审计 P0 数据丢失)。keywords 是 text[] → 原样返回数组。
+            "keywords": r["keywords"] or [],
+            "sample_title": r["sample_title"] or "",
         })
     phases = []
     for p, items in buckets.items():
@@ -362,6 +373,23 @@ async def api_script_birthpoints(script_id: int, user=Depends(require_user)):
         if not owned:
             return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
 
+        # 全部锚点(按章序)。真实锚点是唯一可靠数据源 —— phase_digests 的 chapter_min/max
+        # 在历史迁移后常与锚点的章号不在同一标尺(实测多剧本:phase 范围覆盖全书但锚点只落早章,
+        # 或 phase 用阶段序号当章号),strict containment 会让整段出生点空掉(用户「显示不出来」)。
+        all_anchors = db.execute(
+            """
+            select id, story_time_label, chapter_min, chapter_max, chapter_count, sample_summary
+            from script_timeline_anchors
+            where script_id = %s
+              and coalesce(source, 'novel') = 'novel'
+            order by chapter_min asc, id asc
+            """,
+            (script_id,),
+        ).fetchall()
+        if not all_anchors:
+            # 无锚点 → 前端走空态(从头开始),不渲染空的 phase 手风琴。
+            return json_response({"ok": True, "phases": []})
+
         phase_rows = db.execute(
             """
             select phase_label, chapter_min, chapter_max, chapter_count, summary
@@ -372,81 +400,77 @@ async def api_script_birthpoints(script_id: int, user=Depends(require_user)):
             (script_id,),
         ).fetchall()
 
-        # phase_digests 空时 fallback:把 script_timeline_anchors 按章节分 5 段
-        # (开端/发展前期/发展中期/发展后期/结局),每段渲染成一个 phase。
-        # 否则 wizard 出生点选择面板永远显示"暂无出生点锚点"。
-        if not phase_rows:
-            anchor_chapter_min_max = db.execute(
-                """
-                select coalesce(min(chapter_min), 1) as chmin,
-                       coalesce(max(chapter_max), 1) as chmax,
-                       count(*) as n
-                from script_timeline_anchors where script_id = %s
-                """,
-                (script_id,),
-            ).fetchone()
-            n = int((anchor_chapter_min_max or {}).get("n") or 0)
-            if n > 0:
-                chmin = int(anchor_chapter_min_max["chmin"])
-                chmax = int(anchor_chapter_min_max["chmax"])
-                span = max(1, chmax - chmin + 1)
-                seg = max(1, span // 5)
-                phase_labels = ["开端", "发展前期", "发展中期", "发展后期", "结局"]
-                phase_rows = []
-                for i, label in enumerate(phase_labels):
-                    lo = chmin + i * seg
-                    hi = chmin + (i + 1) * seg - 1 if i < 4 else chmax
-                    phase_rows.append({
-                        "phase_label": label,
-                        "chapter_min": lo,
-                        "chapter_max": hi,
-                        "chapter_count": hi - lo + 1,
-                        "summary": "",
-                    })
-
-        phases = []
-        for pr in phase_rows:
-            anchor_rows = db.execute(
-                """
-                select id, story_time_label, chapter_min, chapter_max, chapter_count, sample_summary
-                from script_timeline_anchors
-                where script_id = %s
-                  and chapter_min >= %s
-                  and chapter_max <= %s
-                order by chapter_min asc
-                """,
-                (script_id, int(pr["chapter_min"]), int(pr["chapter_max"])),
-            ).fetchall()
-
-            # 均匀采样：≤15 全取，否则步长 round(N/12)
-            n = len(anchor_rows)
+        def _sample(rows):
+            # ≤15 全取，否则步长 round(N/12) 均匀采样 + 末尾兜底
+            n = len(rows)
             if n <= 15:
-                sampled = anchor_rows
-            else:
-                step = max(1, round(n / 12))
-                sampled = anchor_rows[::step]
-                # 确保末尾 anchor 也包含（代表 phase 尾部）
-                if anchor_rows[-1] not in sampled:
-                    sampled = list(sampled) + [anchor_rows[-1]]
+                return list(rows)
+            step = max(1, round(n / 12))
+            s = list(rows[::step])
+            if rows[-1] not in s:
+                s.append(rows[-1])
+            return s
 
-            phases.append({
-                "phase_label": pr["phase_label"],
-                "chapter_min": int(pr["chapter_min"]),
-                "chapter_max": int(pr["chapter_max"]),
-                "chapter_count": int(pr["chapter_count"]),
-                "summary": pr["summary"] or "",
-                "anchors": [
+        def _dto(ar):
+            return {
+                "anchor_id": int(ar["id"]),
+                "story_time_label": ar["story_time_label"],
+                "chapter_min": int(ar["chapter_min"]),
+                "chapter_max": int(ar["chapter_max"]),
+                "chapter_count": int(ar["chapter_count"]),
+                "sample_summary": ar["sample_summary"] or "",
+            }
+
+        # 优先:phase_digests 与锚点「完全对齐」(所有锚点都按重叠落进某段 + 每段非空)
+        # 才用富 phase 信息(真实 arc 标签/章号/摘要)。
+        phases = None
+        if phase_rows:
+            buckets = [[] for _ in phase_rows]
+            unassigned = 0
+            for a in all_anchors:
+                amin, amax = int(a["chapter_min"]), int(a["chapter_max"])
+                hit = next(
+                    (i for i, pr in enumerate(phase_rows)
+                     if amin <= int(pr["chapter_max"]) and amax >= int(pr["chapter_min"])),
+                    None,
+                )
+                if hit is None:
+                    unassigned += 1
+                else:
+                    buckets[hit].append(a)
+            if unassigned == 0 and all(buckets):
+                phases = [
                     {
-                        "anchor_id": int(ar["id"]),
-                        "story_time_label": ar["story_time_label"],
-                        "chapter_min": int(ar["chapter_min"]),
-                        "chapter_max": int(ar["chapter_max"]),
-                        "chapter_count": int(ar["chapter_count"]),
-                        "sample_summary": ar["sample_summary"] or "",
+                        "phase_label": pr["phase_label"],
+                        "chapter_min": int(pr["chapter_min"]),
+                        "chapter_max": int(pr["chapter_max"]),
+                        "chapter_count": int(pr["chapter_count"]),
+                        "summary": pr["summary"] or "",
+                        "anchors": [_dto(ar) for ar in _sample(buckets[i])],
                     }
-                    for ar in sampled
-                ],
-            })
+                    for i, pr in enumerate(phase_rows)
+                ]
+
+        # 否则(phase_digests 缺失 / 与锚点章号错位)→ 直接把真实锚点按序均分成 N 段,
+        # 沿用 arc 标签命名,每段章号取该段锚点的真实首尾 —— 保证每段都有真实锚点、绝不空。
+        if phases is None:
+            labels = [pr["phase_label"] for pr in phase_rows] if phase_rows else \
+                ["开端", "发展前期", "发展中期", "发展后期", "结局"]
+            n_seg = max(1, len(labels))
+            total = len(all_anchors)
+            phases = []
+            for i in range(n_seg):
+                seg = all_anchors[(total * i) // n_seg:(total * (i + 1)) // n_seg]
+                if not seg:
+                    continue
+                phases.append({
+                    "phase_label": labels[i] if i < len(labels) else f"阶段 {i + 1}",
+                    "chapter_min": int(seg[0]["chapter_min"]),
+                    "chapter_max": int(seg[-1]["chapter_max"]),
+                    "chapter_count": int(seg[-1]["chapter_max"]) - int(seg[0]["chapter_min"]) + 1,
+                    "summary": "",
+                    "anchors": [_dto(ar) for ar in _sample(seg)],
+                })
 
     return json_response({"ok": True, "phases": phases})
 
@@ -551,6 +575,19 @@ async def api_script_upsert_character_card(request: Request, script_id: int, use
         return json_response({"ok": True, "card": knowledge.upsert_character_card(user["id"], script_id, body)})
     except ValueError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
+    except Exception as exc:
+        # 兜底:改名撞同名等唯一约束冲突(罕见竞态/其它路径)别冒成 500「保存没反应」,
+        # 转成可行动 400。upsert 内 with connect() 已回滚,连接干净归还。
+        try:
+            from psycopg.errors import UniqueViolation
+            if isinstance(exc, UniqueViolation):
+                return json_response(
+                    {"ok": False, "error": "该剧本已存在同名 NPC 角色卡,请改用不同的名字"},
+                    status_code=400,
+                )
+        except Exception:
+            pass
+        raise
 
 
 @router.post("/api/scripts/{script_id}/character-cards/{card_id}/delete")
@@ -600,8 +637,9 @@ async def api_audit_character_cards(request: Request, script_id: int, user=Depen
     model = str(body.get("model") or body.get("model_real_name") or "").strip()
     from platform_app import import_pipeline
     try:
-        from platform_app.knowledge.card_audit import audit_character_cards
-        return json_response({"ok": True, **audit_character_cards(user["id"], script_id, api_id, model)})
+        # 异步:进 import_jobs → 全局后台任务浮窗跟踪,前端可关弹窗/离开页面;完成后读回摘要。
+        from platform_app.knowledge.card_audit import schedule_card_audit
+        return json_response({"ok": True, **schedule_card_audit(user["id"], script_id, api_id, model)})
     except import_pipeline.MissingUserCredentialError as exc:
         return json_response({
             "ok": False, "code": "credentials_required", "needs_credentials": True,
@@ -613,14 +651,79 @@ async def api_audit_character_cards(request: Request, script_id: int, user=Depen
 
 
 @router.get("/api/scripts/{script_id}/worldbook")
-async def api_script_worldbook(script_id: int, limit: int | None = None, cursor: str | None = None, user=Depends(require_user)):
+async def api_script_worldbook(script_id: int, limit: int | None = None, cursor: str | None = None, fetch_all: bool = False, user=Depends(require_user)):
+    # fetch_all=true:编辑器一次性全量加载(绕开游标分页漏条);否则走默认游标分页。
     try:
-        return json_response({"ok": True, **knowledge.list_worldbook_entries(user["id"], script_id, limit, cursor)})
+        return json_response({"ok": True, **knowledge.list_worldbook_entries(
+            user["id"], script_id, limit, cursor, fetch_all=fetch_all)})
     except ValueError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
-@router.get("/api/scripts/{script_id}/chapters/{chapter_index}")
+# canon 实体列表(MD 编辑器按类型拉取)。鉴权 owner 或 subscriber(只读),与 GET worldbook
+# 的访问模型一致;分页/返回沿用 page_payload(items + page.{limit,next_cursor,has_more})。
+_CANON_LIST_COLS = (
+    "id, logical_key, name, full_name, type, entity_subtype, parent_logical_key, "
+    "summary, identity, background, aliases, attrs, "
+    "first_revealed_chapter, public_knowledge, importance, created_at"
+)
+
+
+@router.get("/api/scripts/{script_id}/canon-entities")
+async def api_script_canon_entities(
+    script_id: int, limit: int | None = None, cursor: str | None = None, user=Depends(require_user)
+):
+    """列出 canon 实体全字段(分页),供 MD 编辑器按实体类型拉取。owner 或 subscriber 可读。"""
+    from ..db import cursor_id, limit_value, page_payload
+    page_limit = limit_value(limit)
+    before_id = cursor_id(cursor)
+    with connect() as db:
+        owned = db.execute(
+            """select 1 from scripts s
+            where s.id = %s and (
+              s.owner_id = %s
+              or s.id in (select script_id from user_script_subscriptions where user_id = %s)
+            )""",
+            (script_id, user["id"], user["id"]),
+        ).fetchone()
+        if not owned:
+            return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+        rows = db.execute(
+            f"""
+            select {_CANON_LIST_COLS} from kb_canon_entities
+            where script_id = %s and (%s::bigint is null or id < %s)
+            order by importance desc, id desc
+            limit %s
+            """,
+            (script_id, before_id, before_id, page_limit + 1),
+        ).fetchall()
+    return json_response({"ok": True, **page_payload([dict(r) for r in rows], page_limit)})
+
+
+@router.get("/api/scripts/{script_id}/canon-entities/{logical_key}")
+async def api_script_canon_entity(script_id: int, logical_key: str, user=Depends(require_user)):
+    """单个 canon 实体全字段。owner 或 subscriber 可读。"""
+    with connect() as db:
+        owned = db.execute(
+            """select 1 from scripts s
+            where s.id = %s and (
+              s.owner_id = %s
+              or s.id in (select script_id from user_script_subscriptions where user_id = %s)
+            )""",
+            (script_id, user["id"], user["id"]),
+        ).fetchone()
+        if not owned:
+            return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
+        row = db.execute(
+            f"select {_CANON_LIST_COLS} from kb_canon_entities where script_id = %s and logical_key = %s",
+            (script_id, logical_key),
+        ).fetchone()
+    if not row:
+        return json_response({"ok": False, "error": "canon entity 不存在"}, status_code=404)
+    return json_response({"ok": True, "entity": dict(row)})
+
+
+@router.get("/api/scripts/{script_id}/chapters/{chapter_index:int}")
 async def api_chapter_detail(script_id: int, chapter_index: int, user=Depends(require_user)):
     """单章节完整 content(列表 API 只返 180 字符 preview,这里是 lazy fetch 真章节正文)。"""
     with connect() as db:
@@ -649,7 +752,7 @@ async def api_chapter_detail(script_id: int, chapter_index: int, user=Depends(re
     return json_response({"ok": True, "chapter": _expose(row)})
 
 
-@router.post("/api/scripts/{script_id}/chapters/{chapter_index}")
+@router.post("/api/scripts/{script_id}/chapters/{chapter_index:int}")
 async def api_chapter_update(request: Request, script_id: int, chapter_index: int, user=Depends(require_user)):
     """编辑单章 title/content/volume_title。"""
     body = await request.json()
@@ -663,20 +766,69 @@ async def api_chapter_update(request: Request, script_id: int, chapter_index: in
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
+@router.post("/api/scripts/blank")
+async def api_create_blank_script(request: Request, user=Depends(require_user)):
+    """作者优先:从零新建空白剧本(含第1章空章),供作者直接写、用选区提取边写边建 KB。返回 script_id。"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        return json_response(script_import.create_blank_script(user["id"], (body or {}).get("title") or ""))
+    except ValueError as exc:
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@router.post("/api/scripts/{script_id}/add-chapter")
+async def api_add_chapter(request: Request, script_id: int, user=Depends(require_user)):
+    """作者优先:给剧本追加一个空白新章(owner 闸)。返回 chapter_index。
+    路径用 add-chapter 而非 chapters/new,避免与 /chapters/{chapter_index:int} 冲突。"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        return json_response(script_import.create_chapter(user["id"], script_id, (body or {}).get("title") or ""))
+    except ValueError as exc:
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+
+
 @router.post("/api/scripts/{script_id}/chapters/merge")
 async def api_chapter_merge(request: Request, script_id: int, user=Depends(require_user)):
-    """合并 first_index 和 first_index+1 两章。"""
+    """合并 first_index 与其相邻下一章(second_index 显式指定,缺省取按序的下一章)。"""
     body = await request.json()
     try:
+        _second = body.get("second_index")
+        _keep = body.get("keep_title_index")
         return json_response(script_import.merge_chapters(
             user["id"], script_id, int(body.get("first_index") or 0),
+            second_index=(int(_second) if _second is not None else None),
+            keep_title_index=(int(_keep) if _keep is not None else None),
             separator=body.get("separator") or "\n\n",
         ))
     except ValueError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=400)
 
 
-@router.post("/api/scripts/{script_id}/chapters/{chapter_index}/split")
+@router.post("/api/scripts/{script_id}/chapters/delete")
+async def api_chapters_delete(request: Request, script_id: int, user=Depends(require_user)):
+    """删除一批章节并整本重排(body: {indexes:[...]} 或 {chapter_index:n})。
+
+    结构操作:RAG(按 chapter_index 的外键)与 merge/split 一致,需重新提取才能完全对齐。
+    """
+    body = await request.json()
+    idxs = body.get("indexes")
+    if idxs is None and body.get("chapter_index") is not None:
+        idxs = [body.get("chapter_index")]
+    try:
+        return json_response(script_import.delete_chapters(
+            user["id"], script_id, [int(i) for i in (idxs or [])],
+        ))
+    except (ValueError, TypeError) as exc:
+        return json_response({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@router.post("/api/scripts/{script_id}/chapters/{chapter_index:int}/split")
 async def api_chapter_split(request: Request, script_id: int, chapter_index: int, user=Depends(require_user)):
     """按字符位置 split_at 把一章拆成两章。"""
     body = await request.json()
@@ -739,10 +891,8 @@ async def api_set_script_cover_url(request: Request, script_id: int, user=Depend
             "select 1 from scripts where id = %s and owner_id = %s",
             (script_id, user_id),
         ).fetchone()
-    if not owned:
-        return json_response({"ok": False, "error": "无权操作该剧本"}, status_code=403)
-
-    with connect() as db:
+        if not owned:
+            return json_response({"ok": False, "error": "无权操作该剧本"}, status_code=403)
         db.execute(
             "update scripts set cover_image_url = %s where id = %s and owner_id = %s",
             (safe_url, script_id, user_id),
@@ -753,9 +903,8 @@ async def api_set_script_cover_url(request: Request, script_id: int, user=Depend
 # ── NPC 角色卡头像（剧本所有者管；NPC 卡 user_id=NULL，挂 script_id，故 owner 走 scripts.owner_id）──
 
 def _require_script_owner(db, script_id: int, user_id: int) -> bool:
-    return bool(db.execute(
-        "select 1 from scripts where id = %s and owner_id = %s", (script_id, user_id),
-    ).fetchone())
+    # 严格 owner SQL 收敛到 perms.script_owned(唯一来源,签名统一 db,script_id,user_id)。
+    return bool(script_owned(db, script_id, user_id))
 
 
 @router.post("/api/scripts/{script_id}/character-cards/{card_id}/avatar-url")
@@ -886,6 +1035,29 @@ async def api_script_delete(request: Request, script_id: int, user=Depends(requi
         return json_response(script_import.delete_script(user["id"], script_id, force=bool(body.get("force"))))
     except ValueError as exc:
         return json_response({"ok": False, "error": str(exc)}, status_code=403)
+
+
+@router.post("/api/scripts/{script_id}/rename")
+async def api_script_rename(request: Request, script_id: int, user=Depends(require_user)):
+    """重命名剧本(改 scripts.title)。严格 owner;订阅剧本只读(403)。"""
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    title = str(body.get("title") or "").strip()
+    if not title:
+        return json_response({"ok": False, "error": "标题不能为空"}, status_code=400)
+    from ..db import connect as _connect
+    with _connect() as db:
+        row = db.execute(
+            "update scripts set title=%s, updated_at=now() where id=%s and owner_id=%s returning id, title",
+            (title[:200], script_id, user["id"]),
+        ).fetchone()
+        if not row:
+            return json_response({"ok": False, "error": "仅原作者可重命名该剧本(订阅剧本只读;如需改动请先 fork)"}, status_code=403)
+        db.commit()
+    return json_response({"ok": True, "id": row["id"], "title": row["title"]})
 
 
 @router.post("/api/scripts/preview")
@@ -1276,11 +1448,14 @@ async def api_fork_public_script(script_id: int, user=Depends(require_user)):
 
 @router.get("/api/scripts/{script_id}/overrides")
 async def api_get_script_overrides(script_id: int, user=Depends(require_user)):
-    """查询剧本 overrides（能访问该 script 的用户均可读）。"""
+    """查询剧本 overrides（能访问该 script 的用户均可读:owner ∪ subscriber）。"""
     with connect() as db:
         owned = db.execute(
-            "SELECT 1 FROM scripts WHERE id = %s AND owner_id = %s",
-            (script_id, user["id"]),
+            """SELECT 1 FROM scripts s WHERE s.id = %s AND (
+                 s.owner_id = %s
+                 OR s.id IN (SELECT script_id FROM user_script_subscriptions WHERE user_id = %s)
+               )""",
+            (script_id, user["id"], user["id"]),
         ).fetchone()
     if not owned:
         return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
@@ -1372,16 +1547,19 @@ async def api_set_script_gm_style(request: Request, script_id: int, user=Depends
 
 # ── Phase E: 可视化复核(只读图 + god 编辑)─────────────────────────────────
 def _owned_script(db, script_id: int, user_id: int):
-    return db.execute(
-        "select id, title, import_report, review_status, reviewed_at "
-        "from scripts where id=%s and owner_id=%s",
-        (script_id, user_id),
-    ).fetchone()
+    # 严格 owner SQL 收敛到 perms.script_owned;返回 select * 整行(含
+    # id/title/import_report/review_status/reviewed_at 等下游用到的列,为原版超集)。
+    return script_owned(db, script_id, user_id)
 
 
 @router.get("/api/scripts/{script_id}/graph")
 async def api_script_graph(script_id: int, user=Depends(require_user)):
-    """Phase E.1 复核图:规范实体 + 世界线 DAG + 时间线 + 摄入质量 flag。"""
+    """Phase E.1 复核图:规范实体 + 世界线 DAG + 时间线 + 摄入质量 flag。
+
+    保持 owner-only:响应包含 import_report(extraction quality review 元数据,
+    含 needs_review/author_notes/weird_titles/gaps/cleaning)和 review_status,
+    是编辑工作流专属字段,不对订阅者开放。
+    """
     with connect() as db:
         s = _owned_script(db, script_id, user["id"])
         if not s:
@@ -1439,13 +1617,13 @@ async def api_patch_canon(request: Request, script_id: int, user=Depends(require
       {"op": "merge_entity", "from_key": "...", "into_key": "..."}  # from 的别名并入 into,删 from
       {"op": "delete_entity", "logical_key": "..."}
     """
+    try:
+        body = await request.json()
+    except Exception:
+        return json_response({"ok": False, "error": "body 必须是合法 JSON"}, status_code=400)
     with connect() as db:
         if not _owned_script(db, script_id, user["id"]):
             return json_response({"ok": False, "error": "无权访问该剧本"}, status_code=403)
-        try:
-            body = await request.json()
-        except Exception:
-            return json_response({"ok": False, "error": "body 必须是合法 JSON"}, status_code=400)
         op = (body.get("op") or "").strip()
         if op == "update_entity":
             lk = (body.get("logical_key") or "").strip()
@@ -1477,19 +1655,27 @@ async def api_patch_canon(request: Request, script_id: int, user=Depends(require
             if not frm or not into:
                 return json_response({"ok": False, "error": "缺 from_key/into_key"}, status_code=400)
             src = db.execute("select name, aliases from kb_canon_entities where script_id=%s and logical_key=%s", (script_id, frm)).fetchone()
-            if src:
-                from psycopg.types.json import Jsonb
-                merged_aliases = list({*(src.get("aliases") or []), src["name"]})
-                db.execute(
-                    "update kb_canon_entities set aliases = (select to_jsonb(array(select distinct e from unnest("
-                    "  array(select jsonb_array_elements_text(coalesce(aliases,'[]'::jsonb))) || %s::text[]) e))) "
-                    "where script_id=%s and logical_key=%s",
-                    (merged_aliases, script_id, into),
-                )
-                db.execute("delete from kb_canon_entities where script_id=%s and logical_key=%s", (script_id, frm))
-            return json_response({"ok": True, "merged": bool(src)})
+            if not src:
+                return json_response({"ok": False, "error": f"from_key 不存在: {frm}"}, status_code=404)
+            dst = db.execute("select 1 from kb_canon_entities where script_id=%s and logical_key=%s", (script_id, into)).fetchone()
+            if not dst:
+                return json_response({"ok": False, "error": f"into_key 不存在: {into}"}, status_code=400)
+            from psycopg.types.json import Jsonb
+            merged_aliases = list({*(src.get("aliases") or []), src["name"]})
+            updated = db.execute(
+                "update kb_canon_entities set aliases = (select to_jsonb(array(select distinct e from unnest("
+                "  array(select jsonb_array_elements_text(coalesce(aliases,'[]'::jsonb))) || %s::text[]) e))) "
+                "where script_id=%s and logical_key=%s",
+                (merged_aliases, script_id, into),
+            ).rowcount
+            if updated == 0:
+                return json_response({"ok": False, "error": "into_key 更新失败,未执行 DELETE"}, status_code=500)
+            db.execute("delete from kb_canon_entities where script_id=%s and logical_key=%s", (script_id, frm))
+            return json_response({"ok": True, "merged": True})
         if op == "delete_entity":
             lk = (body.get("logical_key") or "").strip()
+            if not lk:
+                return json_response({"ok": False, "error": "缺 logical_key"}, status_code=400)
             n = db.execute("delete from kb_canon_entities where script_id=%s and logical_key=%s", (script_id, lk)).rowcount
             return json_response({"ok": True, "deleted": n})
         return json_response({"ok": False, "error": f"未知 op: {op}"}, status_code=400)

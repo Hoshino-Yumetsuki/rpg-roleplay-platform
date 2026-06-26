@@ -176,12 +176,17 @@ async def redis_listener() -> None:
         client = None
         pubsub = None
         try:
-            client = aioredis.from_url(url, decode_responses=True)
+            client = aioredis.from_url(url, decode_responses=True, health_check_interval=30)
             pubsub = client.pubsub()
             await pubsub.subscribe(redis_bus.EVENT_CHANNEL)
             _log.info("[state_event_bus] redis listener subscribed channel=%s", redis_bus.EVENT_CHANNEL)
-            async for msg in pubsub.listen():
-                if msg.get("type") != "message":
+            while True:
+                # 用 get_message(timeout) 轮询而非 listen():空闲频道上 get_message 返回 None(不报错),
+                # 而 listen() 会每隔 redis-py 默认 socket 读超时就抛 "Timeout reading from ...:6379" →
+                # 旧实现据此每 3s 关连接重连(churn:刷屏日志 + 重连窗口内 publish 的跨进程事件丢失)。
+                # 现在只有真断线才抛 → 落到外层 except 重连;空闲不再误判为故障。
+                msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                if msg is None or msg.get("type") != "message":
                     continue
                 try:
                     d = json.loads(msg["data"])

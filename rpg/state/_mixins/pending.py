@@ -134,8 +134,12 @@ class PendingMixin:
         cur = int(current_turn if current_turn is not None else self.data.get("turn", 0) or 0)
         keep: list[dict] = []
         expired: list[dict] = []
-        # 哪些 source 算系统询问 → 新一轮自动过期
-        system_sources = ("gm", "rules_engine", "curator", "curator:clarify", "extractor", "set_parser")
+        # 哪些 source 算系统询问 → 新一轮自动过期。
+        # 反馈#61:GM 主询问(ask_player_choice)用 source="agent:choice"、锚点用 "gm_generated"、
+        # 配置卡用 "agent:config_card" —— 它们都【不】匹配旧列表的 "gm" → 上轮未答的 GM 询问
+        # 不被过期、与本轮新询问同时挂(玩家自行输入走向后「第一轮+第二轮询问」并存)。补全。
+        system_sources = ("gm", "gm_generated", "agent", "rules_engine", "curator",
+                          "curator:clarify", "extractor", "set_parser")
         for q in questions:
             q_turn = int(q.get("turn") or 0)
             q_source = str(q.get("source") or "")

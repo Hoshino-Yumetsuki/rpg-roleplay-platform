@@ -29,7 +29,9 @@ from .api import (
     json_response,
     require_user,
 )
-from .db import connect, init_db
+from .api._deps import is_admin
+from .db import connect, expose, init_db
+from .perms import owns_save
 from .security import hash_password, verify_password
 
 router = APIRouter()
@@ -231,7 +233,15 @@ async def api_upload_avatar(request: Request):
     data = await f.read()
     if len(data) > 2 * 1024 * 1024:
         return _bad("文件超过 2 MB")
-    safe_name = f"u{user['id']}_{int(time.time())}{ext}"
+    # 魔数校验:不信客户端文件名扩展名,以真实图片字节为准(与角色卡/人设图/卡导入
+    # 三处上传一致,见 api/me.py:_detect_image_mime)。伪造扩展名的非图片 → 400,
+    # 落盘扩展名取检测结果(防止任意字节伪装成 .png 进头像图床并以 image/* 回发)。
+    from .api.me import _detect_image_mime
+    try:
+        _mime, _detected_ext = _detect_image_mime(data)
+    except ValueError as exc:
+        return _bad(str(exc))
+    safe_name = f"u{user['id']}_{int(time.time())}.{_detected_ext}"
     # 落盘走 storage.store_bytes（统一根 AVATARS_DIR）
     _storage_key, _new_url = _storage_store_bytes(data, kind="avatars", filename=safe_name)
     # 对外 URL 仍用旧路径保持向后兼容，前端老 URL 不破
@@ -245,11 +255,6 @@ async def api_upload_avatar(request: Request):
     # 登记 user_assets（失败只 log，不影响上传主流程）
     try:
         from platform_app.assets_registry import register_asset  # lazy import
-        _mime = (
-            "image/png" if ext == ".png"
-            else "image/jpeg" if ext in {".jpg", ".jpeg"}
-            else "image/webp"
-        )
         register_asset(
             user_id=int(user["id"]),
             kind="avatar",
@@ -642,11 +647,7 @@ async def api_save_delete(save_id: int, request: Request):
     user = require_user(request)
     init_db()
     with connect() as db:
-        owned = db.execute(
-            "select 1 from game_saves where id = %s and user_id = %s",
-            (save_id, user["id"]),
-        ).fetchone()
-        if not owned:
+        if not owns_save(db, save_id, user["id"]):
             return _bad("无权操作该存档", 403)
         db.execute("delete from game_saves where id = %s and user_id = %s", (save_id, user["id"]))
     return json_response({"ok": True})
@@ -661,11 +662,7 @@ async def api_save_rename(save_id: int, request: Request):
         return _bad("标题不能为空")
     init_db()
     with connect() as db:
-        owned = db.execute(
-            "select 1 from game_saves where id = %s and user_id = %s",
-            (save_id, user["id"]),
-        ).fetchone()
-        if not owned:
+        if not owns_save(db, save_id, user["id"]):
             return _bad("无权操作该存档", 403)
         db.execute(
             "update game_saves set title = %s, updated_at = now() where id = %s",
@@ -704,9 +701,12 @@ async def api_save_export(save_id: int, request: Request):
     user = require_user(request)
     init_db()
     with connect() as db:
+        # 归属判定收敛到 perms.owns_save;不属返 404(沿用原契约,不暴露存在性)。
+        if not owns_save(db, save_id, user["id"]):
+            raise HTTPException(404)
         row = db.execute(
-            "select id, title, state_snapshot, created_at, updated_at from game_saves where id = %s and user_id = %s",
-            (save_id, user["id"]),
+            "select id, title, state_snapshot, created_at, updated_at from game_saves where id = %s",
+            (save_id,),
         ).fetchone()
     if not row:
         raise HTTPException(404)
@@ -735,10 +735,19 @@ async def api_card_import_json(request: Request):
     raw = body.get("json") or ""
     try:
         data = json.loads(raw) if isinstance(raw, str) else raw
-    except Exception:
-        return _bad("JSON 解析失败")
+    except Exception as e:
+        return _bad(f"JSON 解析失败：{e}")
     # Accept a variety of shapes (SillyTavern v1/v2 etc.)
+    # 解包常见的外层包装（如 {"ok":true,"card":{...}}）
+    if isinstance(data, dict) and not data.get("name") and not data.get("char_name"):
+        for key in ("card", "character", "chara_card"):
+            inner = data.get(key)
+            if isinstance(inner, dict) and (inner.get("name") or inner.get("data", {}).get("name")):
+                data = inner
+                break
     name = data.get("name") or data.get("char_name") or ""
+    if not name and isinstance(data.get("data"), dict):
+        name = data["data"].get("name") or ""
     if not name:
         return _bad("缺少 name 字段")
     from . import user_cards as _uc
@@ -765,7 +774,7 @@ async def api_models_visibility(request: Request):
     """
     # 全局模型目录写操作:与同级 /api/models/* 一致,须管理员(CWE-862)。
     user = require_user(request)
-    if user.get("role") != "admin":
+    if not is_admin(user):
         return _bad("需要管理员权限", status=403)
     body = await request.json() or {}
     api_id = body.get("api_id") or body.get("api")
@@ -788,6 +797,29 @@ async def api_models_visibility(request: Request):
     # upsert_model merges into catalog and calls save_model_catalog (writes DB + JSON)
     upsert_model(api_id, {**model_entry, "enabled": bool(visible)})
     return json_response({"ok": True})
+
+
+@router.post("/api/me/models/visibility")
+async def api_me_models_visibility(request: Request):
+    """每用户:隐藏/显示自己【同步来的】单个模型(user_model_entries.enabled)。
+
+    与上面 /api/models/visibility(admin、写全局 model_entries)不同 —— 这个任何用户都能调,
+    只动自己的 overlay。用户「启用某 provider(如 openrouter)但只想留几个模型」靠这个,
+    且 set 后下次 remote/sync 不会被重置(见 user_models.replace_synced_models 的 prev 保留)。
+    body: {api_id, model(=model_id 或 real_name), visible: bool}
+    """
+    user = require_user(request)
+    body = await request.json() or {}
+    api_id = body.get("api_id") or body.get("api")
+    model = body.get("model") or body.get("real_name") or body.get("model_id")
+    visible = body.get("visible")
+    if not api_id or model is None or visible is None:
+        return _bad("缺少参数")
+    from platform_app.user_models import set_overlay_model_enabled
+    n = set_overlay_model_enabled(user["id"], api_id, model, bool(visible))
+    if not n:
+        return _bad("该模型不在你的同步清单里(只能隐藏你自己同步来的模型)", status=404)
+    return json_response({"ok": True, "updated": n})
 
 
 @router.post("/api/models/validate")
@@ -1039,7 +1071,7 @@ async def api_admin_smtp_test(request: Request):
     现在 SMTP 配置还存在 user_preferences 待规范化阶段，先给清晰的占位错误。
     """
     user = require_user(request)
-    if user.get("role") != "admin":
+    if not is_admin(user):
         return json_response({"ok": False, "error": "需要管理员权限"}, status_code=403)
     return json_response({
         "ok": False,
@@ -1058,7 +1090,7 @@ _DEPLOY_CFG_KEY = "admin.deployment_config"
 async def api_admin_deployment_config_get(request: Request):
     """读取管理员部署配置（存于 app_config 表）。需要重启才能生效。"""
     user = require_user(request)
-    if user.get("role") != "admin":
+    if not is_admin(user):
         return json_response({"ok": False, "error": "需要管理员权限"}, status_code=403)
     init_db()
     with connect() as db:
@@ -1079,7 +1111,7 @@ async def api_admin_deployment_config_set(request: Request):
     from psycopg.types.json import Jsonb
 
     user = require_user(request)
-    if user.get("role") != "admin":
+    if not is_admin(user):
         return json_response({"ok": False, "error": "需要管理员权限"}, status_code=403)
     body = await request.json() or {}
     if not isinstance(body, dict):

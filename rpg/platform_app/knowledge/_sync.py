@@ -89,6 +89,13 @@ def _sync_character_cards(db, book: dict[str, Any], script: dict[str, Any], char
     """v28: character_cards 多态化后,显式声明 card_type='npc', source='platform'。
     on conflict 改为 partial unique (uq_character_cards_npc_name)。
     新增 background / full_name / first_revealed_chapter / importance 字段(可空)。
+
+    护手编(进度感知角色卡 Phase 1B 硬约束):on conflict 的文本字段全部改「目标字段
+    非空才覆盖 / 空则保留已有」。重建默认只补空、绝不抹掉用户一个个手修的 persona
+    (full_name / identity / background 此前已是 case-when;本轮把 appearance /
+    personality / speech_style / current_status / secrets / sample_dialogue / aliases
+    也补上同样的保护,根治用户「重建/同步把手编盖掉」的核心痛点)。
+    first_revealed_chapter 用 greatest 保留(只增不减,绝不被刷成 0 丢防剧透章)。
     """
     count = 0
     for name, card in chars.items():
@@ -106,17 +113,24 @@ def _sync_character_cards(db, book: dict[str, Any], script: dict[str, Any], char
             on conflict(script_id, name) where card_type = 'npc' do update set
               full_name = case when length(excluded.full_name) > 0
                                then excluded.full_name else character_cards.full_name end,
-              aliases = excluded.aliases,
+              aliases = case when jsonb_array_length(coalesce(excluded.aliases, '[]'::jsonb)) > 0
+                             then excluded.aliases else character_cards.aliases end,
               identity = case when length(excluded.identity) > 0
                               then excluded.identity else character_cards.identity end,
               background = case when length(excluded.background) > 0
                                 then excluded.background else character_cards.background end,
-              appearance = excluded.appearance,
-              personality = excluded.personality,
-              speech_style = excluded.speech_style,
-              current_status = excluded.current_status,
-              secrets = excluded.secrets,
-              sample_dialogue = excluded.sample_dialogue,
+              appearance = case when length(excluded.appearance) > 0
+                                then excluded.appearance else character_cards.appearance end,
+              personality = case when length(excluded.personality) > 0
+                                 then excluded.personality else character_cards.personality end,
+              speech_style = case when length(excluded.speech_style) > 0
+                                  then excluded.speech_style else character_cards.speech_style end,
+              current_status = case when length(excluded.current_status) > 0
+                                    then excluded.current_status else character_cards.current_status end,
+              secrets = case when length(excluded.secrets) > 0
+                             then excluded.secrets else character_cards.secrets end,
+              sample_dialogue = case when jsonb_array_length(coalesce(excluded.sample_dialogue, '[]'::jsonb)) > 0
+                                     then excluded.sample_dialogue else character_cards.sample_dialogue end,
               first_revealed_chapter = greatest(character_cards.first_revealed_chapter, excluded.first_revealed_chapter),
               importance = greatest(character_cards.importance, excluded.importance),
               row_version = character_cards.row_version + 1,

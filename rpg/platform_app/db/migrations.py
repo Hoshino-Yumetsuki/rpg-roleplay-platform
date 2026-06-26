@@ -1834,6 +1834,307 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         on conflict (user_id, storage_key) do nothing
         """,
     ]),
+    (73, "script_timeline_anchor_source", [
+        # 时间线锚点来源标记:'novel'=原著骨架(chapter_facts 聚合 / 拆书提取生成,
+        #   时间线重建时会被「删后重建」);'editor'=编辑器 agent 续写新事件时 create_anchor 新增,
+        #   重建时必须保留不删(见 script_timeline.rebuild_timeline_anchors /
+        #   extract.rebuild.rebuild_timeline_from_db / collapse_phase_duplicate_anchors 的 source 闸)。
+        "alter table script_timeline_anchors add column if not exists source text not null default 'novel'",
+    ]),
+    (74, "temporal_kb_unification_p0", [
+        # 统一时间感知知识库地基(设计 docs/design/O_temporal_kb_unification.md §1.2)。
+        # 全加性、零行为变化:新表/视图默认空、新列默认值不影响现有读路径。新功能由 env flag 分阶段开。
+
+        # --- 现有实体表补「揭示锚点」列(优先于整数 first_revealed_chapter)+ 真0章/未知区分 ---
+        "alter table kb_canon_entities add column if not exists reveal_anchor_key text",
+        "alter table character_cards   add column if not exists reveal_anchor_key text",
+        "alter table worldbook_entries add column if not exists reveal_anchor_key text",
+        "alter table kb_canon_entities add column if not exists reveal_known boolean not null default false",
+        "alter table character_cards   add column if not exists reveal_known boolean not null default false",
+        "alter table worldbook_entries add column if not exists reveal_known boolean not null default false",
+        # --- 向量卫生:脏化标记 + 空间指纹 ---
+        "alter table kb_canon_entities add column if not exists embedding_dirty boolean not null default false",
+        "alter table character_cards   add column if not exists embedding_dirty boolean not null default false",
+        "alter table worldbook_entries add column if not exists embedding_dirty boolean not null default false",
+        "alter table document_chunks   add column if not exists embedding_dirty boolean not null default false",
+        "alter table scripts add column if not exists embed_space_fingerprint text",
+
+        # --- (新表) reveal_anchors:剧本级揭示锚点 DAG(替代标量天花板的图骨架) ---
+        """create table if not exists reveal_anchors (
+          id bigserial primary key,
+          script_id integer not null references scripts(id) on delete cascade,
+          anchor_key text not null,
+          chapter_min integer,
+          chapter_max integer,
+          story_phase text,
+          story_time_label text,
+          requires jsonb not null default '[]'::jsonb,
+          worldline_key text not null default 'main',
+          kind text not null default 'beat',
+          summary text,
+          must_preserve jsonb not null default '{}'::jsonb,
+          may_vary jsonb not null default '{}'::jsonb,
+          importance integer not null default 50,
+          is_fatal boolean not null default false,
+          confidence numeric(4,3),
+          source text not null default 'novel',
+          metadata jsonb not null default '{}'::jsonb,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now(),
+          unique (script_id, anchor_key)
+        )""",
+        "create index if not exists idx_reveal_anchors_script on reveal_anchors(script_id)",
+        "create index if not exists idx_reveal_anchors_chapter on reveal_anchors(script_id, chapter_min, chapter_max)",
+        "create index if not exists idx_reveal_anchors_worldline on reveal_anchors(script_id, worldline_key)",
+        "create index if not exists idx_reveal_anchors_requires on reveal_anchors using gin (requires)",
+
+        # --- (新表) save_reveal_frontier:存档级「已到达前沿」(替代 progress_chapter 做天花板) ---
+        """create table if not exists save_reveal_frontier (
+          id bigserial primary key,
+          save_id integer not null references game_saves(id) on delete cascade,
+          script_id integer not null,
+          anchor_key text not null,
+          reached_at_turn integer,
+          reached_via text not null default 'gm',
+          drift_score numeric(3,2) default 0,
+          worldline_key text not null default 'main',
+          metadata jsonb not null default '{}'::jsonb,
+          created_at timestamptz not null default now(),
+          unique (save_id, anchor_key)
+        )""",
+        "create index if not exists idx_frontier_save on save_reveal_frontier(save_id)",
+        "create index if not exists idx_frontier_worldline on save_reveal_frontier(save_id, worldline_key)",
+
+        # --- (新表) save_visible_anchors:前沿可见集闭包物化(快速门控) ---
+        """create table if not exists save_visible_anchors (
+          save_id integer not null references game_saves(id) on delete cascade,
+          anchor_key text not null,
+          primary key (save_id, anchor_key)
+        )""",
+        "create index if not exists idx_save_visible_save on save_visible_anchors(save_id)",
+
+        # --- (新表) kb_edges:统一关系边(把闲置的 relationships jsonb 行级化) ---
+        """create table if not exists kb_edges (
+          id bigserial primary key,
+          script_id integer not null references scripts(id) on delete cascade,
+          save_id integer,
+          born_commit bigint,
+          retired_at_commit bigint,
+          src_kind text not null,
+          src_key text not null,
+          dst_kind text not null,
+          dst_key text not null,
+          kind text not null,
+          label text,
+          note text,
+          weight numeric(6,3) default 1.0,
+          first_revealed_chapter integer default 0,
+          reveal_anchor_key text,
+          origin text not null default 'extracted',
+          metadata jsonb not null default '{}'::jsonb,
+          created_at timestamptz not null default now()
+        )""",
+        "create index if not exists idx_kb_edges_src on kb_edges(script_id, src_kind, src_key)",
+        "create index if not exists idx_kb_edges_dst on kb_edges(script_id, dst_kind, dst_key)",
+        "create index if not exists idx_kb_edges_kind on kb_edges(script_id, kind)",
+        "create index if not exists idx_kb_edges_save on kb_edges(save_id) where save_id is not null",
+        # 去重:save_id 可空 → 表级 unique 对 NULL 不去重(NULL 互异);用分区唯一索引各管一边。
+        "create unique index if not exists uq_kb_edges_canonical on kb_edges(script_id, src_kind, src_key, dst_kind, dst_key, kind) where save_id is null",
+        "create unique index if not exists uq_kb_edges_save on kb_edges(save_id, src_kind, src_key, dst_kind, dst_key, kind) where save_id is not null",
+
+        # --- (视图) kb_nodes:统一节点入口(UNION ALL 投影五源表之三;chunk/fact 按章窗口召回不入视图) ---
+        # 三 SELECT 各列类型已逐一核对一致(embedding 均 vector(768)、aliases 均 jsonb、importance/priority 均 int)。
+        # kb_nodes 视图:embedding 列(vector)仅在 pgvector 存在时才建。无 pgvector 的部署
+        # (如桌面捆绑的精简 PG)若直接引用 embedding 列,建视图即报 UndefinedColumn、整个迁移中断。
+        # → 用 DO 块按 pgvector 是否存在分两种视图:有则取真 embedding;无则 null::text 占位
+        #   (此时召回自动降级 jsonb/关键词,不走向量)。对已装 pgvector 的生产,结果视图等价。
+        """do $kbv$
+        begin
+          if exists (select 1 from pg_extension where extname = 'vector') then
+            execute 'create or replace view kb_nodes as
+              select ''canon_entity''::text as node_kind, cce.script_id, cce.logical_key as node_key, cce.name, cce.type as subtype, cce.summary as body, cce.first_revealed_chapter, cce.reveal_known, coalesce(cce.reveal_anchor_key, cce.metadata->>''reveal_anchor_key'') as reveal_anchor_key, cce.embedding as embedding_vec, cce.public_knowledge, cce.importance, cce.aliases, cce.metadata from kb_canon_entities cce where coalesce(cce.importance, 0) >= 0
+              union all
+              select ''character''::text, cc.script_id, cc.name, cc.name, cc.card_type, coalesce(cc.identity, cc.personality), cc.first_revealed_chapter, cc.reveal_known, coalesce(cc.reveal_anchor_key, cc.metadata->>''reveal_anchor_key''), cc.embedding_vec, false, cc.importance, cc.aliases, cc.metadata from character_cards cc where cc.card_type=''npc'' and cc.enabled
+              union all
+              select ''worldbook''::text, wb.script_id, wb.title, wb.title, wb.insertion_position, wb.content, wb.first_revealed_chapter, wb.reveal_known, coalesce(wb.reveal_anchor_key, wb.metadata->>''reveal_anchor_key''), wb.embedding_vec, false, wb.priority, ''[]''::jsonb, wb.metadata from worldbook_entries wb where wb.enabled';
+          else
+            execute 'create or replace view kb_nodes as
+              select ''canon_entity''::text as node_kind, cce.script_id, cce.logical_key as node_key, cce.name, cce.type as subtype, cce.summary as body, cce.first_revealed_chapter, cce.reveal_known, coalesce(cce.reveal_anchor_key, cce.metadata->>''reveal_anchor_key'') as reveal_anchor_key, null::text as embedding_vec, cce.public_knowledge, cce.importance, cce.aliases, cce.metadata from kb_canon_entities cce where coalesce(cce.importance, 0) >= 0
+              union all
+              select ''character''::text, cc.script_id, cc.name, cc.name, cc.card_type, coalesce(cc.identity, cc.personality), cc.first_revealed_chapter, cc.reveal_known, coalesce(cc.reveal_anchor_key, cc.metadata->>''reveal_anchor_key''), null::text, false, cc.importance, cc.aliases, cc.metadata from character_cards cc where cc.card_type=''npc'' and cc.enabled
+              union all
+              select ''worldbook''::text, wb.script_id, wb.title, wb.title, wb.insertion_position, wb.content, wb.first_revealed_chapter, wb.reveal_known, coalesce(wb.reveal_anchor_key, wb.metadata->>''reveal_anchor_key''), null::text, false, wb.priority, ''[]''::jsonb, wb.metadata from worldbook_entries wb where wb.enabled';
+          end if;
+        end
+        $kbv$;""",
+    ]),
+    (75, "feedback_anon_desktop_email", [
+        # 桌面本地版匿名反馈接入服务器 + 邮箱回执(P1)。
+        # user_id 改可空:本地版无登录,反馈来自匿名(或按联系邮箱归并到同名登录账户)。
+        "alter table feedback alter column user_id drop not null",
+        "alter table feedback_consent_log alter column user_id drop not null",
+        # 联系邮箱(收回执)、桌面端 client_id、桌面环境快照、回执邮件发送时间。
+        "alter table feedback add column if not exists contact_email text",
+        "alter table feedback add column if not exists client_id text",
+        "alter table feedback add column if not exists env_snapshot jsonb",
+        "alter table feedback add column if not exists reply_emailed_at timestamptz",
+        "alter table feedback_consent_log add column if not exists client_id text",
+        "create index if not exists idx_feedback_contact_email on feedback(lower(contact_email)) where contact_email is not null",
+    ]),
+    (76, "desktop_login_tokens", [
+        # 桌面本地版「免登录魔法链接」:控制台(主进程,回环)铸一次性 token,
+        # 浏览器打开 /api/auth/desktop-login?token= 兑换成 session cookie(本机默认账户登录)。
+        # 单次使用 + 短 TTL(used_at + expires_at);仅本地/桌面模式启用。
+        "create table if not exists desktop_login_tokens ("
+        "  id bigint generated by default as identity primary key,"
+        "  token_hash text unique not null,"
+        "  user_id bigint not null references users(id) on delete cascade,"
+        "  created_at timestamptz not null default now(),"
+        "  expires_at timestamptz not null,"
+        "  used_at timestamptz"
+        ")",
+        "create index if not exists idx_desktop_login_user on desktop_login_tokens(user_id) where used_at is null",
+    ]),
+    (77, "temporal_kb_bigint_fk", [
+        # 审计修复:v74 的四张新表把 save_id/script_id 误写成 integer(32位),而被引用的
+        # scripts.id / game_saves.id 是 bigint(64位)。id 自增到 2^31 后向这些表插行会
+        # `integer out of range`。这些表新建、当前体量小,ALTER TYPE 很快(配合本批 lock_timeout
+        # 防撞长事务)。kb_nodes 视图只投影其它已是 bigint 的表,不引用这四张表,故无需重建视图。
+        "alter table reveal_anchors        alter column script_id type bigint",
+        "alter table save_reveal_frontier  alter column save_id   type bigint",
+        "alter table save_reveal_frontier  alter column script_id type bigint",
+        "alter table save_visible_anchors  alter column save_id   type bigint",
+        "alter table kb_edges              alter column script_id type bigint",
+        "alter table kb_edges              alter column save_id   type bigint",
+    ]),
+    (78, "ai_images_message_index", [
+        # 反馈#74:聊天内生图刷新后丢失。根因=图片↔消息绑定只活在前端 localStorage + 有竞态的
+        # SSE handler,刷新后 null-key 图落进 __last 桶 → 挂错消息/消失。后端在入队时记录目标
+        # 消息索引(本回合 assistant 消息位),列表端点返回,前端据此确定性还原。
+        "alter table ai_images add column if not exists message_index integer",
+    ]),
+    (79, "save_kb_native_marker", [
+        # 增量切换 KB 存储:新建存档在创建时即 seed 进 KB(kb-native from birth),打此标记。
+        # 加载/落库路径:kb_native=true 的存档【始终】走 KB(不受每用户 kb_state 开关影响,
+        # 即「封死新存档入口=新档按新实现」);旧档 kb_native=false → 仍按每用户开关 + 懒迁移。
+        # 默认 false:存量旧档不受影响(之后再单独迁移)。
+        "alter table game_saves add column if not exists kb_native boolean not null default false",
+    ]),
+    (80, "user_persona_skills", [
+        # 用户「人格 skill」导入(skill.md 上传 / GitHub 拉取)。**纯数据,绝不执行代码** —— 与
+        # admin-only 的可执行 imported_skills 完全分离。每用户隔离(user_id FK cascade + 唯一 slug),
+        # 蒸馏成 character_cards(card_type='pc')并联到 card_id;source/source_ref 记溯源。
+        """
+        create table if not exists user_persona_skills (
+          id          bigint generated by default as identity primary key,
+          user_id     bigint not null references users(id) on delete cascade,
+          slug        text not null,
+          name        text not null,
+          source      text not null default 'upload',   -- 'upload' | 'github'
+          source_ref  text not null default '',          -- github 仓库 URL / 上传文件名
+          card_id     bigint references character_cards(id) on delete set null,
+          status      text not null default 'ready',
+          metadata    jsonb not null default '{}'::jsonb,
+          created_at  timestamptz not null default now(),
+          updated_at  timestamptz not null default now(),
+          unique (user_id, slug)
+        )
+        """,
+        "create index if not exists ix_user_persona_skills_user on user_persona_skills(user_id)",
+    ]),
+    (81, "tavern_immersive_column", [
+        # 沉浸式拟人模式持久化:原先只存进 state_snapshot.tavern.immersive(工作树),而每次
+        # activate_save 都把工作树从提交重建 → 开关被擦掉 = 用户报「自动关闭」。改存独立列(激活不碰列),
+        # /api/state 从列回填 tavern.immersive、回合管线读列 → 跨激活/重开持久。默认 false。
+        "alter table game_saves add column if not exists tavern_immersive boolean not null default false",
+    ]),
+    (82, "users_apple_sub", [
+        # Sign in with Apple:用 Apple 稳定用户标识(token.sub)关联账号,免密登录。
+        "alter table users add column if not exists apple_sub text",
+        "create unique index if not exists idx_users_apple_sub on users(apple_sub) where apple_sub is not null",
+    ]),
+    (83, "kb_events_embedding_vec", [
+        # 永恒记忆 · 情景召回:给存档域 COW 事件表 kb_events 加向量列,让"玩家自己的游戏历史"
+        # 可被语义召回(此前 RAG 只检索原著)。分支安全天然:检索沿 born_commit 谱系 CTE 过滤,
+        # 一个分支只召回自己血缘的事件。维度 = _EMBED_DIM(默认 768,与其它向量列一致)。
+        # pgvector 不可用时整块跳过(降级到近因检索,不报错)。
+        f"""
+        do $$
+        begin
+          if exists (select 1 from pg_extension where extname = 'vector') then
+            execute 'alter table kb_events add column if not exists embedding_vec vector({_EMBED_DIM})';
+            execute 'create index if not exists idx_kb_events_embedding_hnsw on kb_events using hnsw (embedding_vec vector_cosine_ops)';
+          end if;
+        end $$;
+        """,
+    ]),
+    (84, "console_conversations", [
+        # 侧栏 agent 对话长期持久化:此前只在 Redis 存 6h,超时/Redis 重置就丢(用户:编辑器刷新没了)。
+        # 落 PG 永久保留(Redis 仍作热缓存)。conv 整体存 jsonb(messages + pending + 元数据)。
+        "create table if not exists console_conversations ("
+        " user_id bigint not null references users(id) on delete cascade,"
+        " conversation_id text not null,"
+        " conv jsonb not null default '{}'::jsonb,"
+        " updated_at timestamptz not null default now(),"
+        " primary key (user_id, conversation_id))",
+        "create index if not exists idx_console_conv_user_updated on console_conversations(user_id, updated_at desc)",
+    ]),
+    (85, "worldbook_book_id_nullable", [
+        # book_id 是遗留列(归属现以 script_id 为准,所有读路径都按 script_id 取,无一按 book_id)。
+        # NOT NULL 逼得每条 worldbook 插入路径都要先 ensure books 行,否则编辑器手建世界书 500
+        # (NotNullViolation)。character_cards.book_id 早已是 nullable,这里对齐 → 去约束、删散落的拦截。
+        "alter table worldbook_entries alter column book_id drop not null",
+    ]),
+    (86, "agent_doc_uploads", [
+        # 编辑器写作搭档:用户拖入 txt/md 文档 → 服务端暂存原文(不进 LLM 上下文),agent 凭 doc_id
+        # 调【确定性】拆分器拆章 / 读片段。低开销(不让 LLM 啃几 MB)+ 安全(owner 闸 + 体积限 + TTL 清)。
+        "create table if not exists agent_doc_uploads ("
+        " doc_id text primary key,"
+        " user_id bigint not null references users(id) on delete cascade,"
+        " script_id bigint references scripts(id) on delete cascade,"
+        " filename text not null default '',"
+        " content text not null default '',"
+        " chars integer not null default 0,"
+        " created_at timestamptz not null default now())",
+        "create index if not exists idx_agent_doc_user on agent_doc_uploads(user_id, created_at desc)",
+    ]),
+    (87, "scripts_writing_rules", [
+        # 作者写作规范(.cursorrules 风):per-script 风格/连贯/禁忌规则,注入编辑器 agent 上下文最高优先层。
+        "alter table scripts add column if not exists writing_rules text not null default ''",
+    ]),
+    (88, "script_writing_issues", [
+        # 审稿问题持久化(VSCode Problems 风):编辑器 agent 调 report_writing_issues 时落库,
+        # 作者刷新仍在;owner-scoped(按 script_id,REST 端点走 script_owned 校验);每次汇报=最新快照(替换)。
+        "create table if not exists script_writing_issues ("
+        " id bigserial primary key,"
+        " script_id bigint not null references scripts(id) on delete cascade,"
+        " chapter integer,"
+        " severity text,"
+        " issue_type text,"
+        " detail text not null,"
+        " created_at timestamptz not null default now())",
+        "create index if not exists idx_swi_script on script_writing_issues(script_id, id)",
+    ]),
+    (89, "no_pgvector_embedding_fallback_columns", [
+        # 桌面捆绑版 / 自部署无 pgvector 时:migration 10/60 跳过了 embedding_vec(vector)列,
+        # 但 embed_status / 重建估算等请求路径无条件跑 `embedding_vec is not null` 计数 →
+        # "column does not exist" → ASGI 500(客户实测桌面 win 版日志)。根因修复:无 vector 扩展时
+        # 建 jsonb 占位列,使所有「是否已嵌入」计数恒返 0(无 pgvector=没法嵌入,语义正确),不再每处散落拦截。
+        # **prod 无副作用**:有 pgvector 时整段 if 分支不执行(列已是 vector 类型)。
+        # 配套 _search._vector_column_exists 增加 udt_name='vector' 判定,jsonb 占位列不会被当向量列跑 <=>。
+        """
+        do $$
+        begin
+          if not exists (select 1 from pg_extension where extname = 'vector') then
+            execute 'alter table document_chunks    add column if not exists embedding_vec jsonb';
+            execute 'alter table memories            add column if not exists embedding_vec jsonb';
+            execute 'alter table character_cards     add column if not exists embedding_vec jsonb';
+            execute 'alter table worldbook_entries   add column if not exists embedding_vec jsonb';
+            execute 'alter table kb_canon_entities   add column if not exists embedding jsonb';
+          end if;
+        end $$;
+        """,
+    ]),
 ]
 
 
@@ -1915,6 +2216,11 @@ def _assert_schema_up_to_date() -> None:
 def _apply_versioned_migrations() -> None:
     _migrations = _get_migrations()
     with _get_connect()() as db:
+        # 审计#5:DDL 走 pool 连接,默认 lock_timeout=0=无限等。给本事务设 lock_timeout,防
+        # ALTER TABLE 撞正在飞的长事务(60s+ LLM 流持 ACCESS SHARE 锁)无限阻塞、挂起部署。
+        # advisory-lock 那条独立连接上的 lock_timeout 只管「等 advisory 锁」,管不到这里的 DDL。
+        # SET LOCAL 只作用当前事务,commit 后自动复位,不污染回收的 pool 连接。
+        db.execute(f"set local lock_timeout = {MIGRATION_LOCK_TIMEOUT_MS}")
         db.execute(
             """
             create table if not exists schema_migrations (

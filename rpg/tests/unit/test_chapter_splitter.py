@@ -162,8 +162,27 @@ def test_report_v2_fields_present() -> None:
     assert any("感言" in n["title"] for n in report["author_notes"])
 
 
+def test_number_dot_does_not_oversplit_on_body_numbers() -> None:
+    """反馈 #70:number_dot 不该把正文里的小数/年份/以数字开头的长正文行误切成章节。
+    收紧后:编号 ≤3 位、点号后非数字(排除 3.14)、标题短(排除整段正文)。"""
+    splitter = ChapterSplitter()
+    text = "\n".join([
+        "1. 序章", paragraph("他来到这世界。圆周率约 3.14159,事故在 2024.年发生。"),
+        "他说了一段很长很长的话比如 1. 这其实是一句被编号开头但其实是正文的超长句子继续继续继续继续。",
+        "2. 觉醒", paragraph("第二章正文。"),
+        "13. 决战", paragraph("最终章。"),
+    ])
+    chapters = splitter.split_chapters(text, split_rule="number_dot")
+    titles = [c.get("title") or "" for c in chapters]
+    assert len(chapters) == 3, f"正文编号被误切: {titles}"
+    assert any("序章" in t for t in titles)
+    assert any("决战" in t for t in titles)
+    assert not any("3.14" in t or "圆周率" in t for t in titles)
+
+
 if __name__ == "__main__":
     test_standard_chinese_chapters()
+    test_number_dot_does_not_oversplit_on_body_numbers()
     test_english_number_dot_and_custom_rules()
     test_numbered_sections_and_pagination()
     test_mixed_volume_chapter_generic_no_book_specific()

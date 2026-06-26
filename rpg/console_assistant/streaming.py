@@ -8,6 +8,7 @@ from console_assistant.conversations import (
     _get_or_create_conversation,
     _new_trace_id,
     _trim_messages,
+    persist_conversation,
 )
 from console_assistant.llm_loop import _run_llm_loop, _sse_event
 
@@ -43,8 +44,11 @@ def stream_chat(
 
     conv["messages"].append({"role": "user", "content": message.strip()})
     conv["last_user_message"] = message.strip()
+    # UI 历史:落用户轮(供刷新还原,与 llm_loop 落的 assistant 轮配套)。
+    conv.setdefault("ui_turns", []).append({"role": "user", "text": message.strip(), "tools": []})
     _trim_messages(conv)
 
+    disconnected = False
     try:
         yield from _run_llm_loop(
             user_id=user_id,
@@ -56,7 +60,15 @@ def stream_chat(
             max_iterations=max_iterations,
             max_tokens=max_tokens,
         )
+    except GeneratorExit:
+        # 客户端断开 → 不能在 finally 里再 yield(否则 "generator ignored GeneratorExit")
+        disconnected = True
+        raise
     finally:
-        yield _sse_event("done", {
-            "pending_confirmations": list(conv["pending_confirmations"].keys()),
-        })
+        # 跨 worker:把本回合后的对话(含本回合新建的 pending_confirmations)写回 Redis,
+        # 这样 /confirm 落到任意 worker 都能找到该对话 + 其待确认项。(persist 无 yield,断开时也安全)
+        persist_conversation(user_id, conv_id, conv)
+        if not disconnected:
+            yield _sse_event("done", {
+                "pending_confirmations": list(conv["pending_confirmations"].keys()),
+            })

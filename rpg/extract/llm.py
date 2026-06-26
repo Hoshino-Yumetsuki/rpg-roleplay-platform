@@ -11,10 +11,10 @@
 """
 from __future__ import annotations
 
-import json
-import re
 import threading
 from typing import Any
+
+from core.json_parse import parse_llm_json
 
 # 默认便宜模型(成本铁律)
 CHEAP_VERTEX = ("gemini-3.5-flash", "vertex_ai")
@@ -92,53 +92,15 @@ class ExtractLLM:
         return parse_json(raw)
 
 
-_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)```", re.DOTALL)
-
-
 def parse_json(raw: str) -> Any:
-    """鲁棒 JSON 解析:剥 ```json 围栏 / 取首个 {..} 或 [..] / 容忍前后散文。"""
-    if not raw:
-        raise ValueError("空响应")
-    raw = raw.strip()
-    # 1. 直接解析
-    try:
-        return json.loads(raw)
-    except Exception:
-        pass
-    # 2. 剥围栏
-    m = _FENCE_RE.search(raw)
-    if m:
-        try:
-            return json.loads(m.group(1).strip())
-        except Exception:
-            pass
-    # 3. 截取首个平衡的 {..} 或 [..]
-    #    取**最早出现**的开括号(否则 list 响应里的内层 {} 会被先抓)
-    candidates = [(raw.find(o), o, c) for o, c in (("{", "}"), ("[", "]")) if raw.find(o) != -1]
-    candidates.sort()
-    for start, open_ch, close_ch in candidates:
-        depth = 0
-        in_str = False
-        esc = False
-        for i in range(start, len(raw)):
-            c = raw[i]
-            if in_str:
-                if esc:
-                    esc = False
-                elif c == "\\":
-                    esc = True
-                elif c == '"':
-                    in_str = False
-            else:
-                if c == '"':
-                    in_str = True
-                elif c == open_ch:
-                    depth += 1
-                elif c == close_ch:
-                    depth -= 1
-                    if depth == 0:
-                        try:
-                            return json.loads(raw[start:i + 1])
-                        except Exception:
-                            break
-    raise ValueError(f"无法从响应解析 JSON: {raw[:200]!r}")
+    """鲁棒 JSON 解析:剥 ```json 围栏 / 取首个 {..} 或 [..] / 容忍前后散文。
+
+    薄包装 core.json_parse.parse_llm_json;**对外签名不变**:解析失败仍
+    raise ValueError(触发 complete_json 调用方重试)。
+    """
+    result = parse_llm_json(raw)
+    if result is None:
+        if not raw:
+            raise ValueError("空响应")
+        raise ValueError(f"无法从响应解析 JSON: {raw.strip()[:200]!r}")
+    return result

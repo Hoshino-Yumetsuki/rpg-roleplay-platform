@@ -55,7 +55,11 @@ class ChapterSplitter:
             "语料章节",
         ),
         "chapter_en": SplitPattern(re.compile(r"^(Chapter\s+[0-9０-９]+.*)$", re.IGNORECASE | re.MULTILINE), "英文章节"),
-        "number_dot": SplitPattern(re.compile(r"^([0-9０-９]+[.、]\s*.*)$", re.MULTILINE), "数字点号"),
+        # 收紧:只认「真正的章节头」。原 `[0-9]+[.、]\s*.*` 会把正文里的编号也切走
+        # (反馈 #70:第13章正文内"3.14""1. 一长段…""2024."等被误当章节头切碎)。
+        # 约束:① 编号 ≤3 位(排除年份/长编号)② 点号后紧跟的不能是数字(排除 3.14 等小数)
+        # ③ 标题短(≤38 字,排除以"1."开头的整段正文)。章节头如"1.序章""13、死亡"仍命中。
+        "number_dot": SplitPattern(re.compile(r"^([0-9０-９]{1,3}[.、](?![0-9０-９])\s{0,3}\S.{0,38})$", re.MULTILINE), "数字点号"),
         "paren_num": SplitPattern(re.compile(rf"^(.{{0,10}}[（(]\s*[{NUMBER_TOKEN}]+\s*[)）].*)$", re.MULTILINE), "括号编号"),
     }
 

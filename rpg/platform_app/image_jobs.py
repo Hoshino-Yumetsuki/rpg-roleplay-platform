@@ -51,6 +51,7 @@ def enqueue_image_generation(
     extra: dict[str, Any] | None = None,
     attach: dict[str, Any] | None = None,
     save_id: str | None = None,
+    message_index: int | None = None,
 ) -> dict[str, Any]:
     """建 ai_images 记录(status='pending')，入 postproc_queue，返回 {image_id, status}.
 
@@ -116,6 +117,7 @@ def enqueue_image_generation(
         model=_model,
         params=extra or {},
         save_id=save_id or None,
+        message_index=message_index,
     )
 
     # 2. 入 chat_postproc_tasks
@@ -147,6 +149,40 @@ def enqueue_image_generation(
     log.info("[image_jobs] enqueued image_id=%s user=%s kind=%s origin=%s save_id=%s",
              image_id, user_id, kind, origin, save_id)
     return {"image_id": image_id, "status": "pending"}
+
+
+def wait_for_image(image_id: int, *, timeout_s: float = 90.0, poll_s: float = 1.5) -> dict[str, Any]:
+    """阻塞轮询 ai_images 直到终态(done/failed/cancelled)或超时,返回 {status,url,error}。
+
+    闭环用(用户:生图后 LLM 不知道好没好):generate_image 在 LLM 自主路径上【确定性】等真实
+    结果,把成功/失败回灌进 agentic 工具循环,而非返回「已入队」回执。后处理在独立进程,故用
+    DB 轮询(跨进程可靠,不依赖 in-process 队列)。轮询跑在 GM 工作线程(asyncio.to_thread 桥接),
+    time.sleep 不阻塞事件循环、SSE 照常存活。超时返回当前(pending/generating)状态,调用方优雅收尾。
+    """
+    import time
+
+    from platform_app.db import connect
+    deadline = time.monotonic() + timeout_s
+    last: dict[str, Any] = {"status": "pending", "url": "", "error": ""}
+    while True:
+        try:
+            with connect() as db:
+                row = db.execute(
+                    "select status, url, error from ai_images where id = %s", (int(image_id),)
+                ).fetchone()
+            if row:
+                last = {
+                    "status": row.get("status") or "pending",
+                    "url": row.get("url") or "",
+                    "error": row.get("error") or "",
+                }
+                if last["status"] in ("done", "failed", "cancelled"):
+                    return last
+        except Exception as exc:
+            log.debug("[image_jobs] wait_for_image poll error: %s", exc)
+        if time.monotonic() >= deadline:
+            return last
+        time.sleep(poll_s)
 
 
 # ── Worker handler ───────────────────────────────────────────────────────
@@ -238,7 +274,17 @@ async def handle_image_gen(payload: dict[str, Any]) -> None:
         _fail(image_id, f"store_error: {exc}")
         return
 
-    # 5. update done
+    # 5. update done —— 但若生成期间被用户取消,则丢弃结果(不覆盖 cancelled→done、不写回附着)
+    try:
+        from platform_app.db import connect as _connect
+        with _connect() as _cdb:
+            _cur = _cdb.execute("select status from ai_images where id = %s", (image_id,)).fetchone()
+        if _cur and str(_cur.get("status") or "") == "cancelled":
+            log.info("[image_jobs] image_id=%s 生图完成前已被用户取消,丢弃结果", image_id)
+            return
+    except Exception as _cexc:
+        log.warning("[image_jobs] cancel-check DB error image_id=%s, 跳过写回以防覆盖取消: %s", image_id, _cexc)
+        return
     try:
         update_image_record(image_id, "done", url=url)
     except Exception as exc:
@@ -329,11 +375,8 @@ def _attach_image_to_target(
                 script_id = int(attach.get("script_id") or 0)
                 if script_id:
                     # NPC 卡(user_id=NULL,挂 script_id):owner 走 scripts.owner_id
-                    owns = db.execute(
-                        "select 1 from scripts where id = %s and owner_id = %s",
-                        (script_id, int(user_id)),
-                    ).fetchone()
-                    if not owns:
+                    from platform_app.perms import script_owned
+                    if not script_owned(db, script_id, int(user_id)):
                         log.warning("[image_jobs] attach card_avatar(npc) script owner failed script_id=%s user=%s", script_id, user_id)
                         return
                     result = db.execute(

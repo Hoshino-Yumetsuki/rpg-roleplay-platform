@@ -1,4 +1,6 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { lsGet, lsSet } from '../lib/storage.js';
 
 /* ImageSizePicker — 生图分辨率/比例选择器。
    · 预设几档常用比例(竖/方/横/长竖/宽屏),每档对应具体 WxH。
@@ -29,6 +31,7 @@ export function recommendedSize(kind) {
 
 export default function ImageSizePicker({ kind, value, onChange, storeKey }) {
   const { useEffect, useRef } = React;
+  const { t } = useTranslation();
   const key = 'rpg.imgsize.' + (storeKey || kind || 'default');
   const inited = useRef(false);
 
@@ -37,24 +40,23 @@ export default function ImageSizePicker({ kind, value, onChange, storeKey }) {
     if (inited.current) return;
     inited.current = true;
     if (value) return;
-    let saved = null;
-    try { saved = localStorage.getItem(key); } catch (_) {}
+    const saved = lsGet(key);
     onChange && onChange(saved || recommendedSize(kind));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pick = (v) => {
-    try { localStorage.setItem(key, v); } catch (_) {}
+    lsSet(key, v);
     onChange && onChange(v);
   };
 
   return (
-    <div className="isz" role="group" aria-label="生图尺寸">
+    <div className="isz" role="group" aria-label={t('image_size.aria_group')}>
       {SIZE_PRESETS.map((p) => (
         <button key={p.id} type="button"
           className={`isz__btn${value === p.value ? ' is-active' : ''}`}
           onClick={() => pick(p.value)} title={p.value}>
-          {p.label}
+          {t(`image_size.preset_${p.id}`)}
         </button>
       ))}
     </div>

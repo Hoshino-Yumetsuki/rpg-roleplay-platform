@@ -200,6 +200,40 @@ async def api_new(
     return JSONResponse({"ok": True, "backup": backup, "state": _payload(api_user)})
 
 
+# ── 游戏流水线 · 开场策略(rail 知识只住游戏层,不进底层 GMAgent)──────────────
+# 反馈#73:开了「贴原著」开局仍脱离原著、原著开篇人物(张杰/雇佣兵等)流失。原因:开场默认
+# 提示词强制 150-250 字 + max_tokens=600,把已注入的原著开场压成极短原创、丢人物。
+# 修复边界:底层 generate_opening 通用化(只收 prompt+预算);这里——游戏这条流水线——按
+# steering_strength 决定 rail 时用"忠实重现原著开篇"的提示 + 更大预算。酒馆/编辑器不调此处,零影响。
+_RAIL_OPENING_INSTRUCTION = """\
+玩家选择了【贴原著】引导强度。请基于【本轮上下文包】中的「锚点章节原文 · 贴原著档」段,
+忠实重现原著的开场场景,作为玩家进入故事的起点。
+
+要求：
+- 严格沿用原著开场的时间、地点、**登场人物与关键对话/事件**;原著开篇出现的配角、群像也要保留,
+  不要只写主角、不要替换或省略原著开场出现的人物。
+- 保留原著关键对白的原话或原意;原著开篇的冲突/相遇/转折不得跳过或一笔带过。
+- 玩家角色按其角色卡/出生点切入这一场景(视角与切入点可由玩家身份决定),但不得让开场脱离原著走向。
+- 以注入的原著正文为准,不要凭训练记忆自由另写一个开场。
+- **只重现注入原文中【确实出现】的内容**:不要补充原文之外的剧情、结局、人物去向或晋升/封赏等
+  发展(原文写到哪就到哪);状态写回(memory.facts 等)也只记原文确有的事,不要脑补。
+
+**用户导演指令(最高优先级)**:若上下文出现 `【玩家给 GM 的高优先级引导指令】`,在原著开场框架内
+尽量贴合该意图(场景细节/切入角度),但不得删改原著开场的主要人物与关键事件。
+
+结尾留一个可行动的悬念或选择,不要替玩家做决定。
+字数:500-900字(开场需足够篇幅容纳原著登场人物与场景,不要压缩成极短)。
+"""
+
+
+def _game_opening_policy(steering_strength: str) -> tuple[str | None, int]:
+    """游戏流水线的开场策略。rail(贴原著)→(忠实重现提示, 1600);其它 →(None=底层默认开场, 600)。
+    返回 (prompt 覆盖 | None, max_tokens)。底层据此生成,但不认识 rail 本身。"""
+    if steering_strength == "rail":
+        return (_RAIL_OPENING_INSTRUCTION, 1600)
+    return (None, 600)
+
+
 @router.post("/api/opening")
 async def api_opening(
     api_user: dict[str, Any] | None = Depends(get_current_user),
@@ -256,6 +290,22 @@ async def api_opening(
 
         yield _sse("stage", {"phase": "building_context", "label": "组装上下文…"})
         bundle = await asyncio.to_thread(_retrieve_and_build)
+        # 游戏层决定开场策略:读该存档引导强度,rail→忠实重现原著开篇提示+大预算(#73)。
+        _steering = "guided"
+        try:
+            _, _sid_steer = _resolve_persist_target(api_user)
+            if _sid_steer:
+                from platform_app.db import connect as _conn_steer
+                with _conn_steer() as _db_steer:
+                    _row_steer = _db_steer.execute(
+                        "select worldline->>'steering_strength' as ss from game_sessions where save_id=%s",
+                        (_sid_steer,),
+                    ).fetchone()
+                if _row_steer and _row_steer.get("ss"):
+                    _steering = _row_steer["ss"]
+        except Exception:
+            _steering = "guided"
+        _open_prompt, _open_tokens = _game_opening_policy(_steering)
         yield _sse("status", _payload_sse(api_user))
         yield _sse("stage", {"phase": "generating", "label": "GM 构思开场中…"})
         text = ""
@@ -264,7 +314,8 @@ async def api_opening(
             # stop_event 在 SSE 断开时由 bridge finally 设置,让 sync generator 提前退出
             _opening_stop = threading.Event()
             async for chunk in _bridge_sync_generator_to_async(
-                lambda: gm.generate_opening_stream(state, retrieved_context=bundle["prompt"], stop_event=_opening_stop),
+                lambda: gm.generate_opening_stream(state, retrieved_context=bundle["prompt"], stop_event=_opening_stop,
+                                                   prompt=_open_prompt, max_tokens=_open_tokens),
                 stop_event=_opening_stop,
             ):
                 text += chunk
@@ -294,6 +345,18 @@ async def api_opening(
                         state_data=state.data,
                     )
                     platform_knowledge.ensure_game_session(persist_user_id, active_save_id, state.data)
+                    # 写入 messages 表:kb_native 存档 materialize() 从 messages 重建 history,
+                    # 若不写,开场白在 messages 表缺失 → materialize 丢开场 → 前端只显示后续对话。
+                    try:
+                        platform_knowledge.record_turn_messages(
+                            persist_user_id,
+                            active_save_id,
+                            state.data,
+                            "",
+                            opening_for_history,
+                        )
+                    except Exception:
+                        pass
                 else:
                     _persist_runtime_checkpoint(state, api_user)
             except Exception:
@@ -557,16 +620,23 @@ async def api_chat(
     if not message_for_model.strip():
         return StreamingResponse(iter([_sse("error", {"message": "空消息"})]), media_type="text/event-stream")
 
-    # F#1:把本轮上传的角色卡文件(.png/.json/.webp)落盘路径挂到 state,供 agent 的
-    # import_character_card 工具读取(只读服务端 user 作用域落盘路径,非 agent 注入 → 安全)。
+    # F#1:把本轮所有上传附件的落盘路径挂到 state.data["_uploaded_files"],供 agent 工具按需读取:
+    #   · import_character_card  → 选最近一张卡片类(.png/.json/.webp)
+    #   · read_attached_text     → 读文本类(.txt/.md/.json/.csv/.log)全文
+    #   · import_attached_script → 把文本类作为剧本导入(章节拆分/全流水线)
+    # 只读服务端 user 作用域落盘路径(_save_attachments 已限大小/校验 base64),非 agent 注入 → 安全。
     try:
-        _card_files = [
-            {"name": a.get("name"), "path": a.get("path")}
+        _attach_files = [
+            {
+                "name": a.get("name"), "path": a.get("path"),
+                "type": a.get("type"), "is_image": bool(a.get("is_image")),
+                "size": a.get("size"),
+            }
             for a in (attachments or [])
-            if str(a.get("name") or "").lower().endswith((".png", ".json", ".webp"))
+            if a.get("path")
         ]
-        if _card_files and api_user:
-            _ensure_loaded(api_user).data["_uploaded_files"] = _card_files
+        if _attach_files and api_user:
+            _ensure_loaded(api_user).data["_uploaded_files"] = _attach_files
     except Exception:
         pass
 
@@ -847,3 +917,64 @@ async def api_save(
         return JSONResponse({"ok": False, "error": result.error}, status_code=400)
     _persist_runtime_checkpoint(state, api_user)
     return JSONResponse({"ok": True, "state": _payload(api_user)})
+
+
+@router.post("/api/message/edit", response_model=GenericOkResponse, responses=COMMON_ERROR_RESPONSES)
+async def api_message_edit(
+    body: dict[str, Any],
+    api_user: dict[str, Any] | None = Depends(get_current_user),
+) -> JSONResponse:
+    """编辑一条历史消息的内容(messages 表 + state blob history 同步更新)。
+
+    body: {save_id: int, message_index: int, content: str}
+    message_index: history 数组索引(0-based),与 /api/state 返回的 history 顺序一致。
+    """
+    if not api_user:
+        return JSONResponse({"ok": False, "error": "auth required"}, status_code=401)
+    save_id = body.get("save_id")
+    msg_index = body.get("message_index")
+    new_content = body.get("content")
+    if save_id is None or msg_index is None or new_content is None:
+        return JSONResponse({"ok": False, "error": "save_id, message_index, content required"}, status_code=400)
+    try:
+        msg_index = int(msg_index)
+        save_id = int(save_id)
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "invalid save_id or message_index"}, status_code=400)
+
+    from platform_app.db import connect
+    from platform_app.perms import owns_save
+    try:
+        with connect() as db:
+            # [安全] 存档归属校验:原 PR 直接用请求体 save_id 改 messages,无归属校验 = IDOR
+            # (任何登录用户可改他人存档的消息)。与全平台 save 端点统一走 perms.owns_save。
+            if not owns_save(db, int(save_id), int(api_user["id"])):
+                return JSONResponse({"ok": False, "error": "无权访问该存档"}, status_code=403)
+            # 按 turn, id 排序拿到有序消息列表,定位到目标行
+            rows = db.execute(
+                "select id from messages where save_id = %s order by turn, id",
+                (save_id,),
+            ).fetchall()
+            if msg_index < 0 or msg_index >= len(rows):
+                return JSONResponse({"ok": False, "error": f"message_index {msg_index} out of range (0-{len(rows)-1})"}, status_code=400)
+            target_id = rows[msg_index]["id"]
+            db.execute(
+                "update messages set content = %s where id = %s",
+                (str(new_content), target_id),
+            )
+            db.commit()
+        # 同步更新 state blob history(非 kb_native 存档直接读 blob;
+        # kb_native 存档 materialize 从 messages 读,上面已更新)
+        try:
+            from app import _ensure_loaded, _resolve_persist_target
+            state = _ensure_loaded(api_user)
+            hist = state.data.get("history") or []
+            if 0 <= msg_index < len(hist):
+                hist[msg_index]["content"] = str(new_content)
+                state.save()
+        except Exception:
+            pass  # blob 同步失败不影响 messages 表已更新的事实
+    except Exception as e:
+        _log.exception("[message/edit] failed")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    return JSONResponse({"ok": True})

@@ -59,6 +59,7 @@ def assemble_gm_context(db, *, save_id: int, user_id: int, user_input: str = "",
     inj = CI.build_injection(
         db, script_id=script_id, scene_summary=scene_summary,
         steering_hint=steer.get("soft_goal", ""),
+        steering_strength=steering_strength,
     )
     level = IM.classify_impact(user_input)
 
