@@ -42,6 +42,8 @@ jobs:
         with:
           node-version: '20'
 
+      - uses: astral-sh/setup-uv@v6
+
       - name: 安装前端依赖
         working-directory: frontend
         run: npm ci

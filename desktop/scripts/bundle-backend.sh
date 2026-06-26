@@ -67,10 +67,8 @@ PY="$STAGE/runtime/python/bin/python3"
 
 # ── 2. 安装后端依赖(pyproject.toml [project.dependencies],dev 组不装)──
 echo "== 2/5 安装依赖 =="
-"$PY" -m pip install --no-cache-dir --upgrade pip >/dev/null
-"$PY" -m pip install --no-cache-dir "$ROOT/rpg"
+uv pip install --no-cache --python "$PY" "$ROOT/rpg"
 # 瘦身:去掉 pip / setuptools / __pycache__ / 测试目录
-"$PY" -m pip uninstall -y pip setuptools wheel 2>/dev/null || true
 find "$STAGE/runtime/python" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
 find "$STAGE/runtime/python" -type d \( -name 'tests' -o -name 'test' \) -prune -exec rm -rf {} + 2>/dev/null || true
 

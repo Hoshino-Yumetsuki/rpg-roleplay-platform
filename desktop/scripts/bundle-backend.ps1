@@ -55,9 +55,7 @@ $Py = "$Stage\runtime\python\python.exe"
 
 # ── 2. 安装依赖(pyproject.toml [project.dependencies],dev 组不装)──
 Write-Host "== 2/5 安装依赖 =="
-& $Py -m pip install --no-cache-dir --upgrade pip | Out-Null
-& $Py -m pip install --no-cache-dir "$Root\rpg"
-& $Py -m pip uninstall -y pip setuptools wheel 2>$null
+& uv pip install --no-cache --python $Py "$Root\rpg"
 
 # ── 3. 便携 PostgreSQL ──
 Write-Host "== 3/5 便携 PostgreSQL ($PgVer) =="

@@ -68,7 +68,7 @@ ok "database ready (vector + pg_trgm + pgcrypto)"
 # ── 3. Python venv + dependencies ───────────────────────────────────
 say "Python venv + dependencies"
 [ -d "$RPG_DIR/.venv" ] || python3 -m venv "$RPG_DIR/.venv"
-"$RPG_DIR/.venv/bin/pip" install -q --disable-pip-version-check "$RPG_DIR"
+uv pip install -q --python "$RPG_DIR/.venv/bin/python" "$RPG_DIR"
 ok "venv ready"
 
 # ── 4. Config (rpg/.env) ────────────────────────────────────────────
