@@ -53,9 +53,10 @@ New-Item -ItemType Directory -Force -Path "$Stage\runtime" | Out-Null
 Move-Item "$Work\python" "$Stage\runtime\python"
 $Py = "$Stage\runtime\python\python.exe"
 
-# ── 2. 安装依赖(pyproject.toml [project.dependencies],dev 组不装)──
+# ── 2. 安装依赖(从 uv.lock 导出锁定版本,装进便携 Python)──
 Write-Host "== 2/5 安装依赖 =="
-& uv pip install --no-cache --python $Py "$Root\rpg"
+& uv export --frozen --no-dev --no-hashes --project "$Root\rpg" | Set-Content "$Work\requirements.txt"
+& uv pip install --no-cache --python $Py -r "$Work\requirements.txt"
 
 # ── 3. 便携 PostgreSQL ──
 Write-Host "== 3/5 便携 PostgreSQL ($PgVer) =="

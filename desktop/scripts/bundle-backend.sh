@@ -65,9 +65,10 @@ tar -xzf "$WORK/python.tar.gz" -C "$WORK"          # 解出 ./python/
 mkdir -p "$STAGE/runtime"; mv "$WORK/python" "$STAGE/runtime/python"
 PY="$STAGE/runtime/python/bin/python3"
 
-# ── 2. 安装后端依赖(pyproject.toml [project.dependencies],dev 组不装)──
+# ── 2. 安装后端依赖(从 uv.lock 导出锁定版本,装进便携 Python)──
 echo "== 2/5 安装依赖 =="
-uv pip install --no-cache --python "$PY" "$ROOT/rpg"
+uv export --frozen --no-dev --no-hashes --project "$ROOT/rpg" > "$WORK/requirements.txt"
+uv pip install --no-cache --python "$PY" -r "$WORK/requirements.txt"
 # 瘦身:去掉 pip / setuptools / __pycache__ / 测试目录
 find "$STAGE/runtime/python" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
 find "$STAGE/runtime/python" -type d \( -name 'tests' -o -name 'test' \) -prune -exec rm -rf {} + 2>/dev/null || true

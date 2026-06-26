@@ -31,7 +31,7 @@ ok()  { printf '\033[32m  ✓ %s\033[0m\n' "$1"; }
 die() { printf '\033[31m  ✗ %s\033[0m\n' "$1" >&2; exit 1; }
 
 command -v psql    >/dev/null 2>&1 || die "psql not found — install Postgres first"
-command -v python3 >/dev/null 2>&1 || die "python3 not found — install Python 3.12+"
+command -v uv      >/dev/null 2>&1 || die "uv not found — install: curl -LsSf https://astral.sh/uv/install.sh | sh"
 
 # ── 1. Postgres running? ─────────────────────────────────────────────
 say "Postgres on :$PG_PORT"
@@ -66,9 +66,8 @@ psql -d "$DB_NAME" -v ON_ERROR_STOP=1 -q \
 ok "database ready (vector + pg_trgm + pgcrypto)"
 
 # ── 3. Python venv + dependencies ───────────────────────────────────
-say "Python venv + dependencies"
-[ -d "$RPG_DIR/.venv" ] || python3 -m venv "$RPG_DIR/.venv"
-uv pip install -q --python "$RPG_DIR/.venv/bin/python" "$RPG_DIR"
+say "Python dependencies (uv sync)"
+( cd "$RPG_DIR" && uv sync --frozen --no-dev --no-install-project )
 ok "venv ready"
 
 # ── 4. Config (rpg/.env) ────────────────────────────────────────────
@@ -83,8 +82,8 @@ fi
 
 # ── 5. Migrations (direct PG connection; full = baseline + all migrations + pgvector) ──
 say "Database migrations"
-( cd "$RPG_DIR" && DATABASE_URL="$DB_URL" .venv/bin/python -m platform_app.migrate full >/dev/null ) \
-  || die "migration failed — see: cd rpg && DATABASE_URL=$DB_URL .venv/bin/python -m platform_app.migrate full"
+( cd "$RPG_DIR" && DATABASE_URL="$DB_URL" uv run --no-sync python -m platform_app.migrate full >/dev/null ) \
+  || die "migration failed — see: cd rpg && DATABASE_URL=$DB_URL uv run python -m platform_app.migrate full"
 ok "schema up to date"
 
 echo ""
