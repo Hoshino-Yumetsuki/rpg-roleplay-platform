@@ -482,6 +482,9 @@
       // 作者写作规范(.cursorrules 风,注入编辑器 agent)。
       writingRules: (sid) => GET(`${API_PREFIX}/scripts/${sid}/writing-rules`),
       saveWritingRules: (sid, rules) => PUT(`${API_PREFIX}/scripts/${sid}/writing-rules`, { rules }),
+      // 内联续写(Copilot ghost text):据光标前文要一句短续写;owner-scoped + 用户自有模型/key。
+      // console_assistant 路由不带版本前缀(/api/...,与 MdEditorAgent 一致),故硬编码而非 API_PREFIX。
+      autocomplete: (sid, body) => POST(`/api/console_assistant/autocomplete`, { ...(body || {}), script_id: sid }),
       // 审稿问题(VSCode Problems 风):编辑器 agent report_writing_issues 持久化;owner-scoped。
       issues: (sid) => GET(`${API_PREFIX}/scripts/${sid}/issues`),
       dismissIssue: (sid, iid) => DEL(`${API_PREFIX}/scripts/${sid}/issues/${iid}`),

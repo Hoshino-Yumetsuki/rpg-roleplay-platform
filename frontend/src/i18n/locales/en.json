@@ -4085,6 +4085,10 @@
     },
     "diff": {
       "mixed_saved": "Saved with your per-section choices"
+    },
+    "ghost": {
+      "btn": "AI complete",
+      "tip": "Inline completion: after a typing pause, a gray suggestion appears — press Tab to accept (uses your own model)"
     }
   },
   "tavern_page": {

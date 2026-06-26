@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from routes._deps_fastapi import get_current_user
@@ -193,6 +193,112 @@ async def api_console_assistant_chat(
         )
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+@router.post("/api/console_assistant/autocomplete")
+async def api_console_assistant_autocomplete(
+    request: Request,
+    api_user: dict[str, Any] | None = Depends(get_current_user),
+) -> JSONResponse:
+    """编辑器内联续写(Copilot ghost text):据光标前文给【一句】短续写,作者按 Tab 采纳。
+
+    body: { before, script_id?, chapter_index? }。owner-scoped + 用户自有模型/key(云端隔离)。
+    非流式、短输出(max_tokens 小)、上下文精简(只 before + 写作规范)以求低延迟低成本。
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "body 必须是合法 JSON"}, status_code=400)
+    user_id = int((api_user or {}).get("id") or 0)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "需要登录"}, status_code=401)
+    before = str(body.get("before") or "")[-1500:]
+    if not before.strip():
+        return JSONResponse({"ok": True, "text": ""})
+
+    rules = ""
+    script_id = body.get("script_id")
+    if script_id is not None:
+        try:
+            sid = int(script_id)
+        except (TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "script_id 无效"}, status_code=400)
+        try:
+            from platform_app.db import connect, init_db
+            from platform_app.perms import script_owned
+            init_db()
+            with connect() as db:
+                if not script_owned(db, sid, user_id):
+                    return JSONResponse({"ok": False, "error": "无权操作该剧本:仅原作者可用 AI 续写。"}, status_code=403)
+                row = db.execute("select writing_rules from scripts where id=%s", (sid,)).fetchone()
+                rules = str((row.get("writing_rules") if row else "") or "").strip()[:1000]
+        except Exception:
+            return JSONResponse({"ok": False, "error": "剧本归属校验失败"}, status_code=200)
+        script_id = sid
+    else:
+        script_id = None
+
+    try:
+        from agents._harness import resolve_api_and_model
+        api_id, model_real = resolve_api_and_model(
+            user_id, api_pref_key="editor.api_id", model_pref_key="editor.model_real_name",
+        )
+    except Exception:
+        return JSONResponse({"ok": False, "error": "未配置可用模型"}, status_code=200)
+    if not api_id or not model_real:
+        return JSONResponse({"ok": False, "error": "未配置可用模型"}, status_code=200)
+
+    try:
+        from agents.gm import GameMaster
+        backend = GameMaster(api_id=str(api_id), model=str(model_real), user_id=user_id)._backend
+    except Exception:
+        return JSONResponse({"ok": False, "error": "模型后端初始化失败"}, status_code=200)
+
+    sys_prompt = (
+        "你是小说续写补全引擎。任务:顺着作者光标处的正文,给出紧接其后的【一小段】续写"
+        "(约 10-40 字,最多一句话),供作者按 Tab 采纳。严格要求:"
+        "① 只输出续写本身,绝不重复已有文字,不加引号/解释/标题/省略号前缀;"
+        "② 语气、人称、时态、文风与上文完全一致;"
+        "③ 若上文最后一句未写完,就把这句话自然补完;写完则起一句承接的新句。"
+        "④ 叙事语言与上文既有语言一致,不要无故切换语言。"
+    )
+    if rules:
+        sys_prompt += "\n\n【作者写作规范(务必遵守)】\n" + rules
+    user_prompt = "【上文,请紧接最后一个字续写】\n" + before
+
+    text = ""
+    try:
+        for chunk in backend.stream(sys_prompt, [{"role": "user", "content": user_prompt}], max_tokens=80):
+            if chunk:
+                text += chunk
+            if len(text) > 240:
+                break
+    except Exception as exc:
+        import logging
+        logging.getLogger("console_assistant").info("autocomplete failed: %s", type(exc).__name__)
+        from agents.provider_errors import classify_provider_error
+        known = classify_provider_error(exc)
+        return JSONResponse({"ok": False, "error": (known[1] if known else "续写失败")}, status_code=200)
+
+    # 清洗:去首尾空白/引号/省略号前缀;去掉模型可能回声的上文尾巴。
+    text = text.strip().strip('「」“”"\'').lstrip("….—- ").strip()
+    text = text[:160]
+
+    try:
+        usage = getattr(backend, "last_usage", None) or {}
+        if usage and (usage.get("input_tokens") or usage.get("output_tokens")):
+            from platform_app.usage import record_usage
+            record_usage(
+                user_id=user_id, save_id=None, context_run_id=None,
+                api_id=str(getattr(backend, "api_id", None) or api_id),
+                model_real_name=str(getattr(backend, "model_name", None) or model_real),
+                usage=usage, metadata={"kind": "editor_autocomplete", "script_id": script_id},
+                scenario="assistant",
+            )
+    except Exception:
+        pass
+
+    return JSONResponse({"ok": True, "text": text})
 
 
 @router.post("/api/console_assistant/confirm")

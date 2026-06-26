@@ -11,6 +11,7 @@ import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInp
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { aiContinueExtension, cmdKKeymap } from '../lib/md-continue.js';
 import { chapterDiffExtension } from '../lib/md-diff.js';
+import { ghostCompleteExtension } from '../lib/md-ghost.js';
 
 const { useRef, useEffect } = React;
 
@@ -70,11 +71,15 @@ function frontMatterGuard() {
   });
 }
 
-function baseExtensions(onChange, readOnly, getScriptId, getOnAccept, getChapterIndex, getOnSel) {
+function baseExtensions(onChange, readOnly, getScriptId, getOnAccept, getChapterIndex, getOnSel, getGhostEnabled, getGhostFetch) {
   return [
     frontMatterGuard(),
     aiContinueExtension(),
     chapterDiffExtension(),
+    ghostCompleteExtension({
+      isEnabled: () => { try { return !!(getGhostEnabled && getGhostEnabled()); } catch (_) { return false; } },
+      fetchCompletion: (before) => { try { const f = getGhostFetch && getGhostFetch(); return f ? f(before) : ''; } catch (_) { return ''; } },
+    }),
     cmdKKeymap(getScriptId, getOnAccept, getChapterIndex),
     lineNumbers(),
     highlightActiveLineGutter(),
@@ -104,7 +109,7 @@ function baseExtensions(onChange, readOnly, getScriptId, getOnAccept, getChapter
   ];
 }
 
-export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = false, scriptId, onViewReady, onContinueAccept, chapterIndex, onSelectionChange }) {
+export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = false, scriptId, onViewReady, onContinueAccept, chapterIndex, onSelectionChange, ghostEnabled = false, ghostFetch = null }) {
   const hostRef = useRef(null);
   const viewRef = useRef(null);
   const onChangeRef = useRef(onChange);
@@ -119,6 +124,10 @@ export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = f
   chapterIndexRef.current = chapterIndex;
   const onSelChangeRef = useRef(onSelectionChange);
   onSelChangeRef.current = onSelectionChange;
+  const ghostEnabledRef = useRef(ghostEnabled);
+  ghostEnabledRef.current = ghostEnabled;
+  const ghostFetchRef = useRef(ghostFetch);
+  ghostFetchRef.current = ghostFetch;
   const lastKeyRef = useRef(docKey);
 
   // 建一次。
@@ -126,7 +135,7 @@ export default function CodeMirrorEditor({ value, docKey, onChange, readOnly = f
     const view = new EditorView({
       state: EditorState.create({
         doc: value || '',
-        extensions: baseExtensions((v) => onChangeRef.current?.(v), readOnly, () => scriptIdRef.current, () => onContinueAcceptRef.current, () => chapterIndexRef.current, () => onSelChangeRef.current),
+        extensions: baseExtensions((v) => onChangeRef.current?.(v), readOnly, () => scriptIdRef.current, () => onContinueAcceptRef.current, () => chapterIndexRef.current, () => onSelChangeRef.current, () => ghostEnabledRef.current, () => ghostFetchRef.current),
       }),
       parent: hostRef.current,
     });

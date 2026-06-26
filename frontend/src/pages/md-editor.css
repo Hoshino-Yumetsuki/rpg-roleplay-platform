@@ -123,6 +123,9 @@
 /* 写作规范(.cursorrules)弹窗 + 顶栏文字按钮 */
 .mde-tb-txt { background: transparent; border: 1px solid var(--line, #36322d); border-radius: 6px; color: var(--muted, #968f85); cursor: pointer; font-size: 12px; padding: 3px 10px; font-family: inherit; }
 .mde-tb-txt:hover { border-color: var(--accent, #b5654a); color: var(--accent, #b5654a); }
+.mde-tb-txt.on { border-color: var(--ok, #3fa66a); color: var(--ok, #3fa66a); background: rgba(63,166,106,.10); }
+/* 内联续写(Copilot ghost text):暗色幽灵文本,保留换行 */
+.mde-cm .mde-ghost { color: var(--muted-2, #6b655e); opacity: .72; font-style: italic; white-space: pre-wrap; }
 .mde-rules { width: min(620px, 92vw); background: var(--panel, #1c1a18); border: 1px solid var(--line, #36322d); border-radius: 10px; box-shadow: 0 16px 48px rgba(0,0,0,.55); overflow: hidden; }
 .mde-rules-head { padding: 12px 14px 4px; font-size: 13.5px; font-weight: 600; color: var(--text, #ebe7df); }
 .mde-rules-desc { padding: 0 14px 8px; font-size: 11.5px; color: var(--muted-2, #6b655e); line-height: 1.5; }

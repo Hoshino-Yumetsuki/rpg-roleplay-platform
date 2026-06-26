@@ -508,7 +508,7 @@ async function fetchGroupList(kind, sid) {
 }
 
 // ── 标签编辑器(P0:textarea;P3 替换为 CodeMirror)──────────────────────
-function EditorPane({ tab, onChange, scriptId, onViewReady, onContinueAccept, chapterIndex, onSelectionChange }) {
+function EditorPane({ tab, onChange, scriptId, onViewReady, onContinueAccept, chapterIndex, onSelectionChange, ghostEnabled, ghostFetch }) {
   const { t } = useTranslation();
   if (!tab) {
     return <div className="mde-empty">{t('md_editor.editor.empty_hint')}<br /><span className="muted">{t('md_editor.editor.empty_kinds')}</span></div>;
@@ -525,6 +525,8 @@ function EditorPane({ tab, onChange, scriptId, onViewReady, onContinueAccept, ch
       onContinueAccept={onContinueAccept}
       chapterIndex={chapterIndex}
       onSelectionChange={onSelectionChange}
+      ghostEnabled={ghostEnabled && tab.kind === 'chapter'}
+      ghostFetch={ghostFetch}
     />
   );
 }
@@ -805,6 +807,7 @@ export default function MdEditorPage() {
   const [issuesOpen, setIssuesOpen] = useState(false);     // 审稿问题面板(VSCode Problems 风)
   const [issueCount, setIssueCount] = useState(0);         // 顶栏「问题」徽标计数
   const [issuesReloadKey, setIssuesReloadKey] = useState(0); // 编辑器 agent 汇报问题后 bump → 重载
+  const [autoComplete, setAutoComplete] = useState(() => lsGet('mde.autocomplete', '0') === '1');  // 内联续写(Copilot ghost)开关,默认关(BYO 计费)
   // 选区/光标上报(对象):右栏要 selLen(数字),状态栏要 line/col/total。
   const onSel = useCallback((info) => {
     if (info && typeof info === 'object') {
@@ -1128,6 +1131,19 @@ export default function MdEditorPage() {
     } catch (_) { return false; }
   }, [scriptId, t]);
 
+  // 内联续写(Copilot ghost):据光标前文向后端要一句短续写。owner-scoped + 用户自有模型/key(后端隔离)。
+  const ghostFetch = useCallback(async (before) => {
+    try {
+      const _a = activeRef.current;
+      const ci = (_a && _a.kind === 'chapter') ? _a.id : null;
+      const r = await api().scripts.autocomplete(scriptId, { before, chapter_index: ci });
+      return (r && r.ok && r.text) ? String(r.text) : '';
+    } catch (_) { return ''; }
+  }, [scriptId]);
+  const toggleAutoComplete = useCallback(() => {
+    setAutoComplete((on) => { const next = !on; lsSet('mde.autocomplete', next ? '1' : '0'); return next; });
+  }, []);
+
   // 「同步设定」:把刚接受的正文丢给右栏 agent,按 rule 4 读现状 + 同步知识资产。
   const doSync = useCallback(() => {
     const n = syncNudge;
@@ -1243,6 +1259,7 @@ export default function MdEditorPage() {
         </div>
 
         <div className="mde-tb-spacer" />
+        {scriptId && active && active.kind === 'chapter' && <button className={'mde-tb-txt' + (autoComplete ? ' on' : '')} data-tip={t('md_editor.ghost.tip', { defaultValue: '内联续写:打字停顿后给灰色续写建议,Tab 采纳(用你自己的模型)' })} title={t('md_editor.ghost.btn', { defaultValue: 'AI 续写' })} onClick={toggleAutoComplete}>{t('md_editor.ghost.btn', { defaultValue: 'AI 续写' })}{autoComplete ? ' ·开' : ''}</button>}
         {scriptId && <button className={'mde-tb-txt' + (issueCount > 0 ? ' has-badge' : '')} data-tip={t('md_editor.problems.tip', { defaultValue: 'AI 审稿发现的问题(可跳转章节)' })} title={t('md_editor.problems.btn', { defaultValue: '问题' })} onClick={() => setIssuesOpen(true)}>{t('md_editor.problems.btn', { defaultValue: '问题' })}{issueCount > 0 ? <span className="mde-tb-badge">{issueCount}</span> : null}</button>}
         {scriptId && <button className="mde-tb-txt" data-tip={t('md_editor.rules.tip', { defaultValue: '给 AI 立写作规范(注入上下文)' })} title={t('md_editor.rules.btn', { defaultValue: '写作规范' })} onClick={() => setRulesOpen(true)}>{t('md_editor.rules.btn', { defaultValue: '写作规范' })}</button>}
         {active && active.dirty && <button className="mde-save" onClick={() => saveTab(active.key)} disabled={active.saving}>{active.saving ? t('md_editor.save_btn.saving') : t('md_editor.save_btn.save')}</button>}
@@ -1273,7 +1290,7 @@ export default function MdEditorPage() {
             ))}
           </div>
           <div className="mde-editorwrap" onContextMenu={(e) => { if (!active) return; e.preventDefault(); setEditorCtx({ x: e.clientX, y: e.clientY }); }}>
-            <EditorPane tab={active} onChange={onEdit} scriptId={scriptId} onViewReady={(v) => { activeViewRef.current = v; }} onContinueAccept={onProseAccepted} chapterIndex={active && active.kind === 'chapter' ? active.id : null} onSelectionChange={onSel} />
+            <EditorPane tab={active} onChange={onEdit} scriptId={scriptId} onViewReady={(v) => { activeViewRef.current = v; }} onContinueAccept={onProseAccepted} chapterIndex={active && active.kind === 'chapter' ? active.id : null} onSelectionChange={onSel} ghostEnabled={autoComplete} ghostFetch={ghostFetch} />
           </div>
           {/* 底部状态栏(VSCode 风):字数 + 光标行:列 + 选中 + 保存态 */}
           <div className="mde-statusbar">
