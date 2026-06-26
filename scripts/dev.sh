@@ -118,7 +118,7 @@ start_backend() {
     return 0
   fi
   if [ ! -x "$RPG_DIR/.venv/bin/uvicorn" ]; then
-    echo "  $(_bad) .venv/bin/uvicorn 不存在 — 先 cd rpg && python -m venv .venv && .venv/bin/pip install -r requirements.txt"
+    echo "  $(_bad) .venv/bin/uvicorn 不存在 — 先 cd rpg && python -m venv .venv && .venv/bin/pip install ."
     return 1
   fi
   echo "  · 启动 backend (uvicorn --reload,改 .py 自动重启) → $BACKEND_LOG"

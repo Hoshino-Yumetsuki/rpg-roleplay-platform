@@ -33,8 +33,8 @@ New-Item -ItemType Directory -Force -Path $Stage, $Work | Out-Null
 function Dl($url, $out) { Write-Host "  ↓ $url"; Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing }
 
 # ── 运行时缓存(便携 Python+依赖 + 便携 PG)→ 跨补丁构建字节一致 → blockmap 差量极小 → 小更新包 ──
-$ReqHash = (Get-FileHash "$Root\rpg\requirements.txt" -Algorithm SHA256).Hash.Substring(0,12)
-$RuntimeCache = Join-Path $Desk ".runtime-cache\py$PyVer-pg$PgVer-$PbsTriple-req$ReqHash"
+$ReqHash = (Get-FileHash "$Root\rpg\pyproject.toml" -Algorithm SHA256).Hash.Substring(0,12)
+$RuntimeCache = Join-Path $Desk ".runtime-cache\py$PyVer-pg$PgVer-$PbsTriple-deps$ReqHash"
 $RuntimeCached = $false
 if ((Test-Path "$RuntimeCache\runtime\python\python.exe") -and (Test-Path "$RuntimeCache\pg\bin\postgres.exe")) {
   Write-Host "== 运行时缓存命中 → 复用 runtime+pg,跳过下载/安装 =="
@@ -53,14 +53,10 @@ New-Item -ItemType Directory -Force -Path "$Stage\runtime" | Out-Null
 Move-Item "$Work\python" "$Stage\runtime\python"
 $Py = "$Stage\runtime\python\python.exe"
 
-# ── 2. 安装依赖(剔除 dev)──
+# ── 2. 安装依赖(pyproject.toml [project.dependencies],dev 组不装)──
 Write-Host "== 2/5 安装依赖 =="
-$prodReq = "$Work\requirements.prod.txt"
-Get-Content "$Root\rpg\requirements.txt" |
-  Where-Object { $_ -notmatch '^(mypy|pytest|ruff|pluggy|iniconfig)([=<>~ ]|$)' } |
-  Set-Content $prodReq
 & $Py -m pip install --no-cache-dir --upgrade pip | Out-Null
-& $Py -m pip install --no-cache-dir -r $prodReq
+& $Py -m pip install --no-cache-dir "$Root\rpg"
 & $Py -m pip uninstall -y pip setuptools wheel 2>$null
 
 # ── 3. 便携 PostgreSQL ──

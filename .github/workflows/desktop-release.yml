@@ -51,13 +51,13 @@ jobs:
         run: npm ci
 
       # 运行时缓存(便携 Python+依赖 + 便携 PG)→ 跨补丁构建运行时字节一致 → electron-updater
-      # blockmap 差量极小 → 本地部署只拉小更新包。key 含 PY/PG 版本 + requirements.txt 哈希:
+      # blockmap 差量极小 → 本地部署只拉小更新包。key 含 PY/PG 版本 + pyproject.toml 哈希:
       # 依赖变则缓存失效重建;bug 补丁(deps 不变)命中缓存 → 运行时复用,只有 app 代码进差量。
       - name: 缓存便携运行时(小体积差量更新关键)
         uses: actions/cache@v4
         with:
           path: desktop/.runtime-cache
-          key: rt-${{ matrix.platform }}-${{ matrix.arch }}-py3.12.13-pg17.10-${{ hashFiles('rpg/requirements.txt') }}
+          key: rt-${{ matrix.platform }}-${{ matrix.arch }}-py3.12.13-pg17.10-${{ hashFiles('rpg/pyproject.toml') }}
 
       - name: 组装后端 bundle (mac/linux)
         if: matrix.platform == 'mac'

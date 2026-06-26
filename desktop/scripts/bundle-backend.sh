@@ -41,11 +41,12 @@ rm -rf "$STAGE" "$WORK"; mkdir -p "$STAGE" "$WORK"
 
 dl() { echo "  ↓ $1"; curl -fL --retry 3 -o "$2" "$1"; }
 
-# ── 运行时缓存(便携 Python+依赖 + 便携 PG,≈280MB,只随 PY_VER/PG_VER/requirements.txt 变)──
+# ── 运行时缓存(便携 Python+依赖 + 便携 PG,≈280MB,只随 PY_VER/PG_VER/pyproject.toml 变)──
 # 命中即复用 → 跨补丁(bug 修)构建的运行时字节【完全一致】→ electron-updater blockmap 差量极小
 # → 本地部署只需拉很小的增量更新包(不是每次重下 280MB)。CI 用 actions/cache 持久化 $RUNTIME_CACHE。
-REQ_HASH="$( { shasum -a 256 "$ROOT/rpg/requirements.txt" 2>/dev/null || sha256sum "$ROOT/rpg/requirements.txt"; } | cut -c1-12 )"
-RUNTIME_CACHE="$DESK/.runtime-cache/py${PY_VER}-pg${PG_VER}-${PBS_TRIPLE}-req${REQ_HASH}"
+DEPS_HASH="$( shasum -a 256 "$ROOT/rpg/pyproject.toml" 2>/dev/null || sha256sum "$ROOT/rpg/pyproject.toml" )"
+DEPS_HASH="$(echo "$DEPS_HASH" | cut -c1-12)"
+RUNTIME_CACHE="$DESK/.runtime-cache/py${PY_VER}-pg${PG_VER}-${PBS_TRIPLE}-deps${DEPS_HASH}"
 if [ -x "$RUNTIME_CACHE/runtime/python/bin/python3" ] && [ -x "$RUNTIME_CACHE/pg/bin/postgres" ]; then
   echo "== 运行时缓存命中($RUNTIME_CACHE)→ 复用 runtime+pg,跳过下载/安装 =="
   cp -R "$RUNTIME_CACHE/runtime" "$STAGE/runtime"
@@ -64,12 +65,10 @@ tar -xzf "$WORK/python.tar.gz" -C "$WORK"          # 解出 ./python/
 mkdir -p "$STAGE/runtime"; mv "$WORK/python" "$STAGE/runtime/python"
 PY="$STAGE/runtime/python/bin/python3"
 
-# ── 2. 安装后端依赖(剔除 dev:mypy/ruff/pytest/pip 体积大头)──
+# ── 2. 安装后端依赖(pyproject.toml [project.dependencies],dev 组不装)──
 echo "== 2/5 安装依赖 =="
-PROD_REQ="$WORK/requirements.prod.txt"
-grep -viE '^(mypy|pytest|ruff|pluggy|iniconfig)([=<>~ ]|$)' "$ROOT/rpg/requirements.txt" > "$PROD_REQ"
 "$PY" -m pip install --no-cache-dir --upgrade pip >/dev/null
-"$PY" -m pip install --no-cache-dir -r "$PROD_REQ"
+"$PY" -m pip install --no-cache-dir "$ROOT/rpg"
 # 瘦身:去掉 pip / setuptools / __pycache__ / 测试目录
 "$PY" -m pip uninstall -y pip setuptools wheel 2>/dev/null || true
 find "$STAGE/runtime/python" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
