@@ -168,7 +168,10 @@ def llm_timeout_seconds(user_id: int | None = None) -> float:
       部署默认 = 本地/桌面 1800s,服务器 300s。
       上下限 = 本地 [30, 7200],服务器 [30, 900](多用户下不让单请求把 worker 占死)。
     """
-    local = is_local_mode()
+    # 自包含判定部署模式(不依赖 is_local_mode —— 生产 deploy 仓的 config.py 与 OSS 已分叉,
+    # 那边可能没有该函数;直接读 RPG_DEPLOYMENT_MODE 保证两仓都能用)。
+    _mode = os.getenv("RPG_DEPLOYMENT_MODE", "local").strip().lower()
+    local = _mode in ("local", "desktop", "self_hosted", "self-hosted")
     lo, hi = 30.0, (7200.0 if local else 900.0)
     if user_id:
         try:
