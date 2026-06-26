@@ -1143,6 +1143,15 @@ export default function MdEditorPage() {
   const toggleAutoComplete = useCallback(() => {
     setAutoComplete((on) => { const next = !on; lsSet('mde.autocomplete', next ? '1' : '0'); return next; });
   }, []);
+  // AI 复审本章(对标 Copilot /review):让右栏 agent 通读本章 + 汇总问题到「问题」面板(沿用 Batch 6 管线)。
+  const reviewActiveChapter = useCallback(() => {
+    const a = activeRef.current;
+    if (!a || a.kind !== 'chapter') return;
+    setRightOpen(true); lsSet('mde.rightOpen', '1');
+    const ok = agentRef.current?.reviewChapter?.(a.id, a.label);
+    if (ok === false) { toast(t('md_editor.review.busy', { defaultValue: 'AI 正忙,请稍候再试' }), { kind: 'warning' }); return; }
+    toast(t('md_editor.review.started', { defaultValue: '正在复审本章,问题会汇总到「问题」面板' }), { kind: 'ok', duration: 2400 });
+  }, [t]);
 
   // 「同步设定」:把刚接受的正文丢给右栏 agent,按 rule 4 读现状 + 同步知识资产。
   const doSync = useCallback(() => {
@@ -1300,6 +1309,9 @@ export default function MdEditorPage() {
                 <span className="mde-sb-item">{t('md_editor.statusbar.lncol', { line: cursor.line, col: cursor.col, defaultValue: '行 {{line}}, 列 {{col}}' })}</span>
                 {selLen > 0 && <span className="mde-sb-item">{t('md_editor.statusbar.selected', { n: selLen, defaultValue: '选中 {{n}}' })}</span>}
                 <span className="mde-sb-spacer" />
+                {active.kind === 'chapter' && (
+                  <button type="button" className="mde-sb-btn" onClick={reviewActiveChapter}>{t('md_editor.review.btn', { defaultValue: 'AI 复审本章' })}</button>
+                )}
                 {active.kind === 'chapter' && (
                   <button type="button" className="mde-sb-btn" onClick={() => setHistoryFor(active.id)}>{t('md_editor.history.btn', { defaultValue: '版本历史' })}</button>
                 )}

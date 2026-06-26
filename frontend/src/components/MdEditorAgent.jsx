@@ -706,6 +706,23 @@ const MdEditorAgent = forwardRef(function MdEditorAgent({ scriptId, activeTab, o
         `${rewrite ? '改写后的正文' : '续写的正文'}:\n"""\n${t}\n"""`;
       send(msg);
     },
+    // 复审本章(对标 Copilot /review):让 agent 读该章 + 对照设定逐项审,最后调 report_writing_issues
+    // 把问题写进右栏「问题」面板(持久化、可跳转;沿用 Batch 6 整条管线,owner 路径已校验)。
+    reviewChapter(chapterIndex, label) {
+      if (busy || chapterIndex == null) return false;
+      const n = chapterIndex;
+      const msg =
+        `请对「${label || `第${n}章`}」做一次责任编辑式通读审稿。步骤:` +
+        `① 先用工具读取第 ${n} 章正文与相关设定(世界书/角色卡/canon/时间线/前情);` +
+        '② 对照逐项检查:与设定或前文的事实矛盾、人物声音/性格漂移、埋下却未回收的伏笔、' +
+        '节奏问题、POV/人称越界、重复啰嗦;' +
+        `③ 【务必调用 report_writing_issues】把发现的问题结构化汇总,每条带 chapter=${n}、severity(高/中/低)、` +
+        'type(类别)、detail(具体描述+修改建议)。' +
+        '若通读后确无明显问题,也调用一次 report_writing_issues,传一条 severity=低、type=通读、' +
+        'detail 说明「本章未发现明显问题」。只审不改,不要动正文。';
+      send(msg);
+      return true;
+    },
   }), [send, busy]);
 
   return (

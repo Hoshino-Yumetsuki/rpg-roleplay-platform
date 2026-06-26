@@ -4089,6 +4089,11 @@
     "ghost": {
       "btn": "AI complete",
       "tip": "Inline completion: after a typing pause, a gray suggestion appears — press Tab to accept (uses your own model)"
+    },
+    "review": {
+      "btn": "AI review",
+      "busy": "AI is busy, try again shortly",
+      "started": "Reviewing this chapter — issues will collect in the Problems panel"
     }
   },
   "tavern_page": {
