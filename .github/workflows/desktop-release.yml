@@ -36,13 +36,13 @@ jobs:
     env:
       UPLOAD_ENABLED: ${{ secrets.UPDATE_SERVER_HOST != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v8
 
       - name: 安装前端依赖
         working-directory: frontend
@@ -56,7 +56,7 @@ jobs:
       # blockmap 差量极小 → 本地部署只拉小更新包。key 含 PY/PG 版本 + pyproject.toml 哈希:
       # 依赖变则缓存失效重建;bug 补丁(deps 不变)命中缓存 → 运行时复用,只有 app 代码进差量。
       - name: 缓存便携运行时(小体积差量更新关键)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: desktop/.runtime-cache
           key: rt-${{ matrix.platform }}-${{ matrix.arch }}-py3.12.13-pg17.10-${{ hashFiles('rpg/pyproject.toml') }}
@@ -113,7 +113,7 @@ jobs:
       # 仅在配置了 UPDATE_SERVER_* Secret 时执行;未配置则跳过,GitHub 发布不受影响。
       - name: 分发到我的服务器(更新回退源)
         if: ${{ env.UPLOAD_ENABLED == 'true' }}
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.UPDATE_SERVER_HOST }}
           username: ${{ secrets.UPDATE_SERVER_USER }}
