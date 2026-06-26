@@ -528,6 +528,10 @@ _FRONTEND_ROOT = _Path(__file__).resolve().parent.parent / "frontend"
 # 源码目录的 *.html 引用裸 .jsx 模块,浏览器无法直接运行 → 白屏。
 # dist 不存在(未 npm run build)时回退源码目录,仅配合 vite dev server (:5173) 用。
 _FRONTEND_DIR = _FRONTEND_ROOT / "dist" if (_FRONTEND_ROOT / "dist").is_dir() else _FRONTEND_ROOT
+# 是否有「已构建」前端(非源码回退)。routes/core.py 的根路由据此决定:
+# 有 dist → 裸 / 直出 SPA 壳 Platform.html(桌面自托管局域网浏览器访问 :端口/ 直接进应用);
+# 无 dist(纯 API / 未构建 dev,配 Vite :5173)→ 回服务描述 JSON。
+_FRONTEND_HAS_DIST = (_FRONTEND_ROOT / "dist").is_dir()
 if _FRONTEND_DIR.is_dir():
     # SPA history-fallback:/ 与所有干净路径(/login、/platform/*、/console) → index.html(见 _SPAStaticFiles)。
     app.mount("/", _SPAStaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")

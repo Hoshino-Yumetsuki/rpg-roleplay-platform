@@ -12,7 +12,7 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from routes._deps_fastapi import get_current_user
 
@@ -20,9 +20,37 @@ router = APIRouter()
 
 
 @router.get("/")
-async def index() -> RedirectResponse:
-    """把根域名直接导向前端主界面。"""
-    return RedirectResponse(url="/platform/", status_code=307)
+async def index():
+    """Backend root。
+
+    有「已构建」前端(同源/桌面/自托管)→ 裸 `/` 直出 SPA 壳 Platform.html。
+    这样**桌面自托管开了局域网开关后**,同网设备浏览器访问 `http://<ip>:<端口>/`
+    直接进应用,而不是看到后端 JSON 描述符(群反馈 听枫叶吹落的声音)。
+    无 dist(纯 API / 未构建 dev,配合 Vite :5173)→ 回服务描述 JSON。
+    注:web 生产由 nginx 边缘直出 Platform.html、Electron 窗口直接 loadURL /Platform.html,
+    两者本就不经过此路由;受影响的只有「裸 / 浏览器直连后端」这一路径。"""
+    try:
+        from app import _FRONTEND_DIR, _FRONTEND_HAS_DIST
+        if _FRONTEND_HAS_DIST:
+            shell = _FRONTEND_DIR / "Platform.html"
+            if shell.is_file():
+                return FileResponse(
+                    str(shell),
+                    media_type="text/html",
+                    headers={"Cache-Control": "no-cache, must-revalidate"},
+                )
+    except Exception:
+        pass
+    from app import APP_TITLE
+    return JSONResponse({
+        "ok": True,
+        "service": f"{APP_TITLE} RPG backend",
+        "frontend": {
+            "platform": "Platform.html (Vite dev: http://127.0.0.1:5173/Platform.html)",
+            "game_console": "Game Console.html (Vite dev: http://127.0.0.1:5173/Game%20Console.html)",
+        },
+        "docs": "/docs",
+    })
 
 
 @router.get("/api/health")
@@ -73,7 +101,6 @@ async def api_state_events(
     try:
         queue = subscribe(user_id)
     except TooManySubscribers as exc:
-        # 429: 单用户 SSE 上限保护, 防止 DoS
         return StreamingResponse(
             iter([f"event: error\ndata: {json.dumps({'message': str(exc), 'code': 'E_TOO_MANY_SUBSCRIBERS'}, ensure_ascii=False)}\n\n"]),
             media_type="text/event-stream",
@@ -82,7 +109,6 @@ async def api_state_events(
 
     async def _gen():
         try:
-            # 立刻发一个 hello 让前端知道连上了
             yield (
                 f"event: hello\ndata: "
                 f"{json.dumps({'user_id': user_id, 'ts': time.time()}, ensure_ascii=False)}\n\n"
@@ -93,7 +119,6 @@ async def api_state_events(
                 try:
                     event = await _asyncio.wait_for(queue.get(), timeout=25.0)
                 except TimeoutError:
-                    # 25 秒没动静就发 keepalive,防 proxy 切连接
                     yield f": keepalive {int(time.time())}\n\n"
                     continue
                 yield f"event: state_change\ndata: {event.to_sse_data()}\n\n"

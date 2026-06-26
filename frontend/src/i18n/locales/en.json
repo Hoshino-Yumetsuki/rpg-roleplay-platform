@@ -2799,6 +2799,13 @@
     "memory": {
       "current_objective": "Current Objective",
       "main_quest_pill": "Main",
+      "forced_set": "Forced Settings",
+      "forced_set_subtitle": "Hard constraints from /set · injected into the GM every turn",
+      "forced_set_source": "turn {{turn}}",
+      "forced_set_delete_tip": "Delete this forced setting",
+      "forced_set_delete_confirm": "Delete this /set forced setting? The GM will no longer be bound by it (the paired pinned memory is cleared too).",
+      "forced_set_clear_all": "Clear all",
+      "forced_set_clear_all_confirm": "Clear all {{count}} /set forced settings? The GM will no longer be bound by them.",
       "pinned": "Pinned Memory",
       "pinned_subtitle": "Always included in context",
       "add_pinned_tip": "Add pinned memory",

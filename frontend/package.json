@@ -1,7 +1,7 @@
 {
   "name": "rpg-roleplay-frontend",
-  "version": "1.26.3",
   "private": true,
+  "version": "1.27.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,21 +16,21 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@cloudscape-design/components": "^3.0.1312",
-    "@cloudscape-design/global-styles": "^1.0.60",
-    "@codemirror/commands": "^6.10.3",
+    "@cloudscape-design/components": "^3.0.1318",
+    "@cloudscape-design/global-styles": "^1.0.61",
+    "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-markdown": "^6.5.0",
-    "@codemirror/language": "^6.12.3",
+    "@codemirror/language": "^6.12.4",
     "@codemirror/search": "^6.7.1",
     "@codemirror/state": "^6.6.0",
-    "@codemirror/view": "^6.43.1",
-    "i18next": "^23.16.8",
-    "i18next-browser-languagedetector": "^7.2.2",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-i18next": "^14.1.3",
+    "@codemirror/view": "^6.43.3",
+    "i18next": "^26.3.3",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-i18next": "^17.0.8",
     "react-router-dom": "^7.16.0",
-    "web-vitals": "^4.2.0",
+    "web-vitals": "^5.3.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
@@ -40,13 +40,13 @@
     "@types/node": "^25.9.2",
     "@types/react": "^19.2.16",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.2",
+    "@vitejs/plugin-react": "^6.0.3",
     "jsdom": "^29.1.1",
     "oxfmt": "^0.53.0",
     "oxlint": "^1.68.0",
-    "typescript": "^5.6.0",
-    "vite": "^8.0.16",
-    "vitest": "^4.1.7"
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0",
+    "vitest": "^4.1.9"
   },
   "allowScripts": {
     "fsevents@2.3.3": true

@@ -97,6 +97,11 @@ def _load_characters_db(script_id: int | None, book_id: int | None,
             ceiling = int(progress_chapter)
             if mode == "partial":
                 ceiling += _PARTIAL_LOOKAHEAD_CHAPTERS
+            # 严格模式 + 早期进度：first_revealed_chapter=0 不再无脑放行，
+            # 避免导入管线未设章节值时全书 NPC 涌入序章。
+            # chapter 4+ 后才恢复保守放行（此时该出场的 NPC 早该被正确覆盖）。
+            if mode == "none" and ceiling <= 3:
+                return ("(first_revealed_chapter > 0 and first_revealed_chapter <= %s)", [ceiling])
             return "(first_revealed_chapter <= %s or first_revealed_chapter = 0)", [ceiling]
         return None, []
 

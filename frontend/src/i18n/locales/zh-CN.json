@@ -2890,6 +2890,13 @@
     "memory": {
       "current_objective": "当前目标",
       "main_quest_pill": "主线",
+      "forced_set": "玩家强制设定",
+      "forced_set_subtitle": "/set 写入的硬约束 · 每回合都会约束 GM",
+      "forced_set_source": "第 {{turn}} 回合",
+      "forced_set_delete_tip": "删除这条强制设定",
+      "forced_set_delete_confirm": "删除这条 /set 强制设定？删除后 GM 不再受它约束（并清除配对的固定记忆）。",
+      "forced_set_clear_all": "清空全部",
+      "forced_set_clear_all_confirm": "清空全部 {{count}} 条 /set 强制设定？删除后 GM 不再受它们约束。",
       "pinned": "固定记忆",
       "pinned_subtitle": "本轮上下文必带",
       "add_pinned_tip": "添加固定记忆",
